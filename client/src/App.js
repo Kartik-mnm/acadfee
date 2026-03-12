@@ -8,6 +8,7 @@ import Payments from "./pages/Payments";
 import Reports from "./pages/Reports";
 import Batches from "./pages/Batches";
 import Users from "./pages/Users";
+import logo from "./logo.png";
 import "./App.css";
 
 function Layout() {
@@ -33,10 +34,10 @@ function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-icon">🎓</span>
+          <img src={logo} alt="Nishchay Academy" style={{ width: 44, height: 44, objectFit: "contain" }} />
           <div>
-            <div className="brand-title">AcadFee</div>
-            <div className="brand-sub">Management System</div>
+            <div className="brand-title">NISHCHAY</div>
+            <div className="brand-sub">ACADEMY</div>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
+import logo from "../logo.png";
 
 export default function Login() {
   const { login } = useAuth();
@@ -24,9 +25,9 @@ export default function Login() {
   return (
     <div className="login-bg">
       <div className="login-card">
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🎓</div>
-        <div className="login-title">AcadFee</div>
-        <div className="login-sub">Coaching Institute Fee Management</div>
+        <img src={logo} alt="Nishchay Academy" style={{ width: 100, marginBottom: 10 }} />
+        <div className="login-title">NISHCHAY ACADEMY</div>
+        <div className="login-sub">Fee Management System</div>
 
         <form onSubmit={handle}>
           <div className="form-group" style={{ marginBottom: 14 }}>

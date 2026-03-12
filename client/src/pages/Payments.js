@@ -35,7 +35,7 @@ function Receipt({ payment, onClose }) {
         <div className="modal-body">
           <div ref={ref} className="receipt">
             <div className="receipt-header">
-              <div className="receipt-academy">🎓 AcadFee Institute</div>
+              <div className="receipt-academy">🦅 NISHCHAY ACADEMY</div>
               <div className="receipt-branch">{p.branch_name} · {p.branch_address}</div>
               <div className="receipt-title">Fee Receipt</div>
             </div>
