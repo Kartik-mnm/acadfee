@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
+import StudentProfile from "./StudentProfile";
 
 const EMPTY = {
   name: "", phone: "", parent_phone: "", email: "", address: "",
@@ -22,6 +23,7 @@ export default function Students() {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [profileId, setProfileId] = useState(null);
 
   const load = () => {
     const q = filterBranch ? `?branch_id=${filterBranch}` : "";
@@ -71,6 +73,9 @@ export default function Students() {
 
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
+  // Show profile page if a student is selected
+  if (profileId) return <StudentProfile studentId={profileId} onBack={() => setProfileId(null)} />;
+
   return (
     <div>
       <div className="page-header">
@@ -118,7 +123,12 @@ export default function Students() {
                   <tr key={s.id}>
                     <td className="text-muted">{i + 1}</td>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{s.name}</div>
+                      <div
+                        style={{ fontWeight: 600, color: "var(--accent)", cursor: "pointer" }}
+                        onClick={() => setProfileId(s.id)}
+                      >
+                        {s.name}
+                      </div>
                       <div className="text-muted text-sm">{s.email}</div>
                     </td>
                     <td>{s.batch_name || <span className="text-muted">—</span>}</td>

@@ -4,9 +4,10 @@ const { auth, branchFilter } = require("../middleware");
 
 // Get attendance list
 router.get("/", auth, branchFilter, async (req, res) => {
-  const { month, year } = req.query;
+  const { month, year, student_id } = req.query;
   let cond = []; let params = []; let i = 1;
-  if (req.branchId) { cond.push(`a.branch_id=$${i++}`); params.push(req.branchId); }
+  if (student_id) { cond.push(`a.student_id=$${i++}`); params.push(student_id); }
+  else if (req.branchId) { cond.push(`a.branch_id=$${i++}`); params.push(req.branchId); }
   if (month) { cond.push(`a.month=$${i++}`); params.push(month); }
   if (year)  { cond.push(`a.year=$${i++}`); params.push(year); }
   const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
