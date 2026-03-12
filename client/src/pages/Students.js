@@ -5,7 +5,7 @@ import API from "../api";
 const EMPTY = {
   name: "", phone: "", parent_phone: "", email: "", address: "",
   dob: "", gender: "", admission_date: new Date().toISOString().split("T")[0],
-  fee_type: "monthly", admission_fee: "", discount: "0", discount_reason: "",
+  fee_type: "monthly", admission_fee: "", discount: "0", discount_reason: "", due_day: "10",
   batch_id: "", branch_id: "", status: "active"
 };
 
@@ -110,7 +110,7 @@ export default function Students() {
                 <tr>
                   <th>#</th><th>Name</th><th>Batch</th>
                   {user.role === "super_admin" && <th>Branch</th>}
-                  <th>Phone</th><th>Fee Type</th><th>Discount</th><th>Status</th><th>Actions</th>
+                  <th>Phone</th><th>Fee Type</th><th>Due Day</th><th>Discount</th><th>Status</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,6 +125,7 @@ export default function Students() {
                     {user.role === "super_admin" && <td>{s.branch_name}</td>}
                     <td className="mono">{s.phone}</td>
                     <td><span className="badge badge-blue">{s.fee_type}</span></td>
+                    <td><span className="badge badge-gray">📅 {s.due_day || 10}th</span></td>
                     <td>{s.discount > 0 ? <span className="badge badge-yellow">{s.discount}%</span> : "—"}</td>
                     <td>
                       <span className={`badge ${s.status === "active" ? "badge-green" : "badge-gray"}`}>
@@ -223,6 +224,11 @@ export default function Students() {
                 <div className="form-group full">
                   <label>Discount Reason</label>
                   <input value={form.discount_reason} onChange={(e) => f("discount_reason", e.target.value)} placeholder="e.g. Sibling discount, Merit scholarship" />
+                </div>
+                <div className="form-group">
+                  <label>Fee Due Day (1–28) 📅</label>
+                  <input type="number" min="1" max="28" value={form.due_day} onChange={(e) => f("due_day", e.target.value)} placeholder="10" />
+                  <span style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>Day of month when fee is due (e.g. 5 = 5th of every month)</span>
                 </div>
                 <div className="form-group full">
                   <label>Address</label>

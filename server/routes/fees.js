@@ -39,11 +39,10 @@ router.post("/", auth, async (req, res) => {
   res.json(rows[0]);
 });
 
-// Bulk generate monthly fee records for all active students in a branch
+// Bulk generate monthly fee records — uses each student's own due_day
 router.post("/generate", auth, async (req, res) => {
-  const { branch_id, month, year } = req.body; // month: 1-12
+  const { branch_id, month, year } = req.body;
   const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
-  const dueDate = `${year}-${String(month).padStart(2,"0")}-10`;
   const label = new Date(year, month - 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
 
   const { rows: students } = await db.query(
@@ -55,13 +54,17 @@ router.post("/generate", auth, async (req, res) => {
   let created = 0;
   for (const s of students) {
     let amt = 0;
-    if (s.fee_type === "monthly")    amt = s.fee_monthly || 0;
+    if (s.fee_type === "monthly")      amt = s.fee_monthly || 0;
     else if (s.fee_type === "quarterly") amt = s.fee_quarterly || 0;
-    else if (s.fee_type === "yearly") amt = s.fee_yearly || 0;
+    else if (s.fee_type === "yearly")  amt = s.fee_yearly || 0;
     else amt = s.fee_course || 0;
 
     // Apply discount
     amt = amt - (amt * (s.discount / 100));
+
+    // Use student's own due_day (default 10)
+    const dueDay = s.due_day || 10;
+    const dueDate = `${year}-${String(month).padStart(2,"0")}-${String(dueDay).padStart(2,"0")}`;
 
     // Check if already exists for this period
     const { rows: exist } = await db.query(
