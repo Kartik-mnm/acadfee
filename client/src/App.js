@@ -11,6 +11,7 @@ import Users from "./pages/Users";
 import Attendance from "./pages/Attendance";
 import Performance from "./pages/Performance";
 import Expenses from "./pages/Expenses";
+import IDCards from "./pages/IDCards";
 import logo from "./logo.png";
 import "./App.css";
 
@@ -30,6 +31,7 @@ function Layout() {
     { id: "payments",    label: "Payments",     icon: "💳" },
     { id: "expenses",    label: "Expenses",     icon: "💰" },
     { id: "reports",     label: "Reports",      icon: "📈" },
+    { id: "idcards",     label: "ID Cards",     icon: "🪪" },
     ...(user.role === "super_admin" ? [{ id: "users", label: "Users", icon: "🔑" }] : []),
   ];
 
@@ -37,7 +39,7 @@ function Layout() {
     dashboard: Dashboard, students: Students, batches: Batches,
     attendance: Attendance, performance: Performance,
     fees: Fees, payments: Payments, expenses: Expenses,
-    reports: Reports, users: Users
+    reports: Reports, idcards: IDCards, users: Users
   };
   const Page = pages[page] || Dashboard;
 
