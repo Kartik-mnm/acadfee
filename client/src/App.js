@@ -8,6 +8,9 @@ import Payments from "./pages/Payments";
 import Reports from "./pages/Reports";
 import Batches from "./pages/Batches";
 import Users from "./pages/Users";
+import Attendance from "./pages/Attendance";
+import Performance from "./pages/Performance";
+import Expenses from "./pages/Expenses";
 import logo from "./logo.png";
 import "./App.css";
 
@@ -18,16 +21,24 @@ function Layout() {
   if (!user) return <Login />;
 
   const nav = [
-    { id: "dashboard", label: "Dashboard", icon: "⬛" },
-    { id: "students",  label: "Students",  icon: "👤" },
-    { id: "batches",   label: "Batches",   icon: "📚" },
-    { id: "fees",      label: "Fee Records", icon: "📋" },
-    { id: "payments",  label: "Payments",  icon: "💳" },
-    { id: "reports",   label: "Reports",   icon: "📊" },
+    { id: "dashboard",   label: "Dashboard",    icon: "⬛" },
+    { id: "students",    label: "Students",     icon: "👤" },
+    { id: "batches",     label: "Batches",      icon: "📚" },
+    { id: "attendance",  label: "Attendance",   icon: "📅" },
+    { id: "performance", label: "Performance",  icon: "📊" },
+    { id: "fees",        label: "Fee Records",  icon: "📋" },
+    { id: "payments",    label: "Payments",     icon: "💳" },
+    { id: "expenses",    label: "Expenses",     icon: "💰" },
+    { id: "reports",     label: "Reports",      icon: "📈" },
     ...(user.role === "super_admin" ? [{ id: "users", label: "Users", icon: "🔑" }] : []),
   ];
 
-  const pages = { dashboard: Dashboard, students: Students, batches: Batches, fees: Fees, payments: Payments, reports: Reports, users: Users };
+  const pages = {
+    dashboard: Dashboard, students: Students, batches: Batches,
+    attendance: Attendance, performance: Performance,
+    fees: Fees, payments: Payments, expenses: Expenses,
+    reports: Reports, users: Users
+  };
   const Page = pages[page] || Dashboard;
 
   return (
