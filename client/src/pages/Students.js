@@ -24,6 +24,9 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [profileId, setProfileId] = useState(null);
+  const [portalStudent, setPortalStudent] = useState(null);
+  const [portalPassword, setPortalPassword] = useState("");
+  const [portalMsg, setPortalMsg] = useState("");
 
   const load = () => {
     const q = filterBranch ? `?branch_id=${filterBranch}` : "";
@@ -72,6 +75,16 @@ export default function Students() {
   });
 
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const openPortal = (s) => { setPortalStudent(s); setPortalPassword(""); setPortalMsg(""); };
+  const savePortal = async () => {
+    if (!portalPassword || portalPassword.length < 4) { setPortalMsg("⚠ Password must be at least 4 characters"); return; }
+    try {
+      await API.post("/auth/set-student-password", { student_id: portalStudent.id, password: portalPassword });
+      setPortalMsg("✅ Portal password set! Student can now login.");
+      setPortalPassword("");
+    } catch (e) { setPortalMsg("⚠ Failed to set password"); }
+  };
 
   // Show profile page if a student is selected
   if (profileId) return <StudentProfile studentId={profileId} onBack={() => setProfileId(null)} />;
@@ -145,6 +158,7 @@ export default function Students() {
                     <td>
                       <div className="gap-row">
                         <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                        <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Set Student Portal Password">🎓</button>
                         <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
                       </div>
                     </td>
@@ -261,6 +275,49 @@ export default function Students() {
               <button className="btn btn-primary" onClick={save} disabled={saving}>
                 {saving ? "Saving…" : editing ? "Update Student" : "Add Student"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Portal Password Modal */}
+      {portalStudent && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setPortalStudent(null)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <div className="modal-title">🎓 Student Portal Access</div>
+              <button className="modal-close" onClick={() => setPortalStudent(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8 }}>
+                <div style={{ fontWeight: 700 }}>{portalStudent.name}</div>
+                <div style={{ fontSize: 12, color: "var(--text2)" }}>{portalStudent.email}</div>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 16 }}>
+                Set a password so this student can login to the <strong>Student Portal</strong> and view their fees, attendance and test scores.
+              </p>
+              <div className="form-group">
+                <label>Portal Password</label>
+                <input
+                  type="password" placeholder="Enter password for student"
+                  value={portalPassword}
+                  onChange={(e) => setPortalPassword(e.target.value)}
+                />
+              </div>
+              {portalMsg && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13 }}>
+                  {portalMsg}
+                </div>
+              )}
+              <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(79,142,247,0.08)", borderRadius: 8, fontSize: 12, color: "var(--text2)" }}>
+                <strong>Student Login Details:</strong><br />
+                Email: <span style={{ color: "var(--accent)" }}>{portalStudent.email}</span><br />
+                Password: <span style={{ color: "var(--accent)" }}>{portalPassword || "••••••••"}</span>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setPortalStudent(null)}>Close</button>
+              <button className="btn btn-primary" onClick={savePortal}>✓ Set Password</button>
             </div>
           </div>
         </div>

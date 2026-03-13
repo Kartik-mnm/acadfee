@@ -12,6 +12,7 @@ import Attendance from "./pages/Attendance";
 import Performance from "./pages/Performance";
 import Expenses from "./pages/Expenses";
 import IDCards from "./pages/IDCards";
+import StudentDashboard from "./pages/StudentDashboard";
 import logo from "./logo.png";
 import "./App.css";
 
@@ -21,17 +22,20 @@ function Layout() {
 
   if (!user) return <Login />;
 
+  // Student sees their own dashboard only
+  if (user.role === "student") return <StudentDashboard />;
+
   const nav = [
-    { id: "dashboard",   label: "Dashboard",    icon: "⬛" },
-    { id: "students",    label: "Students",     icon: "👤" },
-    { id: "batches",     label: "Batches",      icon: "📚" },
-    { id: "attendance",  label: "Attendance",   icon: "📅" },
-    { id: "performance", label: "Performance",  icon: "📊" },
-    { id: "fees",        label: "Fee Records",  icon: "📋" },
-    { id: "payments",    label: "Payments",     icon: "💳" },
-    { id: "expenses",    label: "Expenses",     icon: "💰" },
-    { id: "reports",     label: "Reports",      icon: "📈" },
-    { id: "idcards",     label: "ID Cards",     icon: "🪪" },
+    { id: "dashboard",   label: "Dashboard",   icon: "⬛" },
+    { id: "students",    label: "Students",    icon: "👤" },
+    { id: "batches",     label: "Batches",     icon: "📚" },
+    { id: "attendance",  label: "Attendance",  icon: "📅" },
+    { id: "performance", label: "Performance", icon: "📊" },
+    { id: "fees",        label: "Fee Records", icon: "📋" },
+    { id: "payments",    label: "Payments",    icon: "💳" },
+    { id: "expenses",    label: "Expenses",    icon: "💰" },
+    { id: "reports",     label: "Reports",     icon: "📈" },
+    { id: "idcards",     label: "ID Cards",    icon: "🪪" },
     ...(user.role === "super_admin" ? [{ id: "users", label: "Users", icon: "🔑" }] : []),
   ];
 
@@ -53,20 +57,14 @@ function Layout() {
             <div className="brand-sub">ACADEMY</div>
           </div>
         </div>
-
         <nav className="sidebar-nav">
           {nav.map((n) => (
-            <button
-              key={n.id}
-              className={`nav-item ${page === n.id ? "active" : ""}`}
-              onClick={() => setPage(n.id)}
-            >
+            <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)}>
               <span className="nav-icon">{n.icon}</span>
               <span>{n.label}</span>
             </button>
           ))}
         </nav>
-
         <div className="sidebar-footer">
           <div className="user-pill">
             <div className="user-avatar">{user.name[0]}</div>
@@ -78,7 +76,6 @@ function Layout() {
           <button className="logout-btn" onClick={logout}>⬅ Logout</button>
         </div>
       </aside>
-
       <main className="main-content">
         <Page onNavigate={setPage} />
       </main>
