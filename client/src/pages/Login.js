@@ -28,9 +28,9 @@ export default function Login() {
     <div className="login-bg">
       <div className="login-card" style={{ maxWidth: panel ? 420 : 480 }}>
         {/* Logo & Title */}
-        <img src={logo} alt="Nishchay Academy" style={{ width: 90, marginBottom: 10 }} />
+        <img src={logo} alt="Nishchay Academy" style={{ width: 90, marginBottom: 10, display: "block", margin: "0 auto 10px" }} />
         <div className="login-title">NISHCHAY ACADEMY</div>
-        <div className="login-sub">Fee Management System</div>
+        
 
         {/* Panel Selection */}
         {!panel && (
