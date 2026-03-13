@@ -19,10 +19,9 @@ import "./App.css";
 function Layout() {
   const { user, logout } = useAuth();
   const [page, setPage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (!user) return <Login />;
-
-  // Student sees their own dashboard only
   if (user.role === "student") return <StudentDashboard />;
 
   const nav = [
@@ -47,9 +46,23 @@ function Layout() {
   };
   const Page = pages[page] || Dashboard;
 
+  const goTo = (id) => { setPage(id); setSidebarOpen(false); };
+
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {/* Hamburger Button — visible only on mobile */}
+      <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)}>
+        {sidebarOpen ? "✕" : "☰"}
+      </button>
+
+      {/* Overlay — closes sidebar when clicked */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
           <img src={logo} alt="Nishchay Academy" style={{ width: 44, height: 44, objectFit: "contain" }} />
           <div>
@@ -59,7 +72,11 @@ function Layout() {
         </div>
         <nav className="sidebar-nav">
           {nav.map((n) => (
-            <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)}>
+            <button
+              key={n.id}
+              className={`nav-item ${page === n.id ? "active" : ""}`}
+              onClick={() => goTo(n.id)}
+            >
               <span className="nav-icon">{n.icon}</span>
               <span>{n.label}</span>
             </button>
@@ -76,8 +93,10 @@ function Layout() {
           <button className="logout-btn" onClick={logout}>⬅ Logout</button>
         </div>
       </aside>
+
+      {/* Main Content */}
       <main className="main-content">
-        <Page onNavigate={setPage} />
+        <Page onNavigate={goTo} />
       </main>
     </div>
   );
