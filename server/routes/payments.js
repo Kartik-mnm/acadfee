@@ -60,8 +60,8 @@ router.post("/", auth, async (req, res) => {
 // Get single payment (for receipt)
 router.get("/:id", auth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT p.*, s.name AS student_name, s.phone, s.parent_phone, s.email,
-            fr.period_label, fr.amount_due, fr.amount_paid,
+    `SELECT p.*, s.name AS student_name, s.phone, s.parent_phone AS parent_name, s.email,
+            fr.period_label, fr.amount_due, fr.amount_paid, fr.due_date,
             b.name AS batch_name, br.name AS branch_name, br.address AS branch_address, br.phone AS branch_phone,
             u.name AS collected_by_name
      FROM payments p

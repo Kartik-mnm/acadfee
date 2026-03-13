@@ -2,64 +2,279 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 
-const fmt = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
+const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+
+// Convert number to words (Indian style)
+function numberToWords(n) {
+  const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const tens = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  if (n === 0) return "Zero";
+  if (n < 20) return ones[n];
+  if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? " " + ones[n%10] : "");
+  if (n < 1000) return ones[Math.floor(n/100)] + " Hundred" + (n%100 ? " " + numberToWords(n%100) : "");
+  if (n < 100000) return numberToWords(Math.floor(n/1000)) + " Thousand" + (n%1000 ? " " + numberToWords(n%1000) : "");
+  if (n < 10000000) return numberToWords(Math.floor(n/100000)) + " Lakh" + (n%100000 ? " " + numberToWords(n%100000) : "");
+  return numberToWords(Math.floor(n/10000000)) + " Crore" + (n%10000000 ? " " + numberToWords(n%10000000) : "");
+}
 
 function Receipt({ payment, onClose }) {
-  const ref = useRef();
+  const p = payment;
+  const balance = (p.amount_due || 0) - (p.amount_paid || 0);
+  const amountWords = numberToWords(Math.round(p.amount || 0)) + " Rupees Only";
+  const dueDate = p.due_date ? new Date(p.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
+  const paidDate = p.paid_on ? new Date(p.paid_on).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
+
+  const receiptHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fee Receipt - ${p.receipt_no}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #fff; color: #000; }
+    .page { width: 750px; margin: 20px auto; padding: 0; }
+
+    /* Two copies side by side */
+    .copies { display: flex; gap: 0; }
+    .copy { width: 375px; border: 2px solid #000; padding: 0; }
+    .copy + .copy { border-left: 1px dashed #999; }
+
+    .copy-inner { padding: 12px 14px; }
+
+    /* Header */
+    .hdr { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+    .academy-name { font-size: 17px; font-weight: 900; text-transform: uppercase; }
+    .academy-addr { font-size: 10px; color: #333; line-height: 1.5; margin-top: 2px; }
+    .academy-phone { font-size: 10px; color: #333; }
+
+    /* Receipt Title */
+    .receipt-title-box { border: 2px solid #000; text-align: center; padding: 5px; margin: 10px 0; }
+    .receipt-title-box h2 { font-size: 16px; font-weight: 900; letter-spacing: .05em; }
+
+    /* Info rows */
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .info-table td { padding: 4px 2px; font-size: 11px; vertical-align: top; }
+    .info-table .lbl { font-weight: 700; width: 90px; color: #333; }
+    .info-table .colon { width: 10px; }
+    .info-table .val { font-weight: 600; }
+
+    /* Fee details table */
+    .fee-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    .fee-table th { background: #e0e0e0; border: 1px solid #999; padding: 5px 6px; font-size: 11px; text-align: left; }
+    .fee-table td { border: 1px solid #ccc; padding: 5px 6px; font-size: 11px; }
+    .fee-table .amount-col { text-align: right; font-weight: 700; }
+    .fee-table .total-row { background: #f0f0f0; font-weight: 900; }
+    .fee-table .subtotal-row td { background: #e8e8e8; font-weight: 700; }
+
+    /* Summary rows */
+    .summary-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    .summary-table td { padding: 4px 6px; font-size: 11px; border: 1px solid #ccc; }
+    .summary-table .lbl { font-weight: 700; background: #f5f5f5; }
+    .summary-table .val { text-align: right; font-weight: 700; }
+    .summary-table .balance-row td { background: #fff3cd; }
+
+    /* Amount in words */
+    .words-box { border: 1px solid #ccc; padding: 5px 8px; margin-top: 8px; font-size: 10px; }
+    .words-label { font-weight: 700; }
+
+    /* Footer */
+    .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc; }
+    .footer-note { font-size: 9px; color: #666; }
+    .sign-box { text-align: center; font-size: 10px; }
+    .sign-line { border-top: 1px solid #333; width: 100px; margin: 20px auto 4px; }
+
+    @media print {
+      body { margin: 0; }
+      .page { margin: 0; width: 100%; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="copies">
+    ${[1,2].map(() => `
+    <div class="copy">
+      <div class="copy-inner">
+        <!-- Header -->
+        <div class="hdr">
+          <div class="academy-name">NISHCHAY ACADEMY</div>
+          <div class="academy-addr">${p.branch_name || ""}</div>
+          <div class="academy-phone">Contact: 8956419453</div>
+        </div>
+
+        <!-- Title -->
+        <div class="receipt-title-box">
+          <h2>FEES RECEIPT</h2>
+        </div>
+
+        <!-- Receipt & Date -->
+        <table class="info-table">
+          <tr>
+            <td class="lbl">Receipt No.</td><td class="colon">:</td>
+            <td class="val" style="font-family:monospace;">${p.receipt_no}</td>
+            <td class="lbl" style="text-align:right;">Date</td><td class="colon">:</td>
+            <td class="val">${paidDate}</td>
+          </tr>
+        </table>
+
+        <!-- Student Info -->
+        <table class="info-table" style="border-top:1px solid #ccc; padding-top:6px; margin-top:4px;">
+          <tr>
+            <td class="lbl">Student Name</td><td class="colon">:</td>
+            <td class="val" colspan="3">${p.student_name}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Father's Name</td><td class="colon">:</td>
+            <td class="val" colspan="3">${p.parent_name || "—"}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Batch / Course</td><td class="colon">:</td>
+            <td class="val">${p.batch_name || "—"}</td>
+            <td class="lbl" style="text-align:right;">Branch</td><td class="colon">:</td>
+            <td class="val">${p.branch_name || "—"}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Period</td><td class="colon">:</td>
+            <td class="val">${p.period_label || "—"}</td>
+            <td class="lbl" style="text-align:right;">Due Date</td><td class="colon">:</td>
+            <td class="val" style="color:#c00; font-weight:900;">${dueDate}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Payment Mode</td><td class="colon">:</td>
+            <td class="val" colspan="3">${(p.payment_mode || "").toUpperCase()}${p.transaction_ref ? " — " + p.transaction_ref : ""}</td>
+          </tr>
+        </table>
+
+        <!-- Fee Table -->
+        <table class="fee-table">
+          <thead>
+            <tr>
+              <th>Student's Fee Details</th>
+              <th class="amount-col">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${p.period_label || "Tuition Fee"}</td>
+              <td class="amount-col">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td>
+            </tr>
+            <tr class="subtotal-row">
+              <td></td>
+              <td class="amount-col">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Summary -->
+        <table class="summary-table">
+          <tr>
+            <td class="lbl" style="width:60%">Total Fee</td>
+            <td class="val">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Paid Fee</td>
+            <td class="val">₹${Number(p.amount_paid || 0).toLocaleString("en-IN")}</td>
+          </tr>
+          <tr class="balance-row">
+            <td class="lbl">Balance Fee</td>
+            <td class="val" style="color:${balance > 0 ? '#c00' : '#090'};">₹${Number(balance).toLocaleString("en-IN")}</td>
+          </tr>
+        </table>
+
+        <!-- Amount in Words -->
+        <div class="words-box">
+          <span class="words-label">Rupees </span>${amountWords}
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+          <div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
+          <div class="sign-box">
+            <div class="sign-line"></div>
+            Authorized Signatory
+          </div>
+        </div>
+      </div>
+    </div>
+    `).join("")}
+  </div>
+</div>
+<script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
   const print = () => {
     const w = window.open("", "_blank");
-    w.document.write(`<html><head><title>Receipt</title>
-      <style>
-        body { font-family: sans-serif; padding: 32px; color: #111; }
-        .header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 14px; margin-bottom: 16px; }
-        .academy { font-size: 22px; font-weight: 900; }
-        .branch  { font-size: 13px; color: #555; }
-        .title   { font-size: 15px; font-weight: 700; margin-top: 8px; text-transform: uppercase; letter-spacing: .08em; }
-        .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 1px dashed #ddd; }
-        .total { font-size: 16px; font-weight: 900; display: flex; justify-content: space-between; margin-top: 12px; }
-        .footer { margin-top: 24px; text-align: center; font-size: 11px; color: #888; }
-      </style></head><body>${ref.current.innerHTML}</body></html>`);
-    w.document.close(); w.print();
+    w.document.write(receiptHTML);
+    w.document.close();
   };
 
-  if (!payment) return null;
-  const p = payment;
+  // Preview version
+  const balance2 = (p.amount_due || 0) - (p.amount_paid || 0);
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 500 }}>
+      <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-header">
           <div className="modal-title">🧾 Fee Receipt</div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          <div ref={ref} className="receipt">
-            <div className="receipt-header">
-              <div className="receipt-academy">🦅 NISHCHAY ACADEMY</div>
-              <div className="receipt-branch">{p.branch_name} · {p.branch_address}</div>
-              <div className="receipt-title">Fee Receipt</div>
+          {/* Preview Card */}
+          <div style={{ border: "2px solid var(--border)", borderRadius: 8, overflow: "hidden", fontSize: 13 }}>
+            {/* Header */}
+            <div style={{ background: "var(--bg3)", textAlign: "center", padding: "12px 16px", borderBottom: "2px solid var(--border)" }}>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>NISHCHAY ACADEMY</div>
+              <div style={{ fontSize: 11, color: "var(--text2)" }}>{p.branch_name}</div>
+              <div style={{ fontWeight: 800, fontSize: 13, marginTop: 6, border: "1px solid var(--border)", padding: "3px 20px", display: "inline-block", borderRadius: 4 }}>FEES RECEIPT</div>
             </div>
-            <div className="receipt-row"><span>Receipt No.</span><strong className="mono">{p.receipt_no}</strong></div>
-            <div className="receipt-row"><span>Student Name</span><strong>{p.student_name}</strong></div>
-            <div className="receipt-row"><span>Batch / Course</span><strong>{p.batch_name || "—"}</strong></div>
-            <div className="receipt-row"><span>Period</span><strong>{p.period_label || "—"}</strong></div>
-            <div className="receipt-row"><span>Payment Mode</span><strong style={{ textTransform: "uppercase" }}>{p.payment_mode}</strong></div>
-            {p.transaction_ref && <div className="receipt-row"><span>Txn Reference</span><strong>{p.transaction_ref}</strong></div>}
-            <div className="receipt-row"><span>Payment Date</span><strong>{new Date(p.paid_on).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</strong></div>
-            <div className="receipt-row"><span>Collected By</span><strong>{p.collected_by_name}</strong></div>
-            <hr style={{ margin: "10px 0", border: "none", borderTop: "2px solid #111" }} />
-            <div className="receipt-total">
-              <span>Amount Paid</span>
-              <span>{fmt(p.amount)}</span>
-            </div>
-            {p.amount_due - p.amount_paid > 0 && (
-              <div style={{ fontSize: 12, color: "#d00", marginTop: 6, textAlign: "right" }}>
-                Balance Due: {fmt(p.amount_due - p.amount_paid)}
+            <div style={{ padding: "12px 16px" }}>
+              {/* Top row */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
+                <div><span style={{ color: "var(--text2)" }}>Receipt No. </span><strong className="mono">{p.receipt_no}</strong></div>
+                <div><span style={{ color: "var(--text2)" }}>Date: </span><strong>{paidDate}</strong></div>
               </div>
-            )}
-            <div className="receipt-footer">
-              Thank you for your payment!<br />
-              This is a computer-generated receipt. No signature required.
+              {/* Student info */}
+              {[
+                ["Student Name", p.student_name],
+                ["Father's Name", p.parent_name || "—"],
+                ["Batch / Course", p.batch_name || "—"],
+                ["Period", p.period_label],
+                ["Due Date", <span style={{ color: "var(--red)", fontWeight: 800 }}>{dueDate}</span>],
+                ["Payment Mode", (p.payment_mode || "").toUpperCase()],
+                p.transaction_ref ? ["Txn / Ref No.", p.transaction_ref] : null,
+              ].filter(Boolean).map(([l, v]) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px dashed var(--border)", fontSize: 12 }}>
+                  <span style={{ color: "var(--text2)" }}>{l}</span>
+                  <strong>{v}</strong>
+                </div>
+              ))}
+              {/* Fee table */}
+              <div style={{ margin: "10px 0", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", background: "var(--bg3)", padding: "5px 10px", fontWeight: 700, fontSize: 11 }}>
+                  <span>Fee Details</span><span>Amount</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", fontSize: 12 }}>
+                  <span>{p.period_label || "Tuition Fee"}</span>
+                  <strong>{fmt(p.amount_due)}</strong>
+                </div>
+                <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg3)", padding: "5px 10px" }}>
+                  {[
+                    ["Total Fee", fmt(p.amount_due), "#000"],
+                    ["Paid Fee", fmt(p.amount), "var(--green)"],
+                    ["Balance Fee", fmt(balance2), balance2 > 0 ? "var(--red)" : "var(--green)"],
+                  ].map(([l, v, c]) => (
+                    <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: 12 }}>
+                      <span style={{ fontWeight: 700 }}>{l}</span>
+                      <span style={{ fontWeight: 800, color: c }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text2)", fontStyle: "italic" }}>
+                <strong>Rupees</strong> {amountWords}
+              </div>
             </div>
           </div>
         </div>
@@ -97,14 +312,16 @@ export default function Payments() {
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch]);
 
-  const openPay = () => { setForm({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" }); setError(""); setShowModal(true); };
+  const openPay = () => {
+    setForm({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
+    setError(""); setShowModal(true);
+  };
 
   const pay = async () => {
     setSaving(true); setError("");
     try {
       const { data } = await API.post("/payments", form);
       setShowModal(false); load();
-      // Fetch full receipt details
       const { data: full } = await API.get(`/payments/${data.id}`);
       setReceipt(full);
     } catch (e) { setError(e.response?.data?.error || "Failed"); }
@@ -123,7 +340,6 @@ export default function Payments() {
 
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  // Auto-fill amount when fee record selected
   const selectRecord = (id) => {
     const rec = feeRecords.find((r) => r.id == id);
     if (rec) {
