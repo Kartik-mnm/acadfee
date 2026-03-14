@@ -32,13 +32,12 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
 // Collection report by branch
 router.get("/by-branch", auth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT br.name AS branch, COUNT(DISTINCT s.id) AS students,
-            COALESCE(SUM(p.amount),0) AS collected,
-            COALESCE(SUM(fr.amount_due - fr.amount_paid) FILTER (WHERE fr.status != 'paid'),0) AS pending
+    `SELECT br.name AS branch,
+            COUNT(DISTINCT s.id) AS students,
+            COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.branch_id=br.id), 0) AS collected,
+            COALESCE((SELECT SUM(fr.amount_due - fr.amount_paid) FROM fee_records fr WHERE fr.branch_id=br.id AND fr.status != 'paid'), 0) AS pending
      FROM branches br
      LEFT JOIN students s ON s.branch_id=br.id AND s.status='active'
-     LEFT JOIN fee_records fr ON fr.branch_id=br.id
-     LEFT JOIN payments p ON p.branch_id=br.id
      GROUP BY br.id, br.name ORDER BY br.id`
   );
   res.json(rows);
