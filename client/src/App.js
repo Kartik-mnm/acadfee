@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -20,6 +20,14 @@ function Layout() {
   const { user, logout } = useAuth();
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+
+  useEffect(() => {
+    document.body.classList.toggle("light", theme === "light");
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => t === "dark" ? "light" : "dark");
 
   if (!user) return <Login />;
   if (user.role === "student") return <StudentDashboard />;
@@ -50,38 +58,37 @@ function Layout() {
 
   return (
     <div className="app-shell">
-      {/* Hamburger Button — visible only on mobile */}
+      {/* Hamburger Button */}
       <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)}>
         {sidebarOpen ? "✕" : "☰"}
       </button>
 
-      {/* Overlay — closes sidebar when clicked */}
-      <div
-        className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`}
-        onClick={() => setSidebarOpen(false)}
-      />
+      {/* Overlay */}
+      <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
 
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
           <img src={logo} alt="Nishchay Academy" style={{ width: 44, height: 44, objectFit: "contain" }} />
-          <div>
+          <div style={{ flex: 1 }}>
             <div className="brand-title">NISHCHAY</div>
             <div className="brand-sub">ACADEMY</div>
           </div>
+          {/* Theme Toggle */}
+          <button className="theme-toggle" onClick={toggleTheme} title="Toggle Dark/Light Mode">
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
         </div>
+
         <nav className="sidebar-nav">
           {nav.map((n) => (
-            <button
-              key={n.id}
-              className={`nav-item ${page === n.id ? "active" : ""}`}
-              onClick={() => goTo(n.id)}
-            >
+            <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => goTo(n.id)}>
               <span className="nav-icon">{n.icon}</span>
               <span>{n.label}</span>
             </button>
           ))}
         </nav>
+
         <div className="sidebar-footer">
           <div className="user-pill">
             <div className="user-avatar">{user.name[0]}</div>

@@ -317,3 +317,29 @@ select option { background: var(--bg2); }
   /* Buttons wrap on mobile */
   .gap-row { flex-wrap: wrap; }
 }
+
+/* ── Light Mode ── */
+body.light {
+  --bg:     #f0f2f7;
+  --bg2:    #ffffff;
+  --bg3:    #e8ecf4;
+  --border: #d0d8ea;
+  --text:   #1a1f35;
+  --text2:  #5a6480;
+}
+body.light .sidebar { box-shadow: 2px 0 12px rgba(0,0,0,0.08); }
+body.light table th { color: #5a6480; }
+body.light input, body.light select, body.light textarea { background: #f5f7ff; color: #1a1f35; }
+body.light .nav-item { color: #5a6480; }
+body.light .nav-item:hover { background: #e8ecf4; color: #1a1f35; }
+body.light .nav-item.active { background: rgba(79,142,247,.12); color: var(--accent); }
+
+/* Theme toggle button */
+.theme-toggle {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s; flex-shrink: 0;
+}
+.theme-toggle:hover { border-color: var(--accent); }

@@ -29,6 +29,8 @@ router.get("/", auth, branchFilter, async (req, res) => {
   res.json(rows);
 });
 
+const { sendReceiptEmail } = require("../email");
+
 // Record payment
 router.post("/", auth, async (req, res) => {
   const { fee_record_id, amount, payment_mode, transaction_ref, paid_on, notes } = req.body;
@@ -53,6 +55,24 @@ router.post("/", auth, async (req, res) => {
     "UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3",
     [newPaid, newStatus, fee_record_id]
   );
+
+  // Send email receipt automatically
+  try {
+    const { rows: fullRows } = await db.query(
+      `SELECT p.*, s.name AS student_name, s.email, s.parent_phone AS parent_name,
+              fr.period_label, fr.amount_due, fr.amount_paid, fr.due_date,
+              b.name AS batch_name, br.name AS branch_name
+       FROM payments p
+       JOIN students s ON s.id = p.student_id
+       JOIN fee_records fr ON fr.id = p.fee_record_id
+       LEFT JOIN batches b ON b.id = s.batch_id
+       JOIN branches br ON br.id = p.branch_id
+       WHERE p.id=$1`, [rows[0].id]
+    );
+    if (fullRows[0]) await sendReceiptEmail(fullRows[0]);
+  } catch (emailErr) {
+    console.error("Email send error:", emailErr);
+  }
 
   res.json({ ...rows[0], receipt_no: receipt });
 });
