@@ -77,6 +77,15 @@ export default function Students() {
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   const openPortal = (s) => { setPortalStudent(s); setPortalPassword(""); setPortalMsg(""); };
+
+  const sendEmail = async (s) => {
+    if (!s.email) { alert("This student has no email address! Please add email first."); return; }
+    if (!window.confirm(`Send fee summary email to ${s.name} at ${s.email}?`)) return;
+    try {
+      await API.post(`/students/${s.id}/send-email`);
+      alert(`✅ Email sent successfully to ${s.email}!`);
+    } catch (e) { alert("⚠ Failed to send email: " + (e.response?.data?.error || e.message)); }
+  };
   const savePortal = async () => {
     if (!portalPassword || portalPassword.length < 4) { setPortalMsg("⚠ Password must be at least 4 characters"); return; }
     try {
@@ -159,6 +168,7 @@ export default function Students() {
                       <div className="gap-row">
                         <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
                         <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Set Student Portal Password">🎓</button>
+                        <button className="btn btn-success btn-sm" onClick={() => sendEmail(s)} title="Send Fee Summary Email">📧</button>
                         <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
                       </div>
                     </td>

@@ -148,4 +148,103 @@ async function sendReceiptEmail(payment) {
   }
 }
 
-module.exports = { sendReceiptEmail };
+
+async function sendFeeSummaryEmail({ student, fees, payments, attendance, tests }) {
+  if (!process.env.RESEND_API_KEY) return { skipped: true };
+  if (!student.email) return { skipped: true, reason: "No email" };
+
+  const totalDue  = fees.reduce((s, f) => s + parseFloat(f.amount_due || 0), 0);
+  const totalPaid = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
+  const balance   = totalDue - totalPaid;
+  const pendingFees = fees.filter((f) => f.status !== "paid");
+  const avgAtt = attendance.length ? Math.round(attendance.reduce((s, a) => s + parseFloat(a.percentage || 0), 0) / attendance.length) : null;
+  const avgScore = tests.length ? Math.round(tests.reduce((s, t) => s + parseFloat(t.percentage || 0), 0) / tests.length) : null;
+  const grade = (p) => p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B" : p >= 60 ? "C" : p >= 50 ? "D" : "F";
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+<div style="max-width:600px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+<div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:28px 32px;text-align:center;">
+  <div style="font-size:22px;font-weight:900;color:#f0d060;">NISHCHAY ACADEMY</div>
+  <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${student.branch_name || ""}</div>
+  <div style="background:rgba(255,255,255,0.15);border-radius:6px;padding:6px 20px;display:inline-block;margin-top:12px;">
+    <div style="font-size:14px;font-weight:800;color:#fff;">FEE SUMMARY REPORT</div>
+  </div>
+</div>
+<div style="padding:28px 32px;">
+  <div style="background:#f5f7ff;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+    <div style="font-size:18px;font-weight:900;color:#1a1f35;margin-bottom:8px;">👤 ${student.name}</div>
+    <div style="font-size:13px;color:#555;">Batch: <strong>${student.batch_name||"—"}</strong> &nbsp;|&nbsp; Branch: <strong>${student.branch_name||"—"}</strong> &nbsp;|&nbsp; ID: <strong>NA-${String(student.id).padStart(5,"0")}</strong></div>
+  </div>
+
+  <div style="display:flex;gap:12px;margin-bottom:24px;">
+    <div style="flex:1;background:#f0f7ff;border-radius:8px;padding:14px;text-align:center;border-top:3px solid #4f8ef7;">
+      <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;">Total Due</div>
+      <div style="font-size:20px;font-weight:900;color:#4f8ef7;">₹${totalDue.toLocaleString("en-IN")}</div>
+    </div>
+    <div style="flex:1;background:#f0fff8;border-radius:8px;padding:14px;text-align:center;border-top:3px solid #22d3a5;">
+      <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;">Total Paid</div>
+      <div style="font-size:20px;font-weight:900;color:#22d3a5;">₹${totalPaid.toLocaleString("en-IN")}</div>
+    </div>
+    <div style="flex:1;background:${balance>0?"#fff5f5":"#f0fff8"};border-radius:8px;padding:14px;text-align:center;border-top:3px solid ${balance>0?"#f75f5f":"#22d3a5"};">
+      <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;">Balance</div>
+      <div style="font-size:20px;font-weight:900;color:${balance>0?"#f75f5f":"#22d3a5"};">₹${balance.toLocaleString("en-IN")}</div>
+    </div>
+  </div>
+
+  ${pendingFees.length > 0 ? `
+  <div style="margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:800;margin-bottom:10px;border-bottom:2px solid #eee;padding-bottom:6px;">⚠️ Pending Fees</div>
+    ${pendingFees.map(f => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
+      <span style="font-weight:600;">${f.period_label}</span>
+      <span style="color:#f75f5f;font-weight:700;">₹${(f.amount_due-f.amount_paid).toLocaleString("en-IN")} due by ${new Date(f.due_date).toLocaleDateString("en-IN")}</span>
+    </div>`).join("")}
+  </div>` : `<div style="background:#f0fff8;border-radius:8px;padding:12px;text-align:center;margin-bottom:20px;font-weight:700;color:#22d3a5;">✅ All fees paid!</div>`}
+
+  ${payments.length > 0 ? `
+  <div style="margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:800;margin-bottom:10px;border-bottom:2px solid #eee;padding-bottom:6px;">💳 Recent Payments</div>
+    ${payments.slice(0,5).map(p => `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
+      <span style="font-family:monospace;color:#4f8ef7;">${p.receipt_no}</span>
+      <span>${p.period_label}</span>
+      <span style="color:#22d3a5;font-weight:700;">₹${Number(p.amount_paid||p.amount).toLocaleString("en-IN")}</span>
+      <span style="color:#888;">${new Date(p.payment_date||p.paid_on).toLocaleDateString("en-IN")}</span>
+    </div>`).join("")}
+  </div>` : ""}
+
+  <div style="display:flex;gap:16px;margin-bottom:20px;">
+    <div style="flex:1;background:#f5f7ff;border-radius:8px;padding:14px;">
+      <div style="font-size:13px;font-weight:800;margin-bottom:6px;">📅 Avg Attendance</div>
+      ${avgAtt!==null ? `<div style="font-size:26px;font-weight:900;color:${avgAtt>=75?"#22d3a5":avgAtt>=50?"#f7c84f":"#f75f5f"};">${avgAtt}%</div>` : `<div style="color:#888;font-size:13px;">No records</div>`}
+    </div>
+    <div style="flex:1;background:#f5f7ff;border-radius:8px;padding:14px;">
+      <div style="font-size:13px;font-weight:800;margin-bottom:6px;">📊 Avg Test Score</div>
+      ${avgScore!==null ? `<div style="font-size:26px;font-weight:900;color:${avgScore>=70?"#22d3a5":avgScore>=50?"#f7c84f":"#f75f5f"};">${avgScore}% (${grade(avgScore)})</div>` : `<div style="color:#888;font-size:13px;">No tests</div>`}
+    </div>
+  </div>
+
+  <div style="text-align:center;padding-top:16px;border-top:1px solid #eee;font-size:12px;color:#888;">
+    This is an automated email from Nishchay Academy · Contact: 8956419453
+  </div>
+</div>
+<div style="background:#1a1f35;padding:14px 32px;text-align:center;">
+  <div style="font-size:12px;color:rgba(255,255,255,0.5);">NISHCHAY ACADEMY</div>
+</div>
+</div>
+</body></html>`;
+
+  try {
+    const result = await resend.emails.send({
+      from: "Nishchay Academy <receipts@resend.dev>",
+      to: student.email,
+      subject: `Fee Summary — ${student.name} | Nishchay Academy`,
+      html,
+    });
+    return { success: true, id: result.id };
+  } catch (err) {
+    console.error("Email error:", err);
+    return { error: err.message };
+  }
+}
+
+module.exports = { sendReceiptEmail, sendFeeSummaryEmail };

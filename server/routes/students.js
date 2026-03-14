@@ -69,4 +69,40 @@ router.delete("/:id", auth, async (req, res) => {
   res.json({ success: true });
 });
 
+// Send fee summary email to student
+router.post("/:id/send-email", auth, async (req, res) => {
+  const { sendFeeSummaryEmail } = require("../email");
+  try {
+    const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
+      db.query(`SELECT s.*, b.name AS batch_name, br.name AS branch_name
+                FROM students s
+                LEFT JOIN batches b ON b.id = s.batch_id
+                LEFT JOIN branches br ON br.id = s.branch_id
+                WHERE s.id=$1`, [req.params.id]),
+      db.query("SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC", [req.params.id]),
+      db.query(`SELECT p.*, fr.period_label FROM payments p
+                JOIN fee_records fr ON fr.id = p.fee_record_id
+                WHERE p.student_id=$1 ORDER BY p.paid_on DESC`, [req.params.id]),
+      db.query("SELECT * FROM attendance WHERE student_id=$1 ORDER BY year DESC, month DESC", [req.params.id]),
+      db.query(`SELECT tr.*, t.name AS test_name, t.subject, t.total_marks, t.test_date,
+                ROUND((tr.marks / t.total_marks::numeric) * 100, 1) AS percentage
+                FROM test_results tr JOIN tests t ON t.id = tr.test_id
+                WHERE tr.student_id=$1 ORDER BY t.test_date DESC`, [req.params.id]),
+    ]);
+    if (!stuRes.rows[0]) return res.status(404).json({ error: "Student not found" });
+    if (!stuRes.rows[0].email) return res.status(400).json({ error: "Student has no email address!" });
+
+    const result = await sendFeeSummaryEmail({
+      student: stuRes.rows[0],
+      fees: feeRes.rows,
+      payments: payRes.rows,
+      attendance: attRes.rows,
+      tests: testRes.rows,
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

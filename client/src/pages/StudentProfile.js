@@ -69,9 +69,17 @@ export default function StudentProfile({ studentId, onBack }) {
   return (
     <div>
       {/* Back button */}
-      <button className="btn btn-secondary" style={{ marginBottom: 20 }} onClick={onBack}>
-        ← Back to Students
-      </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <button className="btn btn-secondary" onClick={onBack}>← Back to Students</button>
+        <button className="btn btn-success" onClick={async () => {
+          if (!student.email) { alert("No email address for this student!"); return; }
+          if (!window.confirm(`Send fee summary email to ${student.name}?`)) return;
+          try {
+            await API.post(`/students/${student.id}/send-email`);
+            alert(`✅ Email sent to ${student.email}!`);
+          } catch (e) { alert("⚠ Failed: " + (e.response?.data?.error || e.message)); }
+        }}>📧 Send Fee Summary Email</button>
+      </div>
 
       {/* Profile Header */}
       <div className="card" style={{ marginBottom: 20 }}>
