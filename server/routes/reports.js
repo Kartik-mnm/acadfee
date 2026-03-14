@@ -10,13 +10,13 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
 
   const [students, collected, due, overdue, recentPayments] = await Promise.all([
     db.query(`SELECT COUNT(*) FROM students WHERE status='active' ${cond}`, p),
-    db.query(`SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE 1=1 ${cond.replace("branch_id","branch_id")}`, p),
+    db.query(`SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE 1=1 ${cond}`, p),
     db.query(`SELECT COALESCE(SUM(amount_due - amount_paid),0) AS total FROM fee_records WHERE status IN ('pending','partial','overdue') ${cond}`, p),
     db.query(`SELECT COUNT(*) FROM fee_records WHERE status='overdue' ${cond}`, p),
     db.query(
       `SELECT p.receipt_no, p.amount, p.paid_on, p.payment_mode, s.name AS student_name, br.name AS branch_name
        FROM payments p JOIN students s ON s.id=p.student_id JOIN branches br ON br.id=p.branch_id
-       WHERE 1=1 ${cond} ORDER BY p.paid_on DESC LIMIT 8`, p
+       WHERE 1=1 ${bid ? "AND p.branch_id=$1" : ""} ORDER BY p.paid_on DESC LIMIT 8`, p
     ),
   ]);
 
