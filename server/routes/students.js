@@ -43,6 +43,11 @@ router.post("/", auth, async (req, res) => {
       [bid, batch_id, name, phone, parent_phone, email, address, dob, gender,
        admission_date, fee_type, admission_fee || 0, discount || 0, discount_reason]
     );
+    // Auto-add email to Resend audience
+    if (email) {
+      const { addContactToResend } = require("../email");
+      addContactToResend(name, email).catch(console.error);
+    }
     res.json(rows[0]);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -61,6 +66,11 @@ router.put("/:id", auth, async (req, res) => {
     [batch_id, name, phone, parent_phone, email, address, dob, gender,
      fee_type, admission_fee, discount, discount_reason, status, req.params.id]
   );
+  // Auto-add email to Resend if email updated
+  if (email) {
+    const { addContactToResend } = require("../email");
+    addContactToResend(name, email).catch(console.error);
+  }
   res.json(rows[0]);
 });
 
