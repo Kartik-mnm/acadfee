@@ -70,8 +70,8 @@ router.post("/users", auth, superAdmin, async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO users (name, email, password, role, branch_id) VALUES ($1,$2,$3,$4,$5) RETURNING id, name, email, role, branch_id`,
-      [name, email, hash, role, branch_id || null]
+      `INSERT INTO users (name, email, password, password_hint, role, branch_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, branch_id`,
+      [name, email, hash, password, role, branch_id || null]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -82,10 +82,27 @@ router.post("/users", auth, superAdmin, async (req, res) => {
 // List users
 router.get("/users", auth, superAdmin, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT u.id, u.name, u.email, u.role, u.branch_id, b.name AS branch_name
+    `SELECT u.id, u.name, u.email, u.role, u.branch_id, u.password_hint, b.name AS branch_name
      FROM users u LEFT JOIN branches b ON b.id = u.branch_id ORDER BY u.id`
   );
   res.json(rows);
+});
+
+// Delete user
+router.delete("/users/:id", auth, superAdmin, async (req, res) => {
+  const { id } = req.params;
+  // Prevent deleting own account
+  if (parseInt(id) === req.user.id) return res.status(400).json({ error: "Cannot delete your own account!" });
+  await db.query("DELETE FROM users WHERE id=$1", [id]);
+  res.json({ success: true });
+});
+
+// Reset user password
+router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
+  const { password } = req.body;
+  const hash = await bcrypt.hash(password, 10);
+  await db.query("UPDATE users SET password=$1, password_hint=$2 WHERE id=$3", [hash, password, req.params.id]);
+  res.json({ success: true });
 });
 
 // Set student portal password (admin only)
