@@ -17,6 +17,7 @@ app.use("/api/reports",    require("./routes/reports"));
 app.use("/api/attendance", require("./routes/attendance"));
 app.use("/api/tests",      require("./routes/tests"));
 app.use("/api/expenses",   require("./routes/expenses"));
+app.use("/api/qrscan",    require("./routes/qrscan"));
 
 app.get("/", (_, res) => res.json({ status: "Nishchay Academy Fee API running" }));
 

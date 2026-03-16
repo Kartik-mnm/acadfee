@@ -2,16 +2,19 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import logo from "../logo.png";
+import QRCode from "qrcode";
 
 export default function IDCards() {
   const { user } = useAuth();
-  const [students, setStudents] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [batches, setBatches] = useState([]);
+  const [students, setStudents]     = useState([]);
+  const [branches, setBranches]     = useState([]);
+  const [batches, setBatches]       = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
-  const [filterBatch, setFilterBatch] = useState("");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
+  const [filterBatch, setFilterBatch]   = useState("");
+  const [search, setSearch]         = useState("");
+  const [selected, setSelected]     = useState(null);
+  const [qrDataUrl, setQrDataUrl]   = useState("");
+  const [loadingQr, setLoadingQr]   = useState(false);
   const printRef = useRef();
 
   useEffect(() => {
@@ -20,9 +23,25 @@ export default function IDCards() {
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, []);
 
+  // Generate QR whenever a student is selected
+  useEffect(() => {
+    if (!selected) { setQrDataUrl(""); return; }
+    setLoadingQr(true);
+    API.get(`/qrscan/token/${selected.id}`)
+      .then(async (r) => {
+        const url = await QRCode.toDataURL(r.data.token, {
+          width: 120, margin: 1,
+          color: { dark: "#1a1f35", light: "#ffffff" }
+        });
+        setQrDataUrl(url);
+      })
+      .catch(() => setQrDataUrl(""))
+      .finally(() => setLoadingQr(false));
+  }, [selected]);
+
   const filtered = students.filter((s) => {
     if (filterBranch && s.branch_id != filterBranch) return false;
-    if (filterBatch && s.batch_id != filterBatch) return false;
+    if (filterBatch  && s.batch_id  != filterBatch)  return false;
     if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -32,24 +51,28 @@ export default function IDCards() {
     w.document.write(`
       <html><head><title>ID Card - ${selected.name}</title>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Arial', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f0f0f0; }
-        .card { width: 320px; background: linear-gradient(135deg, #1a1f35 0%, #2d3561 100%); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-        .card-header { background: linear-gradient(90deg, #c9a227, #f0d060, #c9a227); padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
-        .card-header img { width: 40px; height: 40px; object-fit: contain; }
-        .academy-name { font-size: 14px; font-weight: 900; color: #1a1f35; letter-spacing: .05em; }
-        .academy-sub { font-size: 9px; color: #3a3000; font-weight: 700; letter-spacing: .1em; }
-        .card-body { padding: 16px; display: flex; gap: 14px; align-items: flex-start; }
-        .photo { width: 70px; height: 80px; background: rgba(255,255,255,0.1); border-radius: 8px; border: 2px solid #c9a227; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.4); font-size: 28px; flex-shrink: 0; }
-        .info { flex: 1; }
-        .student-name { font-size: 15px; font-weight: 900; color: #fff; margin-bottom: 8px; }
-        .field { margin-bottom: 5px; }
-        .field-label { font-size: 8px; color: #c9a227; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
-        .field-value { font-size: 11px; color: #e0e0e0; font-weight: 600; }
-        .card-footer { background: rgba(0,0,0,0.3); padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; }
-        .id-number { font-size: 10px; color: #c9a227; font-weight: 700; font-family: monospace; }
-        .valid { font-size: 9px; color: rgba(255,255,255,0.5); }
-        .id-label { background: #c9a227; color: #1a1f35; font-size: 9px; font-weight: 900; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; letter-spacing: .1em; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Arial',sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; background:#f0f0f0; }
+        .card { width:340px; background:linear-gradient(135deg,#1a1f35 0%,#2d3561 100%); border-radius:16px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.3); }
+        .card-header { background:linear-gradient(90deg,#c9a227,#f0d060,#c9a227); padding:12px 16px; display:flex; align-items:center; gap:10px; }
+        .card-header img { width:40px; height:40px; object-fit:contain; }
+        .academy-name { font-size:14px; font-weight:900; color:#1a1f35; letter-spacing:.05em; }
+        .academy-sub  { font-size:9px; color:#3a3000; font-weight:700; letter-spacing:.1em; }
+        .card-body { padding:16px; display:flex; gap:14px; align-items:flex-start; }
+        .left-col { display:flex; flex-direction:column; align-items:center; gap:8px; }
+        .photo { width:70px; height:80px; background:rgba(255,255,255,0.1); border-radius:8px; border:2px solid #c9a227; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.4); font-size:28px; flex-shrink:0; }
+        .qr-box { background:#fff; border-radius:6px; padding:4px; border:2px solid #c9a227; }
+        .qr-box img { display:block; width:70px; height:70px; }
+        .info { flex:1; }
+        .student-name { font-size:15px; font-weight:900; color:#fff; margin-bottom:8px; }
+        .field { margin-bottom:5px; }
+        .field-label { font-size:8px; color:#c9a227; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+        .field-value { font-size:11px; color:#e0e0e0; font-weight:600; }
+        .card-footer { background:rgba(0,0,0,0.3); padding:8px 16px; display:flex; justify-content:space-between; align-items:center; }
+        .id-number { font-size:10px; color:#c9a227; font-weight:700; font-family:monospace; }
+        .valid { font-size:9px; color:rgba(255,255,255,0.5); }
+        .id-label { background:#c9a227; color:#1a1f35; font-size:9px; font-weight:900; padding:3px 10px; border-radius:4px; text-transform:uppercase; letter-spacing:.1em; }
+        .scan-hint { font-size:8px; color:rgba(255,255,255,0.4); text-align:center; margin-top:2px; }
       </style></head>
       <body>
         <div class="card">
@@ -61,25 +84,18 @@ export default function IDCards() {
             </div>
           </div>
           <div class="card-body">
-            <div class="photo">👤</div>
+            <div class="left-col">
+              <div class="photo">👤</div>
+              ${qrDataUrl ? `
+              <div class="qr-box"><img src="${qrDataUrl}" /></div>
+              <div class="scan-hint">Scan for attendance</div>` : ""}
+            </div>
             <div class="info">
               <div class="student-name">${selected.name}</div>
-              <div class="field">
-                <div class="field-label">Batch / Course</div>
-                <div class="field-value">${selected.batch_name || "—"}</div>
-              </div>
-              <div class="field">
-                <div class="field-label">Branch</div>
-                <div class="field-value">${selected.branch_name || "—"}</div>
-              </div>
-              <div class="field">
-                <div class="field-label">Phone</div>
-                <div class="field-value">${selected.phone || "—"}</div>
-              </div>
-              <div class="field">
-                <div class="field-label">Admission Date</div>
-                <div class="field-value">${selected.admission_date ? new Date(selected.admission_date).toLocaleDateString("en-IN") : "—"}</div>
-              </div>
+              <div class="field"><div class="field-label">Batch / Course</div><div class="field-value">${selected.batch_name || "—"}</div></div>
+              <div class="field"><div class="field-label">Branch</div><div class="field-value">${selected.branch_name || "—"}</div></div>
+              <div class="field"><div class="field-label">Phone</div><div class="field-value">${selected.phone || "—"}</div></div>
+              <div class="field"><div class="field-label">Admission Date</div><div class="field-value">${selected.admission_date ? new Date(selected.admission_date).toLocaleDateString("en-IN") : "—"}</div></div>
             </div>
           </div>
           <div class="card-footer">
@@ -101,7 +117,7 @@ export default function IDCards() {
       <div className="page-header">
         <div>
           <div className="page-title">Student ID Cards</div>
-          <div className="page-sub">Generate and print student ID cards</div>
+          <div className="page-sub">Generate and print student ID cards with QR attendance</div>
         </div>
       </div>
 
@@ -162,7 +178,7 @@ export default function IDCards() {
             <div>
               {/* Card Preview */}
               <div ref={printRef} style={{
-                width: 320, background: "linear-gradient(135deg, #1a1f35 0%, #2d3561 100%)",
+                width: 340, background: "linear-gradient(135deg, #1a1f35 0%, #2d3561 100%)",
                 borderRadius: 16, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                 margin: "0 auto 20px"
               }}>
@@ -176,7 +192,20 @@ export default function IDCards() {
                 </div>
                 {/* Body */}
                 <div style={{ padding: 16, display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <div style={{ width: 70, height: 80, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "2px solid #c9a227", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>👤</div>
+                  {/* Left col: photo + QR */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 70, height: 80, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "2px solid #c9a227", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>👤</div>
+                    {loadingQr && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Generating QR…</div>}
+                    {qrDataUrl && (
+                      <div>
+                        <div style={{ background: "#fff", borderRadius: 6, padding: 4, border: "2px solid #c9a227" }}>
+                          <img src={qrDataUrl} alt="QR" style={{ width: 70, height: 70, display: "block" }} />
+                        </div>
+                        <div style={{ fontSize: 8, color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: 2 }}>Scan for attendance</div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Right col: info */}
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 15, fontWeight: 900, color: "#fff", marginBottom: 8 }}>{selected.name}</div>
                     {[
@@ -202,8 +231,10 @@ export default function IDCards() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <button className="btn btn-primary" onClick={printCard}>🖨 Print ID Card</button>
+              <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+                <button className="btn btn-primary" onClick={printCard} disabled={loadingQr}>
+                  🖨 Print ID Card
+                </button>
               </div>
             </div>
           )}
