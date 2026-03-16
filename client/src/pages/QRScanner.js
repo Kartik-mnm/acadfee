@@ -3,6 +3,37 @@ import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import jsQR from "jsqr";
 
+// Two rising beeps like a barcode scanner (600hz → 900hz)
+function playBeep(success = true) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const beep = (freq, startTime, duration) => {
+      const osc    = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, startTime);
+      gainNode.gain.setValueAtTime(0.3, startTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+
+    if (success) {
+      // Two rising beeps: 600hz then 900hz
+      beep(600, ctx.currentTime,        0.12);
+      beep(900, ctx.currentTime + 0.15, 0.18);
+    } else {
+      // One low error buzz
+      beep(300, ctx.currentTime, 0.25);
+    }
+  } catch (e) {
+    // Audio not supported — silently ignore
+  }
+}
+
 export default function QRScanner() {
   const { user } = useAuth();
   const videoRef      = useRef(null);
@@ -37,7 +68,7 @@ export default function QRScanner() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "environment",
-          width: { ideal: 640 },   // smaller = faster scan
+          width:  { ideal: 640 },
           height: { ideal: 480 },
         }
       });
@@ -45,12 +76,7 @@ export default function QRScanner() {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setScanning(true);
-
-      // Use setInterval at 15fps instead of requestAnimationFrame
-      // This is faster for QR detection without overloading CPU
-      intervalRef.current = setInterval(() => {
-        scanFrame();
-      }, 66); // ~15fps is optimal for jsQR
+      intervalRef.current = setInterval(scanFrame, 66); // ~15fps
     } catch (e) {
       setError("Camera access denied. Please allow camera permission and try again.");
     }
@@ -58,7 +84,7 @@ export default function QRScanner() {
 
   const stopCamera = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    if (streamRef.current)   streamRef.current.getTracks().forEach((t) => t.stop());
     setScanning(false);
   };
 
@@ -66,7 +92,7 @@ export default function QRScanner() {
     const video  = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-    if (processingRef.current) return; // skip if still processing last scan
+    if (processingRef.current) return;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     canvas.width  = video.videoWidth;
@@ -80,7 +106,6 @@ export default function QRScanner() {
 
     if (code) {
       const now = Date.now();
-      // Debounce: ignore same QR within 4 seconds
       if (code.data === lastScanRef.current && now - lastTimeRef.current < 4000) return;
       lastScanRef.current = code.data;
       lastTimeRef.current = now;
@@ -92,10 +117,12 @@ export default function QRScanner() {
     processingRef.current = true;
     try {
       const { data } = await API.post("/qrscan/scan", { token });
+      playBeep(true); // ✅ Two rising beeps on success
       setResult({ ...data, status: "success" });
       loadTodayLogs();
       setTimeout(() => setResult(null), 5000);
     } catch (e) {
+      playBeep(false); // ❌ Low buzz on error
       const msg = e.response?.data?.error || "Scan failed";
       setResult({ status: "error", message: msg });
       setTimeout(() => setResult(null), 4000);
@@ -123,7 +150,6 @@ export default function QRScanner() {
         <div className="card">
           <div className="card-title">Camera Scanner</div>
 
-          {/* Video feed */}
           <div style={{
             position: "relative", background: "#000", borderRadius: 10,
             overflow: "hidden", aspectRatio: "4/3", marginBottom: 14
@@ -142,7 +168,6 @@ export default function QRScanner() {
               </div>
             )}
 
-            {/* Scan overlay box */}
             {scanning && (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                 <div style={{
@@ -206,10 +231,10 @@ export default function QRScanner() {
             )}
           </div>
 
-          <div style={{ marginTop: 12, fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--text2)", lineHeight: 1.8 }}>
             <strong>How it works:</strong><br />
-            • 1st scan = Entry ✅<br />
-            • 2nd scan = Exit 🚪<br />
+            • 1st scan = Entry ✅ + beep beep 🔊<br />
+            • 2nd scan = Exit 🚪 + beep beep 🔊<br />
             • Attendance auto-updates after exit scan
           </div>
         </div>
@@ -286,8 +311,8 @@ export default function QRScanner() {
 
       <style>{`
         @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
+          0%, 100% { opacity: 1; border-color: #4f8ef7; }
+          50% { opacity: 0.5; border-color: #22d3a5; }
         }
       `}</style>
     </div>
