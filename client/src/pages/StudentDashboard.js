@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
+import NotificationSetup from "../components/NotificationSetup";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -63,6 +64,8 @@ export default function StudentDashboard() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      {/* Notification Setup — student enables push alerts */}
+      <NotificationSetup studentId={student?.id} type="student" />
 
       {/* Top Navbar */}
       <div style={{

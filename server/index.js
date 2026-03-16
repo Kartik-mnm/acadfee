@@ -1,7 +1,9 @@
 require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
-const app = express();
+const cors    = require("cors");
+const app     = express();
+const { initFCM } = require("./fcm");
+initFCM();
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -17,7 +19,7 @@ app.use("/api/reports",    require("./routes/reports"));
 app.use("/api/attendance", require("./routes/attendance"));
 app.use("/api/tests",      require("./routes/tests"));
 app.use("/api/expenses",   require("./routes/expenses"));
-app.use("/api/qrscan",    require("./routes/qrscan"));
+app.use("/api/qrscan",     require("./routes/qrscan"));
 
 app.get("/", (_, res) => res.json({ status: "Nishchay Academy Fee API running" }));
 
