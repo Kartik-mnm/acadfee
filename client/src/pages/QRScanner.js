@@ -5,17 +5,18 @@ import jsQR from "jsqr";
 
 export default function QRScanner() {
   const { user } = useAuth();
-  const videoRef    = useRef(null);
-  const canvasRef   = useRef(null);
-  const streamRef   = useRef(null);
-  const animRef     = useRef(null);
-  const lastScanRef = useRef("");   // prevent double-scan same QR
-  const lastTimeRef = useRef(0);
+  const videoRef      = useRef(null);
+  const canvasRef     = useRef(null);
+  const streamRef     = useRef(null);
+  const intervalRef   = useRef(null);
+  const lastScanRef   = useRef("");
+  const lastTimeRef   = useRef(0);
+  const processingRef = useRef(false);
 
-  const [scanning, setScanning]   = useState(false);
-  const [result, setResult]       = useState(null);   // last scan result
-  const [error, setError]         = useState("");
-  const [todayLogs, setTodayLogs] = useState([]);
+  const [scanning, setScanning]       = useState(false);
+  const [result, setResult]           = useState(null);
+  const [error, setError]             = useState("");
+  const [todayLogs, setTodayLogs]     = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
   const loadTodayLogs = () => {
@@ -34,69 +35,78 @@ export default function QRScanner() {
     setError("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: {
+          facingMode: "environment",
+          width: { ideal: 640 },   // smaller = faster scan
+          height: { ideal: 480 },
+        }
       });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setScanning(true);
-      scanLoop();
+
+      // Use setInterval at 15fps instead of requestAnimationFrame
+      // This is faster for QR detection without overloading CPU
+      intervalRef.current = setInterval(() => {
+        scanFrame();
+      }, 66); // ~15fps is optimal for jsQR
     } catch (e) {
       setError("Camera access denied. Please allow camera permission and try again.");
     }
   };
 
   const stopCamera = () => {
-    if (animRef.current)  cancelAnimationFrame(animRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     setScanning(false);
   };
 
-  const scanLoop = () => {
+  const scanFrame = () => {
     const video  = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    const ctx = canvas.getContext("2d");
+    if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    if (processingRef.current) return; // skip if still processing last scan
 
-    const tick = () => {
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert",
-        });
-        if (code) {
-          const now = Date.now();
-          // Debounce: don't re-scan same QR within 4 seconds
-          if (code.data !== lastScanRef.current || now - lastTimeRef.current > 4000) {
-            lastScanRef.current = code.data;
-            lastTimeRef.current = now;
-            processScan(code.data);
-          }
-        }
-      }
-      animRef.current = requestAnimationFrame(tick);
-    };
-    animRef.current = requestAnimationFrame(tick);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "dontInvert",
+    });
+
+    if (code) {
+      const now = Date.now();
+      // Debounce: ignore same QR within 4 seconds
+      if (code.data === lastScanRef.current && now - lastTimeRef.current < 4000) return;
+      lastScanRef.current = code.data;
+      lastTimeRef.current = now;
+      processScan(code.data);
+    }
   };
 
   const processScan = async (token) => {
+    processingRef.current = true;
     try {
       const { data } = await API.post("/qrscan/scan", { token });
       setResult({ ...data, status: "success" });
       loadTodayLogs();
-      // Auto-clear result after 5s
       setTimeout(() => setResult(null), 5000);
     } catch (e) {
       const msg = e.response?.data?.error || "Scan failed";
       setResult({ status: "error", message: msg });
       setTimeout(() => setResult(null), 4000);
+    } finally {
+      processingRef.current = false;
     }
   };
 
-  const fmt = (iso) => iso ? new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmt = (iso) => iso
+    ? new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+    : "—";
 
   return (
     <div>
@@ -115,10 +125,14 @@ export default function QRScanner() {
 
           {/* Video feed */}
           <div style={{
-            position: "relative", background: "#000", borderRadius: 10, overflow: "hidden",
-            aspectRatio: "4/3", marginBottom: 14
+            position: "relative", background: "#000", borderRadius: 10,
+            overflow: "hidden", aspectRatio: "4/3", marginBottom: 14
           }}>
-            <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover", display: scanning ? "block" : "none" }} muted playsInline />
+            <video
+              ref={videoRef}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: scanning ? "block" : "none" }}
+              muted playsInline
+            />
             <canvas ref={canvasRef} style={{ display: "none" }} />
 
             {!scanning && (
@@ -128,12 +142,14 @@ export default function QRScanner() {
               </div>
             )}
 
-            {/* Scan overlay */}
+            {/* Scan overlay box */}
             {scanning && (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                 <div style={{
-                  width: 200, height: 200, border: "3px solid #4f8ef7",
-                  borderRadius: 12, boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)"
+                  width: 200, height: 200,
+                  border: "3px solid #4f8ef7", borderRadius: 12,
+                  boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)",
+                  animation: "pulse 1.5s ease-in-out infinite"
                 }} />
               </div>
             )}
@@ -235,8 +251,7 @@ export default function QRScanner() {
                     <div style={{ marginTop: 4 }}>
                       {log.exit_time
                         ? <span className="badge badge-green">Complete</span>
-                        : <span className="badge badge-yellow">Entry only</span>
-                      }
+                        : <span className="badge badge-yellow">Entry only</span>}
                     </div>
                   </div>
                 </div>
@@ -244,22 +259,21 @@ export default function QRScanner() {
             </div>
           )}
 
-          {/* Summary */}
           {todayLogs.length > 0 && (
             <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-              <div style={{ flex: 1, background: "rgba(34,211,165,0.1)", borderRadius: 8, padding: "10px", textAlign: "center" }}>
+              <div style={{ flex: 1, background: "rgba(34,211,165,0.1)", borderRadius: 8, padding: 10, textAlign: "center" }}>
                 <div style={{ fontSize: 11, color: "var(--text2)" }}>Complete</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: "var(--green)" }}>
                   {todayLogs.filter((l) => l.exit_time).length}
                 </div>
               </div>
-              <div style={{ flex: 1, background: "rgba(247,200,79,0.1)", borderRadius: 8, padding: "10px", textAlign: "center" }}>
+              <div style={{ flex: 1, background: "rgba(247,200,79,0.1)", borderRadius: 8, padding: 10, textAlign: "center" }}>
                 <div style={{ fontSize: 11, color: "var(--text2)" }}>Entry Only</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: "var(--yellow)" }}>
                   {todayLogs.filter((l) => !l.exit_time).length}
                 </div>
               </div>
-              <div style={{ flex: 1, background: "rgba(79,142,247,0.1)", borderRadius: 8, padding: "10px", textAlign: "center" }}>
+              <div style={{ flex: 1, background: "rgba(79,142,247,0.1)", borderRadius: 8, padding: 10, textAlign: "center" }}>
                 <div style={{ fontSize: 11, color: "var(--text2)" }}>Total</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: "var(--accent)" }}>
                   {todayLogs.length}
@@ -269,6 +283,13 @@ export default function QRScanner() {
           )}
         </div>
       </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </div>
   );
 }
