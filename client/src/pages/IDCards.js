@@ -241,7 +241,11 @@ export default function IDCards() {
 
     <!-- Photo -->
     <div class="photo-wrap">
-      <div class="photo-circle">👤</div>
+      <div class="photo-circle">
+        ${selected.photo_url
+          ? `<img src="${selected.photo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+          : "👤"}
+      </div>
     </div>
 
     <!-- Body -->
@@ -370,8 +374,13 @@ export default function IDCards() {
                     width: 60, height: 60, borderRadius: "50%",
                     background: "#e8edf5", border: "3px solid white",
                     boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28
-                  }}>👤</div>
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28,
+                    overflow: "hidden"
+                  }}>
+                    {selected.photo_url
+                      ? <img src={selected.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : "👤"}
+                  </div>
                 </div>
 
                 {/* Body */}

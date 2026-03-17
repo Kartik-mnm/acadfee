@@ -1,4 +1,3 @@
-// Firebase Admin SDK for sending push notifications
 const admin = require("firebase-admin");
 
 let initialized = false;
@@ -24,10 +23,8 @@ function initFCM() {
   }
 }
 
-// Send notification to a single FCM token
 async function sendNotification(token, title, body, data = {}) {
-  if (!initialized) return { skipped: true };
-  if (!token) return { skipped: true };
+  if (!initialized || !token) return { skipped: true };
   try {
     const result = await admin.messaging().send({
       token,
@@ -35,16 +32,16 @@ async function sendNotification(token, title, body, data = {}) {
       data,
       webpush: {
         notification: {
-          title,
-          body,
-          icon: "/logo.png",
-          badge: "/logo.png",
+          title, body,
+          icon:    "/logo.png",
+          badge:   "/logo.png",
           vibrate: [200, 100, 200],
+          requireInteraction: false,
         },
         fcmOptions: { link: "/" },
       },
     });
-    console.log(`✅ FCM sent: ${title}`);
+    console.log(`✅ FCM sent to token: ${title}`);
     return { success: true, result };
   } catch (e) {
     console.error("FCM send error:", e.message);
@@ -52,31 +49,28 @@ async function sendNotification(token, title, body, data = {}) {
   }
 }
 
-// Send attendance notification to student + parent
-async function sendAttendanceNotification({ studentName, scanType, time, studentToken, parentToken }) {
-  const timeStr = new Date(time).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+async function sendAttendanceNotification({ studentName, scanType, time, timeIST, studentToken, parentToken }) {
+  // Use IST time in notification messages
+  const displayTime = timeIST || new Date(time).toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
+  });
 
-  const studentTitle = scanType === "entry"
-    ? "✅ Attendance Marked — Entry"
-    : "🚪 Attendance Marked — Exit";
-
-  const studentBody = scanType === "entry"
-    ? `You have arrived at Nishchay Academy at ${timeStr}`
-    : `You have exited Nishchay Academy at ${timeStr}`;
+  const studentTitle = scanType === "entry" ? "✅ Entry Marked" : "🚪 Exit Marked";
+  const studentBody  = scanType === "entry"
+    ? `You have arrived at Nishchay Academy at ${displayTime} (IST)`
+    : `You have exited Nishchay Academy at ${displayTime} (IST)`;
 
   const parentTitle = scanType === "entry"
     ? `✅ ${studentName} has arrived`
     : `🚪 ${studentName} has left`;
-
-  const parentBody = scanType === "entry"
-    ? `Your child arrived at Nishchay Academy at ${timeStr}`
-    : `Your child left Nishchay Academy at ${timeStr}`;
+  const parentBody  = scanType === "entry"
+    ? `Your child arrived at Nishchay Academy at ${displayTime} (IST)`
+    : `Your child left Nishchay Academy at ${displayTime} (IST)`;
 
   const results = await Promise.allSettled([
-    sendNotification(studentToken, studentTitle, studentBody, { scan_type: scanType, time }),
-    sendNotification(parentToken,  parentTitle,  parentBody,  { scan_type: scanType, time }),
+    sendNotification(studentToken, studentTitle, studentBody, { scan_type: scanType }),
+    sendNotification(parentToken,  parentTitle,  parentBody,  { scan_type: scanType }),
   ]);
-
   return results;
 }
 

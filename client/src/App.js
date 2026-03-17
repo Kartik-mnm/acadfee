@@ -13,6 +13,8 @@ import Performance from "./pages/Performance";
 import Expenses from "./pages/Expenses";
 import IDCards from "./pages/IDCards";
 import QRScanner from "./pages/QRScanner";
+import Admissions from "./pages/Admissions";
+import AdmissionForm from "./pages/AdmissionForm";
 import StudentDashboard from "./pages/StudentDashboard";
 import logo from "./logo.png";
 import "./App.css";
@@ -36,6 +38,7 @@ function Layout() {
   const nav = [
     { id: "dashboard",   label: "Dashboard",   icon: "⬛" },
     { id: "students",    label: "Students",    icon: "👤" },
+    { id: "admissions",  label: "Admissions",  icon: "🎓" },
     { id: "batches",     label: "Batches",     icon: "📚" },
     { id: "attendance",  label: "Attendance",  icon: "📅" },
     { id: "performance", label: "Performance", icon: "📊" },
@@ -43,14 +46,14 @@ function Layout() {
     { id: "payments",    label: "Payments",    icon: "💳" },
     { id: "expenses",    label: "Expenses",    icon: "💰" },
     { id: "reports",     label: "Reports",     icon: "📈" },
-    { id: "idcards",    label: "ID Cards",    icon: "🪪" },
-    { id: "qrscanner",  label: "QR Scanner",  icon: "📷" },
+    { id: "idcards",     label: "ID Cards",    icon: "🪪" },
+    { id: "qrscanner",   label: "QR Scanner",  icon: "📷" },
     ...(user.role === "super_admin" ? [{ id: "users", label: "Users", icon: "🔑" }] : []),
   ];
 
   const pages = {
-    dashboard: Dashboard, students: Students, batches: Batches,
-    attendance: Attendance, performance: Performance,
+    dashboard: Dashboard, students: Students, admissions: Admissions,
+    batches: Batches, attendance: Attendance, performance: Performance,
     fees: Fees, payments: Payments, expenses: Expenses,
     reports: Reports, idcards: IDCards, qrscanner: QRScanner, users: Users
   };
@@ -60,15 +63,10 @@ function Layout() {
 
   return (
     <div className="app-shell">
-      {/* Hamburger Button */}
       <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)}>
         {sidebarOpen ? "✕" : "☰"}
       </button>
-
-      {/* Overlay */}
       <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
-
-      {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
           <img src={logo} alt="Nishchay Academy" style={{ width: 44, height: 44, objectFit: "contain" }} />
@@ -76,12 +74,10 @@ function Layout() {
             <div className="brand-title">NISHCHAY</div>
             <div className="brand-sub">ACADEMY</div>
           </div>
-          {/* Theme Toggle */}
           <button className="theme-toggle" onClick={toggleTheme} title="Toggle Dark/Light Mode">
             {theme === "dark" ? "☀️" : "🌙"}
           </button>
         </div>
-
         <nav className="sidebar-nav">
           {nav.map((n) => (
             <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => goTo(n.id)}>
@@ -90,7 +86,6 @@ function Layout() {
             </button>
           ))}
         </nav>
-
         <div className="sidebar-footer">
           <div className="user-pill">
             <div className="user-avatar">{user.name[0]}</div>
@@ -102,8 +97,6 @@ function Layout() {
           <button className="logout-btn" onClick={logout}>⬅ Logout</button>
         </div>
       </aside>
-
-      {/* Main Content */}
       <main className="main-content">
         <Page onNavigate={goTo} />
       </main>
@@ -112,6 +105,9 @@ function Layout() {
 }
 
 export default function App() {
+  // Public route: /apply shows admission form without login
+  if (window.location.pathname === "/apply") return <AdmissionForm />;
+
   return (
     <AuthProvider>
       <Layout />

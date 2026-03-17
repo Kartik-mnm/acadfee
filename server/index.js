@@ -6,7 +6,7 @@ const { initFCM } = require("./fcm");
 initFCM();
 
 app.use(cors({ origin: "*" }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" })); // increased for photo uploads
 
 // Routes
 app.use("/api/auth",       require("./routes/auth"));
@@ -20,6 +20,8 @@ app.use("/api/attendance", require("./routes/attendance"));
 app.use("/api/tests",      require("./routes/tests"));
 app.use("/api/expenses",   require("./routes/expenses"));
 app.use("/api/qrscan",     require("./routes/qrscan"));
+app.use("/api/admission",  require("./routes/admission"));
+app.use("/api/upload",     require("./routes/upload"));
 
 app.get("/", (_, res) => res.json({ status: "Nishchay Academy Fee API running" }));
 

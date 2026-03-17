@@ -31,19 +31,22 @@ router.get("/:id", auth, async (req, res) => {
 router.post("/", auth, async (req, res) => {
   const {
     branch_id, batch_id, name, phone, parent_phone, email, address,
-    dob, gender, admission_date, fee_type, admission_fee, discount, discount_reason
+    dob, gender, admission_date, fee_type, admission_fee, discount,
+    discount_reason, due_day, photo_url
   } = req.body;
   const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
+  // due_day: use provided value, default 10, clamp between 1-28
+  const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
   try {
     const { rows } = await db.query(
       `INSERT INTO students
        (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
-        admission_date, fee_type, admission_fee, discount, discount_reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [bid, batch_id, name, phone, parent_phone, email, address, dob, gender,
-       admission_date, fee_type, admission_fee || 0, discount || 0, discount_reason]
+       admission_date, fee_type, admission_fee || 0, discount || 0, discount_reason,
+       dueDaySafe, photo_url || null]
     );
-    // Auto-add email to Resend audience
     if (email) {
       const { addContactToResend } = require("../email");
       addContactToResend(name, email).catch(console.error);
@@ -57,16 +60,19 @@ router.post("/", auth, async (req, res) => {
 router.put("/:id", auth, async (req, res) => {
   const {
     batch_id, name, phone, parent_phone, email, address,
-    dob, gender, fee_type, admission_fee, discount, discount_reason, status
+    dob, gender, fee_type, admission_fee, discount,
+    discount_reason, status, due_day, photo_url
   } = req.body;
+  const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
   const { rows } = await db.query(
     `UPDATE students SET batch_id=$1, name=$2, phone=$3, parent_phone=$4, email=$5,
      address=$6, dob=$7, gender=$8, fee_type=$9, admission_fee=$10,
-     discount=$11, discount_reason=$12, status=$13 WHERE id=$14 RETURNING *`,
+     discount=$11, discount_reason=$12, status=$13, due_day=$14, photo_url=$15
+     WHERE id=$16 RETURNING *`,
     [batch_id, name, phone, parent_phone, email, address, dob, gender,
-     fee_type, admission_fee, discount, discount_reason, status, req.params.id]
+     fee_type, admission_fee, discount, discount_reason, status,
+     dueDaySafe, photo_url || null, req.params.id]
   );
-  // Auto-add email to Resend if email updated
   if (email) {
     const { addContactToResend } = require("../email");
     addContactToResend(name, email).catch(console.error);
@@ -79,7 +85,7 @@ router.delete("/:id", auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// Send fee summary email to student
+// Send fee summary email
 router.post("/:id/send-email", auth, async (req, res) => {
   const { sendFeeSummaryEmail } = require("../email");
   try {
@@ -101,13 +107,9 @@ router.post("/:id/send-email", auth, async (req, res) => {
     ]);
     if (!stuRes.rows[0]) return res.status(404).json({ error: "Student not found" });
     if (!stuRes.rows[0].email) return res.status(400).json({ error: "Student has no email address!" });
-
     const result = await sendFeeSummaryEmail({
-      student: stuRes.rows[0],
-      fees: feeRes.rows,
-      payments: payRes.rows,
-      attendance: attRes.rows,
-      tests: testRes.rows,
+      student: stuRes.rows[0], fees: feeRes.rows,
+      payments: payRes.rows, attendance: attRes.rows, tests: testRes.rows,
     });
     res.json(result);
   } catch (e) {
