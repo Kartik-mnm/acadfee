@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
+import QRCode from "qrcode";
 
 export default function Admissions() {
   const { user } = useAuth();
@@ -11,6 +12,15 @@ export default function Admissions() {
 
   // QR code URL for admission form
   const admissionUrl = `${window.location.origin}/apply`;
+  const [qrDataUrl, setQrDataUrl] = useState("");
+
+  useEffect(() => {
+    QRCode.toDataURL(admissionUrl, {
+      width: 200, margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#0a1628", light: "#ffffff" }
+    }).then(setQrDataUrl).catch(console.error);
+  }, [admissionUrl]);
 
   const load = () => {
     setLoading(true);
@@ -106,17 +116,57 @@ export default function Admissions() {
       {/* QR Code for Admission */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">📱 Admission QR Code</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-          <div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
+
+          {/* QR Image */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            {qrDataUrl ? (
+              <div style={{ background: "white", padding: 12, borderRadius: 12, border: "2px solid var(--border)", boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
+                <img src={qrDataUrl} alt="Admission QR" style={{ width: 160, height: 160, display: "block" }} />
+              </div>
+            ) : (
+              <div style={{ width: 160, height: 160, background: "var(--bg3)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text2)" }}>
+                Generating…
+              </div>
+            )}
+            <button className="btn btn-secondary btn-sm" onClick={() => {
+              const a = document.createElement("a");
+              a.href = qrDataUrl; a.download = "admission-qr.png"; a.click();
+            }}>⬇ Download QR</button>
+          </div>
+
+          {/* Link + instructions */}
+          <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 13, marginBottom: 8, color: "var(--text2)" }}>
-              Share this link or QR code with students to fill the admission form:
+              Share this link or print the QR code. Students scan it to fill the admission form — no login required!
             </div>
-            <div style={{ background: "var(--bg3)", borderRadius: 8, padding: "10px 14px", fontFamily: "monospace", fontSize: 13, color: "var(--accent)", marginBottom: 10 }}>
+            <div style={{ background: "var(--bg3)", borderRadius: 8, padding: "10px 14px", fontFamily: "monospace", fontSize: 13, color: "var(--accent)", marginBottom: 10, wordBreak: "break-all" }}>
               {admissionUrl}
             </div>
-            <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(admissionUrl).then(() => alert("Link copied!"))}>
-              📋 Copy Link
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(admissionUrl).then(() => alert("Link copied!"))}>
+                📋 Copy Link
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => {
+                const w = window.open("", "_blank");
+                w.document.write(`<html><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f0f0f0;font-family:Arial">
+                  <div style="text-align:center;background:white;padding:32px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)">
+                    <div style="font-size:20px;font-weight:900;color:#0a1628;margin-bottom:4px">NISHCHAY ACADEMY</div>
+                    <div style="font-size:13px;color:#555;margin-bottom:20px">Scan to fill Admission Form</div>
+                    <img src="${qrDataUrl}" style="width:200px;height:200px" />
+                    <div style="font-size:11px;color:#888;margin-top:16px">${admissionUrl}</div>
+                  </div>
+                </body></html>`);
+                w.document.close(); setTimeout(() => w.print(), 400);
+              }}>🖨 Print QR</button>
+            </div>
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(79,142,247,0.08)", borderRadius: 8, fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
+              <strong>How it works:</strong><br />
+              1. Student scans QR → form opens in browser<br />
+              2. They fill name, phone, course details<br />
+              3. Enquiry appears here for you to approve/reject<br />
+              4. On approve → student is automatically created
+            </div>
           </div>
         </div>
       </div>
