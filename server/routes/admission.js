@@ -3,17 +3,16 @@ const db     = require("../db");
 const { auth } = require("../middleware");
 
 // ── Public: Submit admission enquiry (no login required)
-// POST /api/admission/enquiry
 router.post("/enquiry", async (req, res) => {
-  const { name, phone, parent_phone, email, batch_id, address, branch_id } = req.body;
+  const { name, phone, parent_phone, email, batch_id, address, branch_id, extra } = req.body;
   if (!name || !phone) return res.status(400).json({ error: "Name and phone are required" });
   try {
     const { rows } = await db.query(
       `INSERT INTO admission_enquiries
-       (name, phone, parent_phone, email, batch_id, address, branch_id, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING *`,
+       (name, phone, parent_phone, email, batch_id, address, branch_id, extra, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending') RETURNING *`,
       [name, phone, parent_phone || null, email || null,
-       batch_id || null, address || null, branch_id || null]
+       batch_id || null, address || null, branch_id || null, extra || null]
     );
     res.json({ success: true, enquiry_id: rows[0].id });
   } catch (e) {
