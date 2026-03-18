@@ -2,6 +2,13 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 
+// Helper: unwrap paginated /students response
+const fetchAllStudents = (query = "") =>
+  API.get(`/students?limit=1000${query}`).then((r) => {
+    const res = r.data;
+    return Array.isArray(res) ? res : (res.data || []);
+  });
+
 // #34 — Student mini-avatar for rank list
 function MiniAvatar({ student }) {
   const [imgError, setImgError] = useState(false);
@@ -42,10 +49,15 @@ export default function Performance() {
 
   const openResults = async (test) => {
     setSelectedTest(test);
-    const [resData, stuData] = await Promise.all([API.get(`/tests/${test.id}/results`), API.get(`/students${test.branch_id?`?branch_id=${test.branch_id}`:""}`)]);
+    const query = test.branch_id ? `&branch_id=${test.branch_id}` : "";
+    const [resData, allStudents] = await Promise.all([
+      API.get(`/tests/${test.id}/results`),
+      // Fix: use fetchAllStudents which unwraps paginated response
+      fetchAllStudents(query),
+    ]);
     const existingMap = {};
     resData.data.forEach((r) => existingMap[r.student_id] = r.marks);
-    const filtered = stuData.data.filter((s) => !test.batch_id || s.batch_id == test.batch_id);
+    const filtered = allStudents.filter((s) => !test.batch_id || s.batch_id == test.batch_id);
     setResults(filtered.map((s) => ({ student_id: s.id, student_name: s.name, photo_url: s.photo_url||"", marks: existingMap[s.id]??"" })));
     setShowResultModal(true);
   };
