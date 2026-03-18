@@ -11,6 +11,7 @@ initFCM();
 // #3 — Restrict CORS to specific domains only (no wildcard *)
 const allowedOrigins = [
   "https://acadfee.onrender.com",
+  "https://acadfee-app.onrender.com",
   "http://localhost:3000",
   "http://localhost:5000",
 ];
