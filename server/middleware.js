@@ -1,10 +1,19 @@
 const jwt = require("jsonwebtoken");
 
+// #1 — JWT secret MUST be set via env — no fallback to "secret"
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET) {
+    console.error("FATAL: JWT_SECRET env var is not set!");
+    process.exit(1);
+  }
+  return process.env.JWT_SECRET;
+}
+
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token" });
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    req.user = jwt.verify(token, getJwtSecret());
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
@@ -27,4 +36,18 @@ function branchFilter(req, res, next) {
   next();
 }
 
-module.exports = { auth, superAdmin, branchFilter };
+// #5 — Student access control: students can only see their own data
+function studentSelf(req, res, next) {
+  if (req.user.role === "student") {
+    // For routes with :id param, enforce student can only access own record
+    const paramId = parseInt(req.params.id);
+    if (paramId && paramId !== req.user.id) {
+      return res.status(403).json({ error: "Access denied: you can only view your own data" });
+    }
+    // For list routes, force student_id filter to self
+    req.forcedStudentId = req.user.id;
+  }
+  next();
+}
+
+module.exports = { auth, superAdmin, branchFilter, studentSelf, getJwtSecret };

@@ -1,10 +1,8 @@
 const router  = require("express").Router();
 const db      = require("../db");
-const { auth } = require("../middleware");
+const { auth, getJwtSecret } = require("../middleware");
 const jwt     = require("jsonwebtoken");
 const { sendAttendanceNotification } = require("../fcm");
-
-const QR_SECRET = process.env.JWT_SECRET || "secret";
 
 // IST time formatter
 const toIST = (date) => {
@@ -24,7 +22,7 @@ router.get("/token/:student_id", auth, async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: "Student not found" });
   const token = jwt.sign(
     { student_id: rows[0].id, branch_id: rows[0].branch_id, type: "qr_attendance" },
-    QR_SECRET
+    getJwtSecret()
   );
   res.json({ token, student: rows[0] });
 });
@@ -35,7 +33,7 @@ router.post("/register-token", auth, async (req, res) => {
   if (!student_id || !token || !["student", "parent"].includes(type)) {
     return res.status(400).json({ error: "Invalid request" });
   }
-  // Security: students can only register their own token
+  // #5 Security: students can only register their own token
   if (req.user.role === "student" && req.user.id !== parseInt(student_id)) {
     return res.status(403).json({ error: "Cannot register token for another student" });
   }
@@ -54,7 +52,7 @@ router.post("/scan", auth, async (req, res) => {
 
   let payload;
   try {
-    payload = jwt.verify(token, QR_SECRET);
+    payload = jwt.verify(token, getJwtSecret());
     if (payload.type !== "qr_attendance") throw new Error("Invalid token type");
   } catch (e) {
     return res.status(400).json({ error: "Invalid or tampered QR code" });
@@ -102,16 +100,19 @@ router.post("/scan", auth, async (req, res) => {
     scanType = "exit";
     result = rows[0];
 
-    // Update monthly attendance — cap present at total_days to prevent >100%
-    const month = new Date().getMonth() + 1;
-    const year  = new Date().getFullYear();
+    // #54 — Update monthly attendance correctly:
+    // Use IST month/year (not UTC) and increment total_days + present properly
+    const istDate = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0].trim();
+    const [istYear, istMonth] = istDate.split("-").map(Number);
+
     await db.query(
       `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
-       VALUES ($1,$2,$3,$4,1,1)
+       VALUES ($1, $2, $3, $4, 1, 1)
        ON CONFLICT (student_id, month, year)
        DO UPDATE SET
-         present = LEAST(attendance.present + 1, attendance.total_days)`,
-      [student_id, branch_id, month, year]
+         total_days = attendance.total_days + 1,
+         present    = attendance.present + 1`,
+      [student_id, branch_id, istMonth, istYear]
     );
   } else {
     return res.status(400).json({
@@ -122,7 +123,7 @@ router.post("/scan", auth, async (req, res) => {
     });
   }
 
-  // Send FCM — non-blocking, user-specific
+  // Send FCM notifications — non-blocking, user-specific tokens only
   sendAttendanceNotification({
     studentName:  student.name,
     scanType,
@@ -150,7 +151,6 @@ router.get("/today", auth, async (req, res) => {
   if (!["super_admin", "branch_manager"].includes(req.user.role)) {
     return res.status(403).json({ error: "Access denied" });
   }
-  // Use IST date for today
   const todayIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0].trim();
   const branchCond = req.user.role === "branch_manager"
     ? `AND qs.branch_id=${req.user.branch_id}` : "";

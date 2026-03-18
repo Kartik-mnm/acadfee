@@ -1,8 +1,21 @@
 const router = require("express").Router();
 const db = require("../db");
-const { auth, branchFilter } = require("../middleware");
+const { auth, branchFilter, studentSelf } = require("../middleware");
 
-router.get("/", auth, branchFilter, async (req, res) => {
+// #5 — Students list: students can only see their own record
+router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
+  // If role is student, return only that student's own record
+  if (req.user.role === "student") {
+    const { rows } = await db.query(
+      `SELECT s.*, b.name AS batch_name, br.name AS branch_name
+       FROM students s
+       LEFT JOIN batches b ON b.id = s.batch_id
+       LEFT JOIN branches br ON br.id = s.branch_id
+       WHERE s.id = $1`, [req.user.id]
+    );
+    return res.json(rows);
+  }
+
   const cond = req.branchId ? "WHERE s.branch_id=$1" : "";
   const params = req.branchId ? [req.branchId] : [];
   const { rows } = await db.query(
@@ -16,7 +29,8 @@ router.get("/", auth, branchFilter, async (req, res) => {
   res.json(rows);
 });
 
-router.get("/:id", auth, async (req, res) => {
+// #5 — Single student: students can only see their own record
+router.get("/:id", auth, studentSelf, async (req, res) => {
   const { rows } = await db.query(
     `SELECT s.*, b.name AS batch_name, br.name AS branch_name
      FROM students s
@@ -29,13 +43,14 @@ router.get("/:id", auth, async (req, res) => {
 });
 
 router.post("/", auth, async (req, res) => {
+  // Students cannot create new students
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const {
     branch_id, batch_id, name, phone, parent_phone, email, address,
     dob, gender, admission_date, fee_type, admission_fee, discount,
     discount_reason, due_day, photo_url
   } = req.body;
   const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
-  // due_day: use provided value, default 10, clamp between 1-28
   const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
   try {
     const { rows } = await db.query(
@@ -58,6 +73,8 @@ router.post("/", auth, async (req, res) => {
 });
 
 router.put("/:id", auth, async (req, res) => {
+  // Students cannot update student records
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const {
     batch_id, name, phone, parent_phone, email, address,
     dob, gender, fee_type, admission_fee, discount,
@@ -81,12 +98,18 @@ router.put("/:id", auth, async (req, res) => {
 });
 
 router.delete("/:id", auth, async (req, res) => {
+  // Students cannot delete records
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   await db.query("DELETE FROM students WHERE id=$1", [req.params.id]);
   res.json({ success: true });
 });
 
 // Send fee summary email
 router.post("/:id/send-email", auth, async (req, res) => {
+  // #5 — Students can only send email for their own record
+  if (req.user.role === "student" && req.user.id !== parseInt(req.params.id)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   const { sendFeeSummaryEmail } = require("../email");
   try {
     const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([

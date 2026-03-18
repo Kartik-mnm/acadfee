@@ -2,8 +2,9 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
-// List tests
+// List tests — students cannot access this list page
 router.get("/", auth, branchFilter, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const cond = req.branchId ? "WHERE t.branch_id=$1" : "";
   const { rows } = await db.query(
     `SELECT t.*, b.name AS batch_name, br.name AS branch_name,
@@ -18,8 +19,9 @@ router.get("/", auth, branchFilter, async (req, res) => {
   res.json(rows);
 });
 
-// Create test
+// Create test — students cannot
 router.post("/", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { branch_id, batch_id, name, subject, total_marks, test_date } = req.body;
   const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
   const { rows } = await db.query(
@@ -30,14 +32,16 @@ router.post("/", auth, async (req, res) => {
   res.json(rows[0]);
 });
 
-// Delete test
+// Delete test — students cannot
 router.delete("/:id", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   await db.query("DELETE FROM tests WHERE id=$1", [req.params.id]);
   res.json({ success: true });
 });
 
-// Get results for a test
+// Get results for a test — students cannot access raw test results
 router.get("/:id/results", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { rows } = await db.query(
     `SELECT tr.*, s.name AS student_name, s.phone,
             ROUND((tr.marks / t.total_marks::numeric) * 100, 1) AS percentage
@@ -50,9 +54,10 @@ router.get("/:id/results", auth, async (req, res) => {
   res.json(rows);
 });
 
-// Save results for a test (bulk)
+// Save results for a test (bulk) — students cannot
 router.post("/:id/results", auth, async (req, res) => {
-  const { results } = req.body; // [{student_id, marks}]
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  const { results } = req.body;
   let saved = 0;
   for (const r of results) {
     await db.query(
@@ -66,8 +71,12 @@ router.post("/:id/results", auth, async (req, res) => {
   res.json({ saved });
 });
 
-// Student performance summary
+// #5 — Student performance summary: students can only see their own
 router.get("/student/:studentId", auth, async (req, res) => {
+  // Students can only access their own test results
+  if (req.user.role === "student" && req.user.id !== parseInt(req.params.studentId)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   const { rows } = await db.query(
     `SELECT t.name AS test_name, t.subject, t.total_marks, t.test_date,
             tr.marks, ROUND((tr.marks / t.total_marks::numeric) * 100, 1) AS percentage

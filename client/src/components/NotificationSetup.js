@@ -9,7 +9,8 @@ export default function NotificationSetup({ studentId, type = "student" }) {
   useEffect(() => {
     if (!("Notification" in window)) { setStatus("unsupported"); return; }
     if (Notification.permission === "granted") { setStatus("granted"); registerToken(); }
-  }, []);
+    // eslint-disable-next-line
+  }, [studentId]);
 
   useEffect(() => {
     if (status !== "granted") return;
@@ -25,9 +26,15 @@ export default function NotificationSetup({ studentId, type = "student" }) {
     try {
       const token = await requestNotificationPermission();
       if (!token || !studentId) return;
+
+      // #36 — Store FCM token in localStorage so logout can clear it per-device
+      localStorage.setItem("fcm_token", token);
+
       await API.post("/qrscan/register-token", { student_id: studentId, token, type });
       setStatus("granted");
-    } catch (e) { console.error("Token registration error:", e); }
+    } catch (e) {
+      console.error("Token registration error:", e);
+    }
   };
 
   const handleEnable = async () => {

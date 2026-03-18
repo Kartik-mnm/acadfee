@@ -1,12 +1,25 @@
-const router = require("express").Router();
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const db = require("../db");
-const { auth, superAdmin } = require("../middleware");
+const router   = require("express").Router();
+const bcrypt   = require("bcryptjs");
+const jwt      = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const db       = require("../db");
+const { auth, superAdmin, getJwtSecret } = require("../middleware");
+
+// #4 — Rate limiting on login: max 10 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true, // only count failed attempts
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { error: "Too many login attempts. Please wait 15 minutes and try again." },
+});
 
 // Admin Login
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
   try {
     const { rows } = await db.query(
       `SELECT u.*, b.name AS branch_name FROM users u
@@ -19,7 +32,7 @@ router.post("/login", async (req, res) => {
 
     const token = jwt.sign(
       { id: user.id, role: user.role, branch_id: user.branch_id, name: user.name, branch_name: user.branch_name },
-      process.env.JWT_SECRET || "secret",
+      getJwtSecret(),
       { expiresIn: "12h" }
     );
     res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, branch_id: user.branch_id, branch_name: user.branch_name } });
@@ -29,8 +42,9 @@ router.post("/login", async (req, res) => {
 });
 
 // Student Login
-router.post("/student-login", async (req, res) => {
+router.post("/student-login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
   try {
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
@@ -48,7 +62,7 @@ router.post("/student-login", async (req, res) => {
 
     const token = jwt.sign(
       { id: student.id, role: "student", branch_id: student.branch_id, name: student.name },
-      process.env.JWT_SECRET || "secret",
+      getJwtSecret(),
       { expiresIn: "12h" }
     );
     res.json({
@@ -59,6 +73,30 @@ router.post("/student-login", async (req, res) => {
         branch_name: student.branch_name, batch_name: student.batch_name
       }
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// #36 — Student logout: clear FCM token for this specific device so it no longer receives notifications
+router.post("/student-logout", auth, async (req, res) => {
+  try {
+    const { student_id, token, type } = req.body;
+    if (!student_id || !token) return res.status(400).json({ error: "student_id and token required" });
+
+    // Security: students can only clear their own token
+    if (req.user.role === "student" && req.user.id !== parseInt(student_id)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const col = type === "parent" ? "parent_fcm_token" : "fcm_token";
+
+    // Only clear the token if it matches the stored one (this device's token)
+    await db.query(
+      `UPDATE students SET ${col} = NULL WHERE id = $1 AND ${col} = $2`,
+      [student_id, token]
+    );
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -91,7 +129,6 @@ router.get("/users", auth, superAdmin, async (req, res) => {
 // Delete user
 router.delete("/users/:id", auth, superAdmin, async (req, res) => {
   const { id } = req.params;
-  // Prevent deleting own account
   if (parseInt(id) === req.user.id) return res.status(400).json({ error: "Cannot delete your own account!" });
   await db.query("DELETE FROM users WHERE id=$1", [id]);
   res.json({ success: true });

@@ -2,7 +2,6 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
-// Generate receipt number
 function receiptNo() {
   const d = new Date();
   return `RCP-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${Math.floor(1000+Math.random()*9000)}`;
@@ -12,8 +11,16 @@ function receiptNo() {
 router.get("/", auth, branchFilter, async (req, res) => {
   const { student_id } = req.query;
   let cond = []; let params = []; let i = 1;
-  if (req.branchId) { cond.push(`p.branch_id=$${i++}`); params.push(req.branchId); }
-  if (student_id)   { cond.push(`p.student_id=$${i++}`); params.push(student_id); }
+
+  // #5 — Students can only see their own payments
+  if (req.user.role === "student") {
+    cond.push(`p.student_id=$${i++}`);
+    params.push(req.user.id);
+  } else {
+    if (req.branchId) { cond.push(`p.branch_id=$${i++}`); params.push(req.branchId); }
+    if (student_id)   { cond.push(`p.student_id=$${i++}`); params.push(student_id); }
+  }
+
   const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
   const { rows } = await db.query(
     `SELECT p.*, s.name AS student_name, s.phone, fr.period_label, fr.amount_due,
@@ -31,8 +38,9 @@ router.get("/", auth, branchFilter, async (req, res) => {
 
 const { sendReceiptEmail } = require("../email");
 
-// Record payment
+// Record payment — students cannot record payments
 router.post("/", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { fee_record_id, amount, payment_mode, transaction_ref, paid_on, notes } = req.body;
 
   const { rows: frRows } = await db.query(
@@ -48,7 +56,6 @@ router.post("/", auth, async (req, res) => {
     [fee_record_id, fr.student_id, fr.branch_id, amount, payment_mode, transaction_ref, paid_on || new Date(), req.user.id, notes, receipt]
   );
 
-  // Update fee record paid amount + status
   const newPaid = parseFloat(fr.amount_paid) + parseFloat(amount);
   const newStatus = newPaid >= parseFloat(fr.amount_due) ? "paid" : "partial";
   await db.query(
@@ -56,7 +63,6 @@ router.post("/", auth, async (req, res) => {
     [newPaid, newStatus, fee_record_id]
   );
 
-  // Send email receipt automatically
   try {
     const { rows: fullRows } = await db.query(
       `SELECT p.*, s.name AS student_name, s.email, s.parent_phone AS parent_name,
@@ -77,7 +83,7 @@ router.post("/", auth, async (req, res) => {
   res.json({ ...rows[0], receipt_no: receipt });
 });
 
-// Get single payment (for receipt)
+// Get single payment (for receipt) — #5 students can only see their own
 router.get("/:id", auth, async (req, res) => {
   const { rows } = await db.query(
     `SELECT p.*, s.name AS student_name, s.phone, s.parent_phone AS parent_name, s.email,
@@ -93,6 +99,11 @@ router.get("/:id", auth, async (req, res) => {
      WHERE p.id=$1`, [req.params.id]
   );
   if (!rows[0]) return res.status(404).json({ error: "Not found" });
+
+  // #5 — Students can only view their own payment receipts
+  if (req.user.role === "student" && rows[0].student_id !== req.user.id) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   res.json(rows[0]);
 });
 
