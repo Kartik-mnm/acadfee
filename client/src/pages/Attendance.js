@@ -4,6 +4,13 @@ import API from "../api";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
+// Helper: unwrap paginated /students response
+const fetchAllStudents = (query = "") =>
+  API.get(`/students?limit=1000${query}`).then((r) => {
+    const res = r.data;
+    return Array.isArray(res) ? res : (res.data || []);
+  });
+
 // #33 — Student mini-avatar for attendance table
 function MiniAvatar({ student }) {
   const [imgError, setImgError] = useState(false);
@@ -52,9 +59,10 @@ export default function Attendance() {
   }, [month, year, filterBranch]);
 
   const openBulk = () => {
-    const q = filterBranch ? `?branch_id=${filterBranch}` : "";
-    API.get(`/students${q}`).then((r) => {
-      const filtered = filterBatch ? r.data.filter((s) => s.batch_id == filterBatch) : r.data;
+    const q = filterBranch ? `&branch_id=${filterBranch}` : "";
+    // Fix: use fetchAllStudents which unwraps paginated response
+    fetchAllStudents(q).then((allStudents) => {
+      const filtered = filterBatch ? allStudents.filter((s) => s.batch_id == filterBatch) : allStudents;
       setBulkData(filtered.map((s) => ({
         student_id: s.id, student_name: s.name, photo_url: s.photo_url || "",
         total_days: 26, present: 26, month, year
