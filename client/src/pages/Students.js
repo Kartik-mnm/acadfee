@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import StudentProfile from "./StudentProfile";
@@ -10,11 +10,10 @@ const EMPTY = {
   due_day: "10", batch_id: "", branch_id: "", status: "active", photo_url: ""
 };
 
-// Photo upload component
 function PhotoUpload({ value, onChange }) {
-  const inputRef = useRef();
+  const inputRef  = useRef();
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview]     = useState(value || "");
+  const [preview,   setPreview]   = useState(value || "");
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -29,33 +28,26 @@ function PhotoUpload({ value, onChange }) {
           const { data } = await API.post("/upload/photo", { image: base64 });
           setPreview(data.url);
           onChange(data.url);
-        } catch (err) {
-          // Fallback: use base64 directly if Cloudinary not configured
+        } catch {
           onChange(base64);
         }
         setUploading(false);
       };
       reader.readAsDataURL(file);
-    } catch (e) {
-      setUploading(false);
-    }
+    } catch { setUploading(false); }
   };
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-      <div
-        onClick={() => inputRef.current.click()}
-        style={{
-          width: 80, height: 80, borderRadius: "50%", cursor: "pointer",
-          background: "var(--bg3)", border: "2px dashed var(--border)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          overflow: "hidden", flexShrink: 0, position: "relative"
-        }}
-      >
+      <div onClick={() => inputRef.current.click()} style={{
+        width: 80, height: 80, borderRadius: "50%", cursor: "pointer",
+        background: "var(--bg3)", border: "2px dashed var(--border)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        overflow: "hidden", flexShrink: 0, position: "relative"
+      }}>
         {preview
           ? <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <span style={{ fontSize: 28 }}>👤</span>
-        }
+          : <span style={{ fontSize: 28 }}>👤</span>}
         {uploading && (
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11 }}>
             Uploading…
@@ -78,34 +70,101 @@ function PhotoUpload({ value, onChange }) {
   );
 }
 
+// #13 — Pagination component
+function Pagination({ page, totalPages, total, limit, onPage }) {
+  if (totalPages <= 1) return null;
+  const pages = [];
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - page) <= 2) pages.push(i);
+    else if (pages[pages.length - 1] !== "…") pages.push("…");
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ fontSize: 13, color: "var(--text2)" }}>
+        Showing {((page - 1) * limit) + 1}–{Math.min(page * limit, total)} of <strong>{total}</strong> students
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => onPage(page - 1)} disabled={page === 1}>← Prev</button>
+        {pages.map((p, i) =>
+          p === "…"
+            ? <span key={i} style={{ padding: "4px 8px", color: "var(--text2)" }}>…</span>
+            : <button key={p} className={`btn btn-sm ${p === page ? "btn-primary" : "btn-secondary"}`} onClick={() => onPage(p)}>{p}</button>
+        )}
+        <button className="btn btn-secondary btn-sm" onClick={() => onPage(page + 1)} disabled={page === totalPages}>Next →</button>
+      </div>
+    </div>
+  );
+}
+
 export default function Students() {
   const { user } = useAuth();
-  const [students, setStudents]       = useState([]);
-  const [batches, setBatches]         = useState([]);
-  const [branches, setBranches]       = useState([]);
-  const [search, setSearch]           = useState("");
+  const [students, setStudents]         = useState([]);
+  const [batches,  setBatches]          = useState([]);
+  const [branches, setBranches]         = useState([]);
+  const [search,   setSearch]           = useState("");
   const [filterBranch, setFilterBranch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const [showModal, setShowModal]     = useState(false);
-  const [editing, setEditing]         = useState(null);
-  const [form, setForm]               = useState(EMPTY);
-  const [saving, setSaving]           = useState(false);
-  const [error, setError]             = useState("");
-  const [profileId, setProfileId]     = useState(null);
-  const [portalStudent, setPortalStudent] = useState(null);
+  const [showModal, setShowModal]       = useState(false);
+  const [editing,  setEditing]          = useState(null);
+  const [form,     setForm]             = useState(EMPTY);
+  const [saving,   setSaving]           = useState(false);
+  const [error,    setError]            = useState("");
+  const [profileId, setProfileId]       = useState(null);
+  const [portalStudent,  setPortalStudent]  = useState(null);
   const [portalPassword, setPortalPassword] = useState("");
-  const [portalMsg, setPortalMsg]     = useState("");
+  const [portalMsg,      setPortalMsg]      = useState("");
+  const [loading,  setLoading]          = useState(false);
 
-  const load = () => {
-    const q = filterBranch ? `?branch_id=${filterBranch}` : "";
-    API.get(`/students${q}`).then((r) => setStudents(r.data));
-  };
+  // #13 — Pagination state
+  const [page,       setPage]       = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total,      setTotal]      = useState(0);
+  const LIMIT = 20;
+
+  // #14 — Debounced search ref
+  const searchTimer = useRef(null);
+
+  const load = useCallback((p = 1, q = "", branch = "", status = "") => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: p, limit: LIMIT });
+    if (q)      params.set("search", q);
+    if (branch) params.set("branch_id", branch);
+    if (status) params.set("status", status);
+
+    API.get(`/students?${params}`)
+      .then((r) => {
+        const res = r.data;
+        // Handle paginated response {data:[...], page, total, totalPages}
+        if (res && res.data) {
+          setStudents(res.data);
+          setPage(res.page);
+          setTotalPages(res.totalPages);
+          setTotal(res.total);
+        } else {
+          // Fallback for plain array
+          setStudents(Array.isArray(res) ? res : []);
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
-    load();
+    load(1, "", filterBranch, filterStatus);
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [filterBranch]);
+  }, [filterBranch, filterStatus]);
+
+  // #14 — Debounce search 400ms
+  const handleSearch = (val) => {
+    setSearch(val);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      load(1, val, filterBranch, filterStatus);
+    }, 400);
+  };
+
+  const handlePage = (p) => load(p, search, filterBranch, filterStatus);
 
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
   const openEdit = (s) => {
@@ -119,7 +178,8 @@ export default function Students() {
     try {
       if (editing) await API.put(`/students/${editing}`, form);
       else         await API.post("/students", form);
-      setShowModal(false); load();
+      setShowModal(false);
+      load(page, search, filterBranch, filterStatus);
     } catch (e) {
       setError(e.response?.data?.error || "Save failed");
     } finally { setSaving(false); }
@@ -127,22 +187,15 @@ export default function Students() {
 
   const del = async (id) => {
     if (!window.confirm("Delete this student?")) return;
-    await API.delete(`/students/${id}`); load();
+    await API.delete(`/students/${id}`);
+    load(page, search, filterBranch, filterStatus);
   };
 
   const filteredBatches = user.role === "super_admin" && form.branch_id
     ? batches.filter((b) => b.branch_id == form.branch_id)
     : user.role === "branch_manager" ? batches.filter((b) => b.branch_id == user.branch_id) : batches;
 
-  const filtered = students.filter((s) => {
-    const q = search.toLowerCase();
-    if (q && !s.name.toLowerCase().includes(q) && !s.phone?.includes(q)) return false;
-    if (filterStatus && s.status !== filterStatus) return false;
-    return true;
-  });
-
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-
   const openPortal = (s) => { setPortalStudent(s); setPortalPassword(""); setPortalMsg(""); };
 
   const sendEmail = async (s) => {
@@ -170,13 +223,14 @@ export default function Students() {
       <div className="page-header">
         <div>
           <div className="page-title">Students</div>
-          <div className="page-sub">{filtered.length} student(s) found</div>
+          <div className="page-sub">{total} student(s) total</div>
         </div>
         <button className="btn btn-primary" onClick={openAdd}>+ Add Student</button>
       </div>
 
       <div className="filters-bar">
-        <input className="search-input" placeholder="Search by name / phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="search-input" placeholder="Search by name / phone / email…"
+          value={search} onChange={(e) => handleSearch(e.target.value)} />
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
@@ -191,59 +245,65 @@ export default function Students() {
       </div>
 
       <div className="card">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="empty-state">
+            <div className="empty-text" style={{ color: "var(--text2)" }}>Loading students…</div>
+          </div>
+        ) : students.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">👤</div>
             <div className="empty-text">No students found</div>
+            {search && <div className="empty-sub">Try a different search term</div>}
           </div>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th><th>Photo</th><th>Name</th><th>Batch</th>
-                  {user.role === "super_admin" && <th>Branch</th>}
-                  <th>Phone</th><th>Fee Type</th><th>Due Day</th><th>Status</th><th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s, i) => (
-                  <tr key={s.id}>
-                    <td className="text-muted">{i + 1}</td>
-                    <td>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "var(--bg3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-                        {s.photo_url
-                          ? <img src={s.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : "👤"}
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: "var(--accent)", cursor: "pointer" }} onClick={() => setProfileId(s.id)}>
-                        {s.name}
-                      </div>
-                      <div className="text-muted text-sm">{s.email}</div>
-                    </td>
-                    <td>{s.batch_name || <span className="text-muted">—</span>}</td>
-                    {user.role === "super_admin" && <td>{s.branch_name}</td>}
-                    <td className="mono">{s.phone}</td>
-                    <td><span className="badge badge-blue">{s.fee_type}</span></td>
-                    <td><span className="badge badge-gray">📅 {s.due_day || 10}th</span></td>
-                    <td>
-                      <span className={`badge ${s.status === "active" ? "badge-green" : "badge-gray"}`}>{s.status}</span>
-                    </td>
-                    <td>
-                      <div className="gap-row">
-                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                        <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Student Portal">🎓</button>
-                        <button className="btn btn-success btn-sm" onClick={() => sendEmail(s)} title="Send Email">📧</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
-                      </div>
-                    </td>
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th><th>Photo</th><th>Name</th><th>Batch</th>
+                    {user.role === "super_admin" && <th>Branch</th>}
+                    <th>Phone</th><th>Fee Type</th><th>Due Day</th><th>Status</th><th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {students.map((s, i) => (
+                    <tr key={s.id}>
+                      <td className="text-muted">{((page - 1) * LIMIT) + i + 1}</td>
+                      <td>
+                        <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "var(--bg3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+                          {s.photo_url
+                            ? <img src={s.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : "👤"}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "var(--accent)", cursor: "pointer" }} onClick={() => setProfileId(s.id)}>
+                          {s.name}
+                        </div>
+                        <div className="text-muted text-sm">{s.email}</div>
+                      </td>
+                      <td>{s.batch_name || <span className="text-muted">—</span>}</td>
+                      {user.role === "super_admin" && <td>{s.branch_name}</td>}
+                      <td className="mono">{s.phone}</td>
+                      <td><span className="badge badge-blue">{s.fee_type}</span></td>
+                      <td><span className="badge badge-gray">📅 {s.due_day || 10}th</span></td>
+                      <td><span className={`badge ${s.status === "active" ? "badge-green" : "badge-gray"}`}>{s.status}</span></td>
+                      <td>
+                        <div className="gap-row">
+                          <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                          <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Student Portal">🎓</button>
+                          <button className="btn btn-success btn-sm" onClick={() => sendEmail(s)} title="Send Email">📧</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPage={handlePage} />
+          </>
         )}
       </div>
 
@@ -256,99 +316,55 @@ export default function Students() {
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">
-              {/* Photo Upload */}
               <div className="form-group" style={{ marginBottom: 20 }}>
                 <label>Profile Photo</label>
-                <PhotoUpload
-                  value={form.photo_url}
-                  onChange={(url) => f("photo_url", url)}
-                />
+                <PhotoUpload value={form.photo_url} onChange={(url) => f("photo_url", url)} />
               </div>
-
               <div className="form-grid">
-                <div className="form-group full">
-                  <label>Full Name *</label>
-                  <input value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="Student full name" />
-                </div>
-                <div className="form-group">
-                  <label>Phone</label>
-                  <input value={form.phone} onChange={(e) => f("phone", e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Parent Phone</label>
-                  <input value={form.parent_phone} onChange={(e) => f("parent_phone", e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Email</label>
-                  <input type="email" value={form.email} onChange={(e) => f("email", e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Date of Birth</label>
-                  <input type="date" value={form.dob} onChange={(e) => f("dob", e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Gender</label>
+                <div className="form-group full"><label>Full Name *</label><input value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="Student full name" /></div>
+                <div className="form-group"><label>Phone</label><input value={form.phone} onChange={(e) => f("phone", e.target.value)} /></div>
+                <div className="form-group"><label>Parent Phone</label><input value={form.parent_phone} onChange={(e) => f("parent_phone", e.target.value)} /></div>
+                <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={(e) => f("email", e.target.value)} /></div>
+                <div className="form-group"><label>Date of Birth</label><input type="date" value={form.dob} onChange={(e) => f("dob", e.target.value)} /></div>
+                <div className="form-group"><label>Gender</label>
                   <select value={form.gender} onChange={(e) => f("gender", e.target.value)}>
-                    <option value="">Select</option>
-                    <option>Male</option><option>Female</option><option>Other</option>
+                    <option value="">Select</option><option>Male</option><option>Female</option><option>Other</option>
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>Admission Date</label>
-                  <input type="date" value={form.admission_date} onChange={(e) => f("admission_date", e.target.value)} />
-                </div>
+                <div className="form-group"><label>Admission Date</label><input type="date" value={form.admission_date} onChange={(e) => f("admission_date", e.target.value)} /></div>
                 {user.role === "super_admin" && (
-                  <div className="form-group">
-                    <label>Branch *</label>
+                  <div className="form-group"><label>Branch *</label>
                     <select value={form.branch_id} onChange={(e) => f("branch_id", e.target.value)}>
                       <option value="">Select Branch</option>
                       {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </div>
                 )}
-                <div className="form-group">
-                  <label>Batch</label>
+                <div className="form-group"><label>Batch</label>
                   <select value={form.batch_id} onChange={(e) => f("batch_id", e.target.value)}>
                     <option value="">Select Batch</option>
                     {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>Fee Type</label>
+                <div className="form-group"><label>Fee Type</label>
                   <select value={form.fee_type} onChange={(e) => f("fee_type", e.target.value)}>
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
-                    <option value="course">Per Course</option>
+                    <option value="monthly">Monthly</option><option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option><option value="course">Per Course</option>
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>Admission Fee (₹)</label>
-                  <input type="number" value={form.admission_fee} onChange={(e) => f("admission_fee", e.target.value)} placeholder="0" />
-                </div>
-                <div className="form-group">
-                  <label>Discount (%)</label>
-                  <input type="number" min="0" max="100" value={form.discount} onChange={(e) => f("discount", e.target.value)} placeholder="0" />
-                </div>
-                <div className="form-group full">
-                  <label>Discount Reason</label>
-                  <input value={form.discount_reason} onChange={(e) => f("discount_reason", e.target.value)} placeholder="e.g. Sibling discount" />
-                </div>
+                <div className="form-group"><label>Admission Fee (₹)</label><input type="number" value={form.admission_fee} onChange={(e) => f("admission_fee", e.target.value)} placeholder="0" /></div>
+                <div className="form-group"><label>Discount (%)</label><input type="number" min="0" max="100" value={form.discount} onChange={(e) => f("discount", e.target.value)} placeholder="0" /></div>
+                <div className="form-group full"><label>Discount Reason</label><input value={form.discount_reason} onChange={(e) => f("discount_reason", e.target.value)} placeholder="e.g. Sibling discount" /></div>
                 <div className="form-group">
                   <label>Fee Due Day (1–28) 📅</label>
                   <input type="number" min="1" max="28" value={form.due_day} onChange={(e) => f("due_day", e.target.value)} placeholder="10" />
                   <span style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>Day of month when fee is due</span>
                 </div>
-                <div className="form-group full">
-                  <label>Address</label>
-                  <textarea value={form.address} onChange={(e) => f("address", e.target.value)} />
-                </div>
+                <div className="form-group full"><label>Address</label><textarea value={form.address} onChange={(e) => f("address", e.target.value)} /></div>
                 {editing && (
-                  <div className="form-group">
-                    <label>Status</label>
+                  <div className="form-group"><label>Status</label>
                     <select value={form.status} onChange={(e) => f("status", e.target.value)}>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="active">Active</option><option value="inactive">Inactive</option>
                     </select>
                   </div>
                 )}
@@ -383,11 +399,7 @@ export default function Students() {
                 <input type="password" placeholder="Enter password for student"
                   value={portalPassword} onChange={(e) => setPortalPassword(e.target.value)} />
               </div>
-              {portalMsg && (
-                <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13 }}>
-                  {portalMsg}
-                </div>
-              )}
+              {portalMsg && <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13 }}>{portalMsg}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setPortalStudent(null)}>Close</button>
