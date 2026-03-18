@@ -10,7 +10,7 @@ const { initFCM }         = require("./fcm");
 const { startAbsentCron } = require("./cron");
 
 initFCM();
-startAbsentCron(); // #37 — Auto absent notification at 10 PM IST
+startAbsentCron();
 
 const allowedOrigins = [
   "https://acadfee.onrender.com",
@@ -31,27 +31,26 @@ app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 300,
+  standardHeaders: true, legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
 });
 app.use(globalLimiter);
 
-app.use("/api/auth",       require("./routes/auth"));
-app.use("/api/branches",   require("./routes/branches"));
-app.use("/api/batches",    require("./routes/batches"));
-app.use("/api/students",   require("./routes/students"));
-app.use("/api/fees",       require("./routes/fees"));
-app.use("/api/payments",   require("./routes/payments"));
-app.use("/api/reports",    require("./routes/reports"));
-app.use("/api/attendance", require("./routes/attendance"));
-app.use("/api/tests",      require("./routes/tests"));
-app.use("/api/expenses",   require("./routes/expenses"));
-app.use("/api/qrscan",     require("./routes/qrscan"));
-app.use("/api/admission",  require("./routes/admission"));
-app.use("/api/upload",     require("./routes/upload"));
+app.use("/api/auth",         require("./routes/auth"));
+app.use("/api/branches",     require("./routes/branches"));
+app.use("/api/batches",      require("./routes/batches"));
+app.use("/api/students",     require("./routes/students"));
+app.use("/api/fees",         require("./routes/fees"));
+app.use("/api/payments",     require("./routes/payments"));
+app.use("/api/reports",      require("./routes/reports"));
+app.use("/api/attendance",   require("./routes/attendance"));
+app.use("/api/tests",        require("./routes/tests"));
+app.use("/api/expenses",     require("./routes/expenses"));
+app.use("/api/qrscan",       require("./routes/qrscan"));
+app.use("/api/admission",    require("./routes/admission"));
+app.use("/api/upload",       require("./routes/upload"));
+app.use("/api/working-days", require("./routes/working-days")); // #53
 
 app.get("/health", (_, res) => res.json({ status: "ok", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime()) }));
 app.get("/", (_, res) => res.json({ status: "Nishchay Academy Fee API running" }));
