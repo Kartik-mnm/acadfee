@@ -13,16 +13,20 @@ export default function IDCards() {
   const { user } = useAuth();
   const [students, setStudents]         = useState([]);
   const [branches, setBranches]         = useState([]);
-  const [batches, setBatches]           = useState([]);
+  const [batches,  setBatches]          = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
-  const [filterBatch, setFilterBatch]   = useState("");
-  const [search, setSearch]             = useState("");
-  const [selected, setSelected]         = useState(null);
-  const [qrDataUrl, setQrDataUrl]       = useState("");
-  const [loadingQr, setLoadingQr]       = useState(false);
+  const [filterBatch,  setFilterBatch]  = useState("");
+  const [search,       setSearch]       = useState("");
+  const [selected,     setSelected]     = useState(null);
+  const [qrDataUrl,    setQrDataUrl]    = useState("");
+  const [loadingQr,    setLoadingQr]    = useState(false);
+  const [backfilling,  setBackfilling]  = useState(false);
+  const [backfillMsg,  setBackfillMsg]  = useState("");
+
+  const loadStudents = () => fetchAllStudents().then(setStudents);
 
   useEffect(() => {
-    fetchAllStudents().then(setStudents);
+    loadStudents();
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, []);
@@ -32,7 +36,6 @@ export default function IDCards() {
     setLoadingQr(true);
     API.get(`/qrscan/token/${selected.id}`)
       .then(async (r) => {
-        // Fix #6 — bigger QR: 200px preview, 22mm print
         const url = await QRCode.toDataURL(r.data.token, {
           width: 200, margin: 1,
           errorCorrectionLevel: "L",
@@ -44,21 +47,42 @@ export default function IDCards() {
       .finally(() => setLoadingQr(false));
   }, [selected]);
 
+  // ── Backfill roll numbers for all existing students ────────────────────────
+  const backfillRollNumbers = async () => {
+    if (!window.confirm("Assign branch-based roll numbers (RN/DW/DB) to all students that don't have one yet?")) return;
+    setBackfilling(true);
+    try {
+      const { data } = await API.post("/students/backfill-roll-numbers");
+      setBackfillMsg(`✅ ${data.message}`);
+      loadStudents(); // refresh so roll numbers show immediately
+    } catch (e) {
+      setBackfillMsg("⚠️ " + (e.response?.data?.error || "Failed"));
+    } finally {
+      setBackfilling(false);
+      setTimeout(() => setBackfillMsg(""), 5000);
+    }
+  };
+
   const filtered = students.filter((s) => {
     if (filterBranch && s.branch_id != filterBranch) return false;
     if (filterBatch  && s.batch_id  != filterBatch)  return false;
-    if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !s.name.toLowerCase().includes(search.toLowerCase()) &&
+        !(s.roll_no || "").toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  // Check if student's batch has ended → ID card inactive
   const isBatchEnded = (s) => {
     const b = batches.find((bt) => bt.id === s.batch_id);
     if (!b || !b.end_date) return false;
     return new Date(b.end_date) < new Date();
   };
 
-  const studentId = selected ? (selected.roll_no || `NA-${String(selected.id).padStart(5, "0")}`) : "";
+  // Roll number display: use roll_no if set, else fallback
+  const getRollDisplay = (s) => s?.roll_no || `NA-${String(s?.id || 0).padStart(5, "0")}`;
+  const studentId = selected ? getRollDisplay(selected) : "";
+
+  // Check if any students still have no roll number
+  const missingRollCount = students.filter((s) => !s.roll_no).length;
 
   const printCard = () => {
     const ended = isBatchEnded(selected);
@@ -143,9 +167,21 @@ export default function IDCards() {
           <div className="page-title">Student ID Cards</div>
           <div className="page-sub">Generate and print student ID cards with QR attendance</div>
         </div>
+        {/* Backfill button for super admin — fixes existing students with NA-XXXXX roll numbers */}
+        {user.role === "super_admin" && missingRollCount > 0 && (
+          <button className="btn btn-secondary" onClick={backfillRollNumbers} disabled={backfilling}
+            title={`${missingRollCount} students still have no branch-based roll number`}>
+            {backfilling ? "⏳ Assigning…" : `🎫 Fix Roll Numbers (${missingRollCount} missing)`}
+          </button>
+        )}
       </div>
+
+      {backfillMsg && (
+        <div style={{ marginBottom:16,padding:"10px 14px",background:"var(--bg3)",borderRadius:8,fontSize:13 }}>{backfillMsg}</div>
+      )}
+
       <div className="filters-bar">
-        <input className="search-input" placeholder="Search student…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="search-input" placeholder="Search student or roll no…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
@@ -157,6 +193,7 @@ export default function IDCards() {
           {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       </div>
+
       <div className="grid-2">
         <div className="card">
           <div className="card-title">Select Student ({filtered.length})</div>
@@ -177,7 +214,7 @@ export default function IDCards() {
                     <div className="text-muted text-sm">{s.batch_name || "No batch"} · {s.branch_name}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div className="text-muted text-sm mono">{s.roll_no || `NA-${String(s.id).padStart(5,"0")}`}</div>
+                    <div className="text-muted text-sm mono">{getRollDisplay(s)}</div>
                     {isBatchEnded(s) && <div style={{ fontSize: 10, color: "var(--red)" }}>Batch ended</div>}
                   </div>
                 </div>
@@ -185,6 +222,7 @@ export default function IDCards() {
             </div>
           )}
         </div>
+
         <div className="card">
           <div className="card-title">ID Card Preview</div>
           {!selected ? (
@@ -197,7 +235,7 @@ export default function IDCards() {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
               {isBatchEnded(selected) && (
                 <div style={{ background: "rgba(247,95,95,0.1)", border: "1px solid var(--red)", borderRadius: 8, padding: "8px 14px", fontSize: 12, color: "var(--red)", width: "100%", textAlign: "center" }}>
-                  ⚠️ This student's batch has ended — ID card shows as INACTIVE
+                  ⚠️ This student’s batch has ended — ID card shows as INACTIVE
                 </div>
               )}
               <div style={{ width: 220, background: "white", borderRadius: 16, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontFamily: "'Inter', Arial, sans-serif", position: "relative" }}>
@@ -228,7 +266,6 @@ export default function IDCards() {
                     </div>
                   ))}
                 </div>
-                {/* Fix #6 — QR is now 80px preview (was 56px) */}
                 <div style={{ background: "#f8faff", borderTop: "1px solid #e0e8f5", padding: "8px", display: "flex", flexDirection: "column", alignItems: "center" }}>
                   {loadingQr ? <div style={{ width: 80, height: 80, background: "#eee", borderRadius: 4 }} />
                     : qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 80, height: 80, border: "1px solid #ddd", borderRadius: 4, padding: 2, background: "white" }} /> : null}

@@ -15,7 +15,10 @@ function MiniAvatar({ student }) {
   const [imgError, setImgError] = useState(false);
   const showPhoto = student?.photo_url && !imgError;
   return (
-    <div style={{ width:32,height:32,borderRadius:"50%",flexShrink:0, background:showPhoto?"var(--bg3)":"linear-gradient(135deg,var(--accent),#7c3aed)", display:"flex",alignItems:"center",justifyContent:"center", fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden" }}>
+    <div style={{ width:32,height:32,borderRadius:"50%",flexShrink:0,
+      background: showPhoto ? "var(--bg3)" : "linear-gradient(135deg,var(--accent),#7c3aed)",
+      display:"flex",alignItems:"center",justifyContent:"center",
+      fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden" }}>
       {showPhoto
         ? <img src={student.photo_url} alt={student.student_name} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={() => setImgError(true)} />
         : (student?.student_name?.[0] || "?").toUpperCase()}
@@ -23,23 +26,20 @@ function MiniAvatar({ student }) {
   );
 }
 
-// #53 — Working Day Calendar
+// ── Working Day Calendar ─────────────────────────────────────────────────────
 function WorkingDayCalendar({ month, year, branchId, user, branches }) {
-  const [workingDays,  setWorkingDays]  = useState({});
-  const [saving,       setSaving]       = useState(null);
-  const [showCal,      setShowCal]      = useState(false);
-  // For super_admin with no branch filter selected, let them pick inside the calendar
-  const [calBranchId,  setCalBranchId]  = useState(branchId || "");
+  const [workingDays, setWorkingDays] = useState({});
+  const [saving,      setSaving]      = useState(null);
+  const [showCal,     setShowCal]     = useState(false);
+  const [calBranchId, setCalBranchId] = useState(branchId || "");
 
-  // When parent branchId changes (filter changed), update internal state
   useEffect(() => { setCalBranchId(branchId || ""); }, [branchId]);
 
   const effectiveBranchId = calBranchId || (user.role !== "super_admin" ? user.branch_id : null);
 
   const loadWorkingDays = useCallback(() => {
-    if (!effectiveBranchId) return; // nothing to load without a branch
-    const q = new URLSearchParams({ month, year });
-    q.set("branch_id", effectiveBranchId);
+    if (!effectiveBranchId) return;
+    const q = new URLSearchParams({ month, year, branch_id: effectiveBranchId });
     API.get(`/working-days?${q}`).then((r) => {
       const map = {};
       r.data.forEach((d) => { map[d.date.split("T")[0]] = { is_working: d.is_working, note: d.note }; });
@@ -53,11 +53,11 @@ function WorkingDayCalendar({ month, year, branchId, user, branches }) {
     if (!effectiveBranchId) return;
     setSaving(dateStr);
     try {
-      const newVal = !currentIsWorking;
-      if (newVal === true && workingDays[dateStr]) {
+      if (!currentIsWorking === true && workingDays[dateStr]) {
         await API.delete(`/working-days/${dateStr}?branch_id=${effectiveBranchId}`);
         setWorkingDays((prev) => { const n = { ...prev }; delete n[dateStr]; return n; });
       } else {
+        const newVal = !currentIsWorking;
         await API.post("/working-days", { date: dateStr, is_working: newVal, branch_id: effectiveBranchId, note: newVal ? null : "Holiday" });
         setWorkingDays((prev) => ({ ...prev, [dateStr]: { is_working: newVal, note: newVal ? null : "Holiday" } }));
       }
@@ -96,22 +96,16 @@ function WorkingDayCalendar({ month, year, branchId, user, branches }) {
             <div style={{ fontSize:12,color:"var(--text2)" }}>Click a day to toggle working / holiday</div>
           </div>
 
-          {/* Branch picker for super_admin when no branch filter is active */}
           {user.role === "super_admin" && !branchId && (
             <div style={{ marginBottom:14,padding:"10px 14px",background:"rgba(79,142,247,0.08)",border:"1px solid var(--accent)",borderRadius:8,display:"flex",alignItems:"center",gap:12 }}>
               <span style={{ fontSize:13,fontWeight:600,flexShrink:0 }}>Select branch to manage:</span>
-              <select
-                value={calBranchId}
-                onChange={(e) => { setCalBranchId(e.target.value); setWorkingDays({}); }}
-                style={{ flex:1 }}
-              >
+              <select value={calBranchId} onChange={(e) => { setCalBranchId(e.target.value); setWorkingDays({}); }} style={{ flex:1 }}>
                 <option value="">— Choose a branch —</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
           )}
 
-          {/* If super_admin hasn't chosen a branch yet, show prompt */}
           {!effectiveBranchId ? (
             <div style={{ textAlign:"center",padding:"20px 0",color:"var(--text2)",fontSize:13 }}>
               ☝️ Please select a branch above to manage its working days
@@ -120,7 +114,7 @@ function WorkingDayCalendar({ month, year, branchId, user, branches }) {
             <>
               <div style={{ display:"flex",gap:16,marginBottom:12,fontSize:12 }}>
                 <div style={{ display:"flex",alignItems:"center",gap:6 }}><div style={{ width:12,height:12,background:"var(--green)",borderRadius:3 }}/> Working day</div>
-                <div style={{ display:"flex",alignItems:"center",gap:6 }}><div style={{ width:12,height:12,background:"var(--red)",borderRadius:3 }}/> Holiday (not counted)</div>
+                <div style={{ display:"flex",alignItems:"center",gap:6 }}><div style={{ width:12,height:12,background:"var(--red)",borderRadius:3 }}/> Holiday</div>
               </div>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4 }}>
                 {DAYS_SHORT.map((d) => <div key={d} style={{ textAlign:"center",fontSize:11,color:"var(--text2)",fontWeight:700,padding:"4px 0" }}>{d}</div>)}
@@ -128,14 +122,14 @@ function WorkingDayCalendar({ month, year, branchId, user, branches }) {
               <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4 }}>
                 {days.map((d, i) => {
                   if (!d) return <div key={`e${i}`} />;
-                  const dateStr  = getDateStr(d);
-                  const record   = workingDays[dateStr];
+                  const dateStr   = getDateStr(d);
+                  const record    = workingDays[dateStr];
                   const isWorking = record ? record.is_working : true;
-                  const isToday  = dateStr === today;
-                  const isSaving = saving === dateStr;
+                  const isToday   = dateStr === today;
+                  const isSaving  = saving === dateStr;
                   return (
                     <button key={dateStr} onClick={() => toggleDay(dateStr, isWorking)} disabled={isSaving}
-                      title={record?.note || (isWorking ? "Working day — click to mark holiday" : "Holiday — click to mark working")}
+                      title={record?.note || (isWorking ? "Working — click to mark holiday" : "Holiday — click to mark working")}
                       style={{ padding:"6px 4px",borderRadius:6,
                         border: isToday ? "2px solid var(--accent)" : "1px solid var(--border)",
                         background: isSaving ? "var(--bg3)" : isWorking ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
@@ -148,7 +142,7 @@ function WorkingDayCalendar({ month, year, branchId, user, branches }) {
                   );
                 })}
               </div>
-              <div style={{ marginTop:12,fontSize:12,color:"var(--text2)" }}>ℹ️ Holidays are not counted in QR scan attendance. Students scanned on holidays won't have that day added to their total.</div>
+              <div style={{ marginTop:12,fontSize:12,color:"var(--text2)" }}>ℹ️ Holidays are not counted in QR scan attendance.</div>
             </>
           )}
         </div>
@@ -157,6 +151,7 @@ function WorkingDayCalendar({ month, year, branchId, user, branches }) {
   );
 }
 
+// ── Main Attendance Component ────────────────────────────────────────────────
 export default function Attendance() {
   const { user } = useAuth();
   const [records,      setRecords]      = useState([]);
@@ -169,7 +164,11 @@ export default function Attendance() {
   const [showModal,    setShowModal]    = useState(false);
   const [bulkData,     setBulkData]     = useState([]);
   const [saving,       setSaving]       = useState(false);
+  const [generating,   setGenerating]   = useState(false);
   const [msg,          setMsg]          = useState("");
+  const [workingDaysCount, setWorkingDaysCount] = useState(null);
+
+  const activeBranchId = filterBranch || (user.role !== "super_admin" ? user.branch_id : null);
 
   const load = useCallback(() => {
     const q = new URLSearchParams({ month, year });
@@ -177,17 +176,61 @@ export default function Attendance() {
     API.get(`/attendance?${q}`).then((r) => setRecords(r.data));
   }, [month, year, filterBranch]);
 
+  // Fetch working days count whenever month/year/branch changes
+  useEffect(() => {
+    if (!activeBranchId) { setWorkingDaysCount(null); return; }
+    API.get(`/attendance/working-days-count?month=${month}&year=${year}&branch_id=${activeBranchId}`)
+      .then((r) => setWorkingDaysCount(r.data.working_days))
+      .catch(() => setWorkingDaysCount(null));
+  }, [month, year, activeBranchId]);
+
   useEffect(() => {
     load();
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [month, year, filterBranch]);
 
+  // ── Auto-generate attendance for the month from QR scan data ───────────────
+  const generateMonth = async () => {
+    if (!activeBranchId) {
+      setMsg("⚠️ Please select a branch first");
+      setTimeout(() => setMsg(""), 3000);
+      return;
+    }
+    setGenerating(true);
+    try {
+      const { data } = await API.post("/attendance/generate-month", {
+        month, year, branch_id: activeBranchId
+      });
+      setMsg(`✓ Auto-generated: ${data.created} new + ${data.updated} updated records. Working days: ${data.total_working_days}`);
+      load();
+    } catch (e) {
+      setMsg("⚠ " + (e.response?.data?.error || "Failed to generate"));
+    } finally {
+      setGenerating(false);
+      setTimeout(() => setMsg(""), 5000);
+    }
+  };
+
+  // ── Open manual bulk entry modal ────────────────────────────────────────────
   const openBulk = () => {
     const q = filterBranch ? `&branch_id=${filterBranch}` : "";
     fetchAllStudents(q).then((all) => {
       const filtered = filterBatch ? all.filter((s) => s.batch_id == filterBatch) : all;
-      setBulkData(filtered.map((s) => ({ student_id:s.id,student_name:s.name,photo_url:s.photo_url||"",total_days:26,present:26,month,year })));
+      // Pre-fill total_days from actual working days count (not hardcoded 26)
+      const defaultDays = workingDaysCount ?? 26;
+      setBulkData(filtered.map((s) => {
+        // If a record already exists, pre-fill it
+        const existing = records.find((r) => r.student_id === s.id || r.student_id === String(s.id));
+        return {
+          student_id:   s.id,
+          student_name: s.name,
+          photo_url:    s.photo_url || "",
+          total_days:   existing ? existing.total_days : defaultDays,
+          present:      existing ? existing.present    : 0,
+          month, year,
+        };
+      }));
       setShowModal(true);
     });
   };
@@ -202,23 +245,58 @@ export default function Attendance() {
     finally { setSaving(false); setTimeout(() => setMsg(""), 3000); }
   };
 
-  const updateBulk = (idx, key, val) => setBulkData((prev) => prev.map((r, i) => i === idx ? { ...r, [key]: val } : r));
-  const pct       = (present, total) => total > 0 ? Math.round((present / total) * 100) : 0;
-  const pctColor  = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
+  const updateBulk = (idx, key, val) =>
+    setBulkData((prev) => prev.map((r, i) => i === idx ? { ...r, [key]: val } : r));
+
+  const pct      = (present, total) => total > 0 ? Math.round((present / total) * 100) : 0;
+  const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
+
+  // Summary stats
+  const totalStudents   = records.length;
+  const avgPct          = totalStudents > 0 ? Math.round(records.reduce((s, r) => s + parseFloat(r.percentage), 0) / totalStudents) : 0;
+  const belowThreshold  = records.filter((r) => parseFloat(r.percentage) < 75).length;
+  const fullPresent     = records.filter((r) => parseInt(r.present) === parseInt(r.total_days)).length;
+
+  const filtered = filterBatch
+    ? records.filter((r) => batches.find((b) => b.id == filterBatch && b.name === r.batch_name))
+    : records;
 
   return (
     <div>
       <div className="page-header">
-        <div><div className="page-title">Attendance</div><div className="page-sub">Monthly attendance summary</div></div>
-        <button className="btn btn-primary" onClick={openBulk}>+ Enter Attendance</button>
+        <div>
+          <div className="page-title">Attendance</div>
+          <div className="page-sub">Monthly attendance — absent = working days − QR scans</div>
+        </div>
+        <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+          <button className="btn btn-secondary" onClick={generateMonth} disabled={generating} title="Auto-fill attendance from QR scan data for this month">
+            {generating ? "⏳ Generating…" : "🔄 Auto-Generate from QR"}
+          </button>
+          <button className="btn btn-primary" onClick={openBulk}>+ Manual Entry</button>
+        </div>
       </div>
 
       {msg && <div style={{ marginBottom:16,padding:"10px 14px",background:"var(--bg3)",borderRadius:8,fontSize:13 }}>{msg}</div>}
 
+      {/* How it works info banner */}
+      <div style={{ marginBottom:16,padding:"10px 16px",background:"rgba(79,142,247,0.08)",border:"1px solid rgba(79,142,247,0.2)",borderRadius:8,fontSize:12,color:"var(--text2)",lineHeight:1.7 }}>
+        <strong style={{ color:"var(--accent)" }}>💡 How attendance works:</strong> &nbsp;
+        QR scans (entry+exit) count as present automatically. &nbsp;
+        Click <strong>🔄 Auto-Generate from QR</strong> to create/update all records for this month — absent = working days − scanned days. &nbsp;
+        Use <strong>+ Manual Entry</strong> to override individual values.
+        {workingDaysCount !== null && (
+          <span> &nbsp;·&nbsp; <strong style={{ color:"var(--green)" }}>{workingDaysCount} working days</strong> in {MONTHS[month-1]} {year} for this branch.</span>
+        )}
+      </div>
+
       <div className="filters-bar">
-        <select value={month} onChange={(e) => setMonth(e.target.value)}>{MONTHS.map((m,i) => <option key={i} value={i+1}>{m}</option>)}</select>
-        <select value={year}  onChange={(e) => setYear(e.target.value)}>{[2024,2025,2026,2027].map((y) => <option key={y} value={y}>{y}</option>)}</select>
-        {user.role==="super_admin" && (
+        <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+          {MONTHS.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
+        </select>
+        <select value={year}  onChange={(e) => setYear(Number(e.target.value))}>
+          {[2024,2025,2026,2027].map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -230,7 +308,7 @@ export default function Attendance() {
         </select>
       </div>
 
-      {/* #53 — Working Day Calendar (admins only) */}
+      {/* Working Day Calendar */}
       {user.role !== "student" && (
         <WorkingDayCalendar
           month={month} year={year}
@@ -240,73 +318,141 @@ export default function Attendance() {
         />
       )}
 
+      {/* Summary stat cards */}
+      {records.length > 0 && (
+        <div className="stat-grid" style={{ marginBottom:16 }}>
+          <div className="stat-card blue">
+            <div className="stat-label">Total Students</div>
+            <div className="stat-value blue">{totalStudents}</div>
+          </div>
+          <div className="stat-card green">
+            <div className="stat-label">Avg Attendance</div>
+            <div className="stat-value green">{avgPct}%</div>
+          </div>
+          <div className="stat-card red">
+            <div className="stat-label">Below 75%</div>
+            <div className="stat-value red">{belowThreshold}</div>
+          </div>
+          <div className="stat-card yellow">
+            <div className="stat-label">Full Present</div>
+            <div className="stat-value yellow">{fullPresent}</div>
+          </div>
+        </div>
+      )}
+
       <div className="card">
-        {records.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">📅</div>
             <div className="empty-text">No attendance records for {MONTHS[month-1]} {year}</div>
-            <div className="empty-sub">Click "Enter Attendance" to add</div>
+            <div className="empty-sub">
+              Click <strong>🔄 Auto-Generate from QR</strong> to pull QR scan data for this month,
+              or <strong>+ Manual Entry</strong> to enter manually.
+            </div>
           </div>
         ) : (
           <div className="table-wrap"><table>
             <thead>
-              <tr><th>Photo</th><th>Student</th>{user.role==="super_admin"&&<th>Branch</th>}<th>Batch</th><th>Total Days</th><th>Present</th><th>Absent</th><th>Percentage</th></tr>
-            </thead>
-            <tbody>{records.map((r) => (
-              <tr key={r.id}>
-                <td><MiniAvatar student={r} /></td>
-                <td style={{ fontWeight:600 }}>{r.student_name}</td>
-                {user.role==="super_admin"&&<td className="text-muted">{r.branch_name}</td>}
-                <td className="text-muted">{r.batch_name||"—"}</td>
-                <td>{r.total_days}</td>
-                <td style={{ color:"var(--green)",fontWeight:600 }}>{r.present}</td>
-                <td style={{ color:"var(--red)",fontWeight:600 }}>{r.total_days-r.present}</td>
-                <td>
-                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                    <div style={{ flex:1,background:"var(--bg3)",borderRadius:4,height:6 }}>
-                      <div style={{ width:`${r.percentage}%`,background:pctColor(r.percentage),height:"100%",borderRadius:4 }}/>
-                    </div>
-                    <span style={{ color:pctColor(r.percentage),fontWeight:700,minWidth:40 }}>{r.percentage}%</span>
-                  </div>
-                </td>
+              <tr>
+                <th>Photo</th><th>Student</th>
+                {user.role === "super_admin" && <th>Branch</th>}
+                <th>Batch</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Attendance %</th>
               </tr>
-            ))}</tbody>
+            </thead>
+            <tbody>
+              {filtered.map((r) => {
+                const absent = parseInt(r.total_days) - parseInt(r.present);
+                const pctVal = parseFloat(r.percentage);
+                return (
+                  <tr key={r.id}>
+                    <td><MiniAvatar student={r} /></td>
+                    <td style={{ fontWeight:600 }}>{r.student_name}</td>
+                    {user.role === "super_admin" && <td className="text-muted">{r.branch_name}</td>}
+                    <td className="text-muted">{r.batch_name || "—"}</td>
+                    <td>{r.total_days}</td>
+                    <td style={{ color:"var(--green)",fontWeight:600 }}>{r.present}</td>
+                    <td style={{ color: absent > 0 ? "var(--red)" : "var(--text2)",fontWeight: absent > 0 ? 600 : 400 }}>
+                      {absent}
+                    </td>
+                    <td>
+                      <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                        <div style={{ flex:1,background:"var(--bg3)",borderRadius:4,height:6 }}>
+                          <div style={{ width:`${pctVal}%`,background:pctColor(pctVal),height:"100%",borderRadius:4 }}/>
+                        </div>
+                        <span style={{ color:pctColor(pctVal),fontWeight:700,minWidth:42,textAlign:"right" }}>
+                          {pctVal}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
           </table></div>
         )}
       </div>
 
+      {/* Manual Bulk Entry Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget&&setShowModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal modal-lg">
             <div className="modal-header">
-              <div className="modal-title">Enter Attendance — {MONTHS[month-1]} {year}</div>
+              <div className="modal-title">Manual Entry — {MONTHS[month-1]} {year}</div>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">
-              {bulkData.length===0 ? (
+              {workingDaysCount !== null && (
+                <div style={{ marginBottom:12,padding:"8px 14px",background:"rgba(34,211,165,0.08)",border:"1px solid rgba(34,211,165,0.2)",borderRadius:8,fontSize:12,color:"var(--green)" }}>
+                  📅 This month has <strong>{workingDaysCount} working days</strong> (pre-filled as Total Days). Adjust Present manually.
+                </div>
+              )}
+              {bulkData.length === 0 ? (
                 <div className="empty-state"><div className="empty-text">No students found</div></div>
               ) : (
                 <div className="table-wrap"><table>
-                  <thead><tr><th>Photo</th><th>Student</th><th>Total Days</th><th>Present</th><th>%</th></tr></thead>
-                  <tbody>{bulkData.map((r,i) => (
-                    <tr key={r.student_id}>
-                      <td>
-                        <div style={{ width:30,height:30,borderRadius:"50%",overflow:"hidden",background:"var(--bg3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13 }}>
-                          {r.photo_url ? <img src={r.photo_url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/> : r.student_name?.[0]?.toUpperCase()||"?"}
-                        </div>
-                      </td>
-                      <td style={{ fontWeight:600 }}>{r.student_name}</td>
-                      <td><input type="number" value={r.total_days} min="0" max="31" onChange={(e)=>updateBulk(i,"total_days",e.target.value)} style={{ width:70 }}/></td>
-                      <td><input type="number" value={r.present} min="0" max={r.total_days} onChange={(e)=>updateBulk(i,"present",e.target.value)} style={{ width:70 }}/></td>
-                      <td style={{ color:pctColor(pct(r.present,r.total_days)),fontWeight:700 }}>{pct(r.present,r.total_days)}%</td>
-                    </tr>
-                  ))}</tbody>
+                  <thead>
+                    <tr><th>Photo</th><th>Student</th><th>Total Days</th><th>Present</th><th>Absent</th><th>%</th></tr>
+                  </thead>
+                  <tbody>
+                    {bulkData.map((r,i) => {
+                      const absentVal = Math.max(0, parseInt(r.total_days||0) - parseInt(r.present||0));
+                      const pctVal    = pct(r.present, r.total_days);
+                      return (
+                        <tr key={r.student_id}>
+                          <td>
+                            <div style={{ width:30,height:30,borderRadius:"50%",overflow:"hidden",background:"var(--bg3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13 }}>
+                              {r.photo_url
+                                ? <img src={r.photo_url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                                : r.student_name?.[0]?.toUpperCase() || "?"}
+                            </div>
+                          </td>
+                          <td style={{ fontWeight:600 }}>{r.student_name}</td>
+                          <td>
+                            <input type="number" value={r.total_days} min="0" max="31"
+                              onChange={(e) => updateBulk(i,"total_days",e.target.value)}
+                              style={{ width:70 }}/>
+                          </td>
+                          <td>
+                            <input type="number" value={r.present} min="0" max={r.total_days}
+                              onChange={(e) => updateBulk(i,"present",e.target.value)}
+                              style={{ width:70 }}/>
+                          </td>
+                          <td style={{ color: absentVal > 0 ? "var(--red)" : "var(--text2)", fontWeight: absentVal > 0 ? 700 : 400 }}>
+                            {absentVal}
+                          </td>
+                          <td style={{ color:pctColor(pctVal),fontWeight:700 }}>{pctVal}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
                 </table></div>
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={()=>setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveBulk} disabled={saving}>{saving?"Saving…":"✓ Save Attendance"}</button>
+              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveBulk} disabled={saving}>
+                {saving ? "Saving…" : "✓ Save Attendance"}
+              </button>
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter, studentSelf } = require("../middleware");
 
-// Branch prefix map for roll numbers (#7)
+// Branch prefix map for roll numbers
 const BRANCH_PREFIX = {
   "favinagar": "RN",
   "ravinagar": "RN",
@@ -18,7 +18,6 @@ function getRollPrefix(branchName) {
   for (const [key, prefix] of Object.entries(BRANCH_PREFIX)) {
     if (lower.includes(key)) return prefix;
   }
-  // Fallback: first 2 letters of branch name
   return branchName.replace(/[^a-zA-Z]/g, "").substring(0, 2).toUpperCase() || "NA";
 }
 
@@ -31,7 +30,61 @@ async function initRollNoColumn() {
 }
 initRollNoColumn();
 
-// List students
+// ── Backfill roll numbers for all existing students that have roll_no = NULL ──
+// Called once from the frontend "Generate Roll Numbers" button.
+// Groups students by branch, assigns sequential numbers per branch.
+router.post("/backfill-roll-numbers", auth, async (req, res) => {
+  if (req.user.role !== "super_admin") return res.status(403).json({ error: "Super admin only" });
+  try {
+    // Get all students without a roll number, ordered by id (admission order)
+    const { rows: students } = await db.query(
+      `SELECT s.id, s.branch_id, br.name AS branch_name
+       FROM students s
+       JOIN branches br ON br.id = s.branch_id
+       WHERE s.roll_no IS NULL
+       ORDER BY s.branch_id, s.id ASC`
+    );
+
+    // For each branch, find the highest existing serial so we don't collide
+    const { rows: existing } = await db.query(
+      `SELECT branch_id, MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
+       FROM students
+       WHERE roll_no IS NOT NULL
+       GROUP BY branch_id`
+    );
+    const maxSerial = {};
+    existing.forEach((r) => { maxSerial[r.branch_id] = r.max_serial || 0; });
+
+    let updated = 0;
+    const client = await db.pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const s of students) {
+        const prefix = getRollPrefix(s.branch_name);
+        const serial = (maxSerial[s.branch_id] || 0) + 1;
+        maxSerial[s.branch_id] = serial;
+        const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
+        await client.query(
+          `UPDATE students SET roll_no=$1 WHERE id=$2 AND roll_no IS NULL`,
+          [rollNo, s.id]
+        );
+        updated++;
+      }
+      await client.query("COMMIT");
+      res.json({ updated, message: `Roll numbers assigned to ${updated} students` });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error("Backfill roll numbers error:", e.message);
+    res.status(500).json({ error: "Failed to backfill roll numbers: " + e.message });
+  }
+});
+
+// ── List students ────────────────────────────────────────────────────────────
 router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
   try {
     if (req.user.role === "student") {
@@ -53,7 +106,7 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
     if (req.query.batch_id) { conditions.push(`s.batch_id = $${idx++}`);  params.push(req.query.batch_id); }
     if (req.query.status)   { conditions.push(`s.status = $${idx++}`);    params.push(req.query.status); }
     if (search) {
-      conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR s.parent_phone ILIKE $${idx} OR s.email ILIKE $${idx})`);
+      conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR s.parent_phone ILIKE $${idx} OR s.email ILIKE $${idx} OR s.roll_no ILIKE $${idx})`);
       params.push(`%${search}%`); idx++;
     }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
@@ -100,12 +153,15 @@ router.post("/", auth, async (req, res) => {
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
 
-    // Generate roll number: prefix + zero-padded sequential id
     const { rows: brRows } = await db.query("SELECT name FROM branches WHERE id=$1", [bid]);
     const prefix = getRollPrefix(brRows[0]?.name || "");
-    // Get count of existing students in this branch for serial
-    const { rows: cntRows } = await db.query("SELECT COUNT(*) FROM students WHERE branch_id=$1", [bid]);
-    const serial = parseInt(cntRows[0].count) + 1;
+
+    // Find highest existing serial for this branch to avoid collision
+    const { rows: maxRows } = await db.query(
+      `SELECT MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
+       FROM students WHERE branch_id=$1 AND roll_no IS NOT NULL`, [bid]
+    );
+    const serial = (maxRows[0]?.max_serial || 0) + 1;
     const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
 
     const { rows } = await db.query(
