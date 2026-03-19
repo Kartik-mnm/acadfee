@@ -2,7 +2,36 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter, studentSelf } = require("../middleware");
 
-// List students — paginated, searchable, branch-filtered
+// Branch prefix map for roll numbers (#7)
+const BRANCH_PREFIX = {
+  "favinagar": "RN",
+  "ravinagar": "RN",
+  "dattawadi": "DW",
+  "dattwadi":  "DW",
+  "dabha":     "DB",
+  "dhabha":    "DB",
+};
+
+function getRollPrefix(branchName) {
+  if (!branchName) return "NA";
+  const lower = branchName.toLowerCase();
+  for (const [key, prefix] of Object.entries(BRANCH_PREFIX)) {
+    if (lower.includes(key)) return prefix;
+  }
+  // Fallback: first 2 letters of branch name
+  return branchName.replace(/[^a-zA-Z]/g, "").substring(0, 2).toUpperCase() || "NA";
+}
+
+// Auto-add roll_no column if not exists
+async function initRollNoColumn() {
+  try {
+    await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS roll_no VARCHAR(20) UNIQUE`);
+    console.log("✅ students.roll_no column ready");
+  } catch (e) { console.error("Roll no migration error:", e.message); }
+}
+initRollNoColumn();
+
+// List students
 router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
   try {
     if (req.user.role === "student") {
@@ -15,39 +44,29 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
       );
       return res.json(rows);
     }
-
     const page   = Math.max(1, parseInt(req.query.page) || 1);
     const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
     const offset = (page - 1) * limit;
     const search = (req.query.search || "").trim();
-
     let conditions = []; let params = []; let idx = 1;
-
     if (req.branchId)       { conditions.push(`s.branch_id = $${idx++}`); params.push(req.branchId); }
     if (req.query.batch_id) { conditions.push(`s.batch_id = $${idx++}`);  params.push(req.query.batch_id); }
     if (req.query.status)   { conditions.push(`s.status = $${idx++}`);    params.push(req.query.status); }
     if (search) {
       conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR s.parent_phone ILIKE $${idx} OR s.email ILIKE $${idx})`);
-      params.push(`%${search}%`);
-      idx++;
+      params.push(`%${search}%`); idx++;
     }
-
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
     const { rows: countRows } = await db.query(`SELECT COUNT(*) FROM students s ${where}`, [...params]);
-    const total      = parseInt(countRows[0].count);
+    const total = parseInt(countRows[0].count);
     const totalPages = Math.ceil(total / limit);
-
-    params.push(limit);
-    params.push(offset);
-
+    params.push(limit); params.push(offset);
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
        FROM students s
        LEFT JOIN batches b ON b.id = s.batch_id
        LEFT JOIN branches br ON br.id = s.branch_id
-       ${where}
-       ORDER BY s.id DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
+       ${where} ORDER BY s.id DESC LIMIT $${idx++} OFFSET $${idx++}`,
       params
     );
     res.json({ data: rows, page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 });
@@ -69,7 +88,6 @@ router.get("/:id", auth, studentSelf, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: "Not found" });
     res.json(rows[0]);
   } catch (e) {
-    console.error("Get student error:", e.message);
     res.status(500).json({ error: "Failed to fetch student" });
   }
 });
@@ -81,10 +99,19 @@ router.post("/", auth, async (req, res) => {
     if (!name || !batch_id) return res.status(400).json({ error: "name and batch_id are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
+
+    // Generate roll number: prefix + zero-padded sequential id
+    const { rows: brRows } = await db.query("SELECT name FROM branches WHERE id=$1", [bid]);
+    const prefix = getRollPrefix(brRows[0]?.name || "");
+    // Get count of existing students in this branch for serial
+    const { rows: cntRows } = await db.query("SELECT COUNT(*) FROM students WHERE branch_id=$1", [bid]);
+    const serial = parseInt(cntRows[0].count) + 1;
+    const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
+
     const { rows } = await db.query(
-      `INSERT INTO students (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-      [bid, batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date, fee_type, admission_fee || 0, discount || 0, discount_reason, dueDaySafe, photo_url || null]
+      `INSERT INTO students (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, roll_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+      [bid, batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date, fee_type, admission_fee || 0, discount || 0, discount_reason, dueDaySafe, photo_url || null, rollNo]
     );
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
     res.json(rows[0]);
@@ -107,7 +134,6 @@ router.put("/:id", auth, async (req, res) => {
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
     res.json(rows[0]);
   } catch (e) {
-    console.error("Update student error:", e.message);
     res.status(500).json({ error: "Failed to update student" });
   }
 });
@@ -119,7 +145,6 @@ router.delete("/:id", auth, async (req, res) => {
     if (rowCount === 0) return res.status(404).json({ error: "Student not found" });
     res.json({ success: true });
   } catch (e) {
-    console.error("Delete student error:", e.message);
     res.status(500).json({ error: "Failed to delete student" });
   }
 });
@@ -141,7 +166,6 @@ router.post("/:id/send-email", auth, async (req, res) => {
     const result = await sendFeeSummaryEmail({ student: stuRes.rows[0], fees: feeRes.rows, payments: payRes.rows, attendance: attRes.rows, tests: testRes.rows });
     res.json(result);
   } catch (e) {
-    console.error("Send email error:", e.message);
     res.status(500).json({ error: "Failed to send email" });
   }
 });

@@ -33,15 +33,16 @@ async function sendNotification(token, title, body, data = {}) {
       webpush: {
         notification: {
           title, body,
-          icon:    "/logo.png",
-          badge:   "/logo.png",
+          // Use absolute Render URL so browser notifications show the logo
+          icon:    process.env.APP_URL ? `${process.env.APP_URL}/logo.png` : "/logo.png",
+          badge:   process.env.APP_URL ? `${process.env.APP_URL}/logo.png` : "/logo.png",
           vibrate: [200, 100, 200],
           requireInteraction: false,
         },
         fcmOptions: { link: "/" },
       },
     });
-    console.log(`✅ FCM sent to token: ${title}`);
+    console.log(`✅ FCM sent: ${title}`);
     return { success: true, result };
   } catch (e) {
     console.error("FCM send error:", e.message);
@@ -49,27 +50,29 @@ async function sendNotification(token, title, body, data = {}) {
   }
 }
 
+// Fix #1 — student notification now includes their name too
 async function sendAttendanceNotification({ studentName, scanType, time, timeIST, studentToken, parentToken }) {
-  // Use IST time in notification messages
   const displayTime = timeIST || new Date(time).toLocaleTimeString("en-IN", {
     timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
   });
 
-  const studentTitle = scanType === "entry" ? "✅ Entry Marked" : "🚪 Exit Marked";
+  const studentTitle = scanType === "entry"
+    ? `✅ ${studentName} — Entry Marked`
+    : `🚪 ${studentName} — Exit Marked`;
   const studentBody  = scanType === "entry"
-    ? `You have arrived at Nishchay Academy at ${displayTime} (IST)`
-    : `You have exited Nishchay Academy at ${displayTime} (IST)`;
+    ? `${studentName} arrived at Nishchay Academy at ${displayTime} (IST)`
+    : `${studentName} exited Nishchay Academy at ${displayTime} (IST)`;
 
   const parentTitle = scanType === "entry"
     ? `✅ ${studentName} has arrived`
     : `🚪 ${studentName} has left`;
   const parentBody  = scanType === "entry"
-    ? `Your child arrived at Nishchay Academy at ${displayTime} (IST)`
-    : `Your child left Nishchay Academy at ${displayTime} (IST)`;
+    ? `Your child ${studentName} arrived at Nishchay Academy at ${displayTime} (IST)`
+    : `Your child ${studentName} left Nishchay Academy at ${displayTime} (IST)`;
 
   const results = await Promise.allSettled([
-    sendNotification(studentToken, studentTitle, studentBody, { scan_type: scanType }),
-    sendNotification(parentToken,  parentTitle,  parentBody,  { scan_type: scanType }),
+    sendNotification(studentToken, studentTitle, studentBody, { scan_type: scanType, student_name: studentName }),
+    sendNotification(parentToken,  parentTitle,  parentBody,  { scan_type: scanType, student_name: studentName }),
   ]);
   return results;
 }

@@ -2,8 +2,16 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 
-const EMPTY = { name: "", subjects: "", fee_monthly: "", fee_quarterly: "", fee_yearly: "", fee_course: "", branch_id: "" };
+const EMPTY = { name: "", subjects: "", fee_monthly: "", fee_quarterly: "", fee_yearly: "", fee_course: "", branch_id: "", start_date: "", end_date: "" };
 const fmt = (n) => n ? `₹${Number(n).toLocaleString("en-IN")}` : "—";
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN") : "—";
+
+function batchStatus(b) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (b.end_date && new Date(b.end_date) < today) return { label: "Ended", cls: "badge-red" };
+  if (b.start_date && new Date(b.start_date) > today) return { label: "Upcoming", cls: "badge-yellow" };
+  return { label: "Active", cls: "badge-green" };
+}
 
 export default function Batches() {
   const { user } = useAuth();
@@ -22,8 +30,8 @@ export default function Batches() {
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, []);
 
-  const openAdd = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
-  const openEdit = (b) => { setEditing(b.id); setForm(b); setError(""); setShowModal(true); };
+  const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
+  const openEdit = (b) => { setEditing(b.id); setForm({ ...b, start_date: b.start_date ? b.start_date.split("T")[0] : "", end_date: b.end_date ? b.end_date.split("T")[0] : "" }); setError(""); setShowModal(true); };
 
   const save = async () => {
     setSaving(true); setError("");
@@ -47,17 +55,14 @@ export default function Batches() {
       <div className="page-header">
         <div>
           <div className="page-title">Batches & Courses</div>
-          <div className="page-sub">Manage batches and their fee structures</div>
+          <div className="page-sub">Manage batches, fee structures and batch dates</div>
         </div>
         <button className="btn btn-primary" onClick={openAdd}>+ Add Batch</button>
       </div>
 
       <div className="card">
         {batches.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📚</div>
-            <div className="empty-text">No batches yet</div>
-          </div>
+          <div className="empty-state"><div className="empty-icon">📚</div><div className="empty-text">No batches yet</div></div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -65,27 +70,31 @@ export default function Batches() {
                 <tr>
                   <th>Batch Name</th><th>Subjects</th>
                   {user.role === "super_admin" && <th>Branch</th>}
-                  <th>Monthly</th><th>Quarterly</th><th>Yearly</th><th>Course</th><th>Actions</th>
+                  <th>Monthly</th><th>Yearly</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {batches.map((b) => (
-                  <tr key={b.id}>
-                    <td style={{ fontWeight: 600 }}>{b.name}</td>
-                    <td className="text-muted">{b.subjects || "—"}</td>
-                    {user.role === "super_admin" && <td>{b.branch_name}</td>}
-                    <td className="mono">{fmt(b.fee_monthly)}</td>
-                    <td className="mono">{fmt(b.fee_quarterly)}</td>
-                    <td className="mono">{fmt(b.fee_yearly)}</td>
-                    <td className="mono">{fmt(b.fee_course)}</td>
-                    <td>
-                      <div className="gap-row">
-                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(b)}>Edit</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => del(b.id)}>Del</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {batches.map((b) => {
+                  const st = batchStatus(b);
+                  return (
+                    <tr key={b.id}>
+                      <td style={{ fontWeight: 600 }}>{b.name}</td>
+                      <td className="text-muted">{b.subjects || "—"}</td>
+                      {user.role === "super_admin" && <td>{b.branch_name}</td>}
+                      <td className="mono">{fmt(b.fee_monthly)}</td>
+                      <td className="mono">{fmt(b.fee_yearly)}</td>
+                      <td className="text-muted">{fmtDate(b.start_date)}</td>
+                      <td className="text-muted">{fmtDate(b.end_date)}</td>
+                      <td><span className={`badge ${st.cls}`}>{st.label}</span></td>
+                      <td>
+                        <div className="gap-row">
+                          <button className="btn btn-secondary btn-sm" onClick={() => openEdit(b)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => del(b.id)}>Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -133,6 +142,17 @@ export default function Batches() {
                 <div className="form-group">
                   <label>Course / One-time Fee (₹)</label>
                   <input type="number" value={form.fee_course} onChange={(e) => f("fee_course", e.target.value)} placeholder="0" />
+                </div>
+                <div className="form-group">
+                  <label>Batch Start Date</label>
+                  <input type="date" value={form.start_date} onChange={(e) => f("start_date", e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Batch End Date</label>
+                  <input type="date" value={form.end_date} onChange={(e) => f("end_date", e.target.value)} />
+                </div>
+                <div className="form-group full" style={{ background: "rgba(79,142,247,0.06)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text2)" }}>
+                  💡 When end date passes, students of this batch will automatically show as <strong>inactive</strong> on their ID cards.
                 </div>
               </div>
               {error && <div className="error-msg" style={{ marginTop: 12 }}>⚠ {error}</div>}

@@ -36,6 +36,7 @@ body {
   display: flex; flex-direction: column;
   padding: 20px 14px;
   gap: 8px;
+  overflow: hidden;  /* sidebar itself clips */
 }
 
 .sidebar-brand {
@@ -43,12 +44,29 @@ body {
   padding: 10px 8px 18px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
+  flex-shrink: 0;  /* never shrink brand */
 }
 .brand-icon { font-size: 28px; }
 .brand-title { font-weight: 800; font-size: 16px; color: var(--accent); }
 .brand-sub { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .08em; }
 
-.sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+/* Fix #9 — sidebar nav scrolls when items overflow */
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;          /* enables scroll */
+  scrollbar-width: thin;     /* Firefox: thin scrollbar */
+  scrollbar-color: var(--border) transparent;
+  padding-right: 2px;        /* breathing room for scrollbar */
+  min-height: 0;             /* required for flex children to scroll */
+}
+/* Webkit scrollbar styling */
+.sidebar-nav::-webkit-scrollbar { width: 4px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: var(--text2); }
 
 .nav-item {
   display: flex; align-items: center; gap: 10px;
@@ -58,12 +76,18 @@ body {
   font-family: inherit; font-size: 13.5px; font-weight: 500;
   transition: all .15s;
   text-align: left;
+  flex-shrink: 0;  /* nav items never shrink */
 }
 .nav-item:hover { background: var(--bg3); color: var(--text); }
 .nav-item.active { background: rgba(79,142,247,.15); color: var(--accent); font-weight: 700; }
 .nav-icon { font-size: 16px; width: 20px; text-align: center; }
 
-.sidebar-footer { border-top: 1px solid var(--border); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  flex-shrink: 0;  /* footer never shrinks */
+}
 .user-pill { display: flex; align-items: center; gap: 10px; }
 .user-avatar {
   width: 34px; height: 34px; border-radius: 50%;
@@ -290,31 +314,24 @@ select option { background: var(--bg2); }
     padding-top: 66px;
   }
 
-  /* Stack grids on mobile */
   .grid-2 { grid-template-columns: 1fr; }
   .grid-3 { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .form-group.full { grid-column: 1; }
 
-  /* Make tables scrollable */
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-  /* Page header stacks on mobile */
   .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
 
-  /* Filters wrap nicely */
   .filters-bar { flex-wrap: wrap; }
   .filters-bar input, .filters-bar select { min-width: 140px; flex: 1; }
 
-  /* Login card full width on mobile */
   .login-card { width: 95vw; padding: 28px 20px; }
 
-  /* Modal full width on mobile */
   .modal { max-width: 100%; border-radius: 16px 16px 0 0; }
   .modal-overlay { align-items: flex-end; padding: 0; }
 
-  /* Buttons wrap on mobile */
   .gap-row { flex-wrap: wrap; }
 }
 
