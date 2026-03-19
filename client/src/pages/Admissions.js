@@ -10,7 +10,6 @@ export default function Admissions() {
   const [msg, setMsg]             = useState("");
   const [filter, setFilter]       = useState("pending");
 
-  // QR code URL for admission form
   const admissionUrl = `${window.location.origin}/apply`;
   const [qrDataUrl, setQrDataUrl] = useState("");
 
@@ -48,60 +47,266 @@ export default function Admissions() {
     load();
   };
 
-  const printForm = (e) => {
+  // Print the EXACT same Nishchay Academy registration form layout
+  // populated with data the student submitted (including extra JSON fields)
+  const printForm = (enq) => {
+    // Parse extra JSON — contains father_name, mother_name, dob, aadhar, etc.
+    let ex = {};
+    if (enq.extra) {
+      try { ex = JSON.parse(enq.extra); } catch {}
+    }
+
+    const photoUrl   = enq.photo_url || ex.photo_url || "";
+    const fatherName = ex.father_name    || "";
+    const motherName = ex.mother_name    || "";
+    const dob        = ex.dob            || "";
+    const age        = ex.age            || "";
+    const aadhar     = ex.aadhar         || "";
+    const motherTongue   = ex.mother_tongue   || "";
+    const previousSchool = ex.previous_school || "";
+    const medium     = ex.medium         || "";
+    const className  = ex.class_name     || "";
+    const percent    = ex.percent        || "";
+    const guardianName = ex.guardian_name || "";
+
     const w = window.open("", "_blank");
-    w.document.write(`<!DOCTYPE html><html><head><title>Admission Form - ${e.name}</title>
-    <style>
-      * { margin:0; padding:0; box-sizing:border-box; }
-      body { font-family: Arial, sans-serif; padding: 30px; color: #111; }
-      .header { text-align: center; border-bottom: 3px solid #0a1628; padding-bottom: 16px; margin-bottom: 24px; }
-      .academy { font-size: 22px; font-weight: 900; color: #0a1628; letter-spacing: 1px; }
-      .subtitle { font-size: 13px; color: #555; margin-top: 4px; }
-      .form-title { font-size: 16px; font-weight: 800; text-align: center; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; border: 2px solid #0a1628; padding: 8px; }
-      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-      .field { border-bottom: 1.5px solid #ccc; padding-bottom: 6px; }
-      .field-label { font-size: 9px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-      .field-value { font-size: 14px; font-weight: 600; margin-top: 3px; min-height: 20px; }
-      .full { grid-column: 1 / -1; }
-      .status { display: inline-block; padding: 4px 14px; border-radius: 4px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-      .status-pending  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
-      .status-approved { background: #d4edda; color: #155724; border: 1px solid #28a745; }
-      .status-rejected { background: #f8d7da; color: #721c24; border: 1px solid #dc3545; }
-      .footer { margin-top: 40px; display: flex; justify-content: space-between; }
-      .sign-box { text-align: center; }
-      .sign-line { border-top: 1.5px solid #333; width: 160px; margin: 0 auto; padding-top: 6px; font-size: 11px; color: #555; }
-      @media print { body { padding: 20px; } }
-    </style></head><body>
+    w.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Registration Form - ${enq.name}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; background: #e8e8e8; padding: 20px 16px; }
+    @media print {
+      body { background: white; padding: 0; }
+      .no-print { display: none !important; }
+    }
+    .form-wrap {
+      max-width: 720px; margin: 0 auto; background: white;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.18); border-radius: 4px;
+    }
+    .header { padding: 20px 28px 16px; border-bottom: 4px solid #cc0000; }
+    .header-inner { display: flex; align-items: center; justify-content: center; gap: 20px; }
+    .academy-name {
+      font-size: 36px; font-weight: 900; color: #cc0000;
+      font-family: 'Arial Black', Arial, sans-serif; letter-spacing: 2px; line-height: 1;
+    }
+    .academy-addr { font-size: 11px; color: #333; margin-top: 8px; line-height: 1.8; text-align: center; }
+    .form-title-bar { text-align: center; padding: 10px; border-bottom: 2px solid #cc0000; }
+    .form-title-text {
+      font-size: 17px; font-weight: 900; color: #cc0000;
+      letter-spacing: 3px; text-decoration: underline;
+    }
+    .body { padding: 18px 28px; }
+    .top-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 20px; }
+    .photo-box {
+      width: 100px; height: 120px; border: 2px solid #333;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; background: #fafafa; border-radius: 2px; flex-shrink: 0;
+    }
+    .photo-box img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-placeholder { font-size: 13px; font-weight: 900; color: #333; letter-spacing: 1px; }
+    .inp {
+      display: inline-block; width: 100%; padding: 3px 2px;
+      border: none; border-bottom: 1.5px solid #333;
+      background: transparent; font-size: 13px; font-family: Arial, sans-serif;
+      color: #000; min-height: 22px; vertical-align: bottom;
+    }
+    .lbl { font-size: 12px; font-weight: 700; color: #111; white-space: nowrap; }
+    .num { font-size: 12px; font-weight: 700; color: #111; min-width: 22px; }
+    .field-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .divider { border-top: 1px solid #ccc; margin-bottom: 14px; }
+    .addr-box {
+      flex: 1; min-height: 55px; border: 1px solid #999; padding: 6px 8px;
+      border-radius: 2px; font-size: 13px; font-family: Arial, sans-serif;
+      color: #000; background: white; white-space: pre-wrap; word-break: break-word;
+    }
+    .declaration { border: 2px solid #333; border-radius: 4px; padding: 14px 18px; margin-bottom: 18px; }
+    .decl-title {
+      text-align: center; font-size: 13px; font-weight: 900; color: #cc0000;
+      text-decoration: underline; margin-bottom: 12px; letter-spacing: 1px;
+    }
+    .decl-text { font-size: 12px; line-height: 2; color: #111; }
+    .blank { display: inline-block; border-bottom: 1px solid #333; }
+    .sign-row { display: flex; justify-content: space-between; margin-top: 20px; font-size: 12px; }
+    .footer-note { text-align: center; font-size: 11px; color: #888; margin-top: 10px; padding-bottom: 16px; }
+    .no-print-btn {
+      display: block; text-align: center; margin: 20px auto 0;
+    }
+    .print-btn {
+      padding: 10px 28px; background: #cc0000; color: white;
+      border: none; border-radius: 6px; font-size: 15px; cursor: pointer;
+      font-weight: 900; letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="form-wrap">
+    <!-- HEADER -->
     <div class="header">
-      <div class="academy">NISHCHAY ACADEMY</div>
-      <div class="subtitle">Admission Enquiry Form</div>
+      <div class="header-inner">
+        <div style="text-align:center">
+          <div class="academy-name">NISHCHAY ACADEMY</div>
+          <div class="academy-addr">
+            Branch 1. Beside P.D. Hospital, Dabha, Khadgaon Road, Wadi, Nagpur- 23<br/>
+            Branch 2. 1st Floor, Seva Medical, Dattwadi, Nagpur- 23<br/>
+            Branch 3. G-34 , Sai Regency , Ravinagar , Nagpur -01<br/>
+            Mob: 8208145483, 9371333013 &nbsp;|&nbsp; nishchayacademy20@gmail.com
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="form-title">Student Admission Application</div>
-    <div class="grid">
-      <div class="field"><div class="field-label">Enquiry ID</div><div class="field-value">#${e.id}</div></div>
-      <div class="field"><div class="field-label">Date</div><div class="field-value">${new Date(e.created_at).toLocaleDateString("en-IN")}</div></div>
-      <div class="field full"><div class="field-label">Student Name</div><div class="field-value">${e.name}</div></div>
-      <div class="field"><div class="field-label">Student Phone</div><div class="field-value">${e.phone || "—"}</div></div>
-      <div class="field"><div class="field-label">Parent Phone</div><div class="field-value">${e.parent_phone || "—"}</div></div>
-      <div class="field full"><div class="field-label">Email</div><div class="field-value">${e.email || "—"}</div></div>
-      <div class="field"><div class="field-label">Branch</div><div class="field-value">${e.branch_name || "—"}</div></div>
-      <div class="field"><div class="field-label">Course / Batch</div><div class="field-value">${e.batch_name || "—"}</div></div>
-      <div class="field full"><div class="field-label">Address</div><div class="field-value">${e.address || "—"}</div></div>
-      <div class="field"><div class="field-label">Status</div><div class="field-value"><span class="status status-${e.status}">${e.status}</span></div></div>
-      ${e.student_id ? `<div class="field"><div class="field-label">Student ID</div><div class="field-value">NA-${String(e.student_id).padStart(5,"0")}</div></div>` : ""}
+
+    <!-- FORM TITLE -->
+    <div class="form-title-bar">
+      <span class="form-title-text">REGISTRATION FORM</span>
     </div>
-    <div class="footer">
-      <div class="sign-box"><div class="sign-line">Student / Parent Signature</div></div>
-      <div class="sign-box"><div class="sign-line">Admin Signature</div></div>
-      <div class="sign-box"><div class="sign-line">Authorized By</div></div>
+
+    <div class="body">
+
+      <!-- TOP ROW: Aadhar + Branch + Course + Photo -->
+      <div class="top-row">
+        <div style="flex:1">
+          <div class="field-row">
+            <span class="lbl">AADHAR NO. :</span>
+            <div class="inp">${aadhar}</div>
+          </div>
+          <div class="field-row">
+            <span class="lbl" style="min-width:60px">BRANCH :</span>
+            <div class="inp">${enq.branch_name || ""}</div>
+          </div>
+          <div class="field-row">
+            <span class="lbl" style="min-width:60px">COURSE :</span>
+            <div class="inp">${enq.batch_name || ""}</div>
+          </div>
+        </div>
+        <div class="photo-box">
+          ${photoUrl
+            ? `<img src="${photoUrl}" alt="Photo"/>`
+            : `<span class="photo-placeholder">PHOTO</span>`
+          }
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- FIELDS 1–3 -->
+      <div class="field-row">
+        <span class="num">1)</span>
+        <span class="lbl" style="min-width:190px">FULL NAME OF STUDENT : <span style="color:#cc0000">*</span></span>
+        <div class="inp" style="flex:1">${enq.name}</div>
+      </div>
+      <div class="field-row">
+        <span class="num">2)</span>
+        <span class="lbl" style="min-width:190px">FATHER NAME :</span>
+        <div class="inp" style="flex:1">${fatherName}</div>
+      </div>
+      <div class="field-row">
+        <span class="num">3)</span>
+        <span class="lbl" style="min-width:190px">MOTHER NAME :</span>
+        <div class="inp" style="flex:1">${motherName}</div>
+      </div>
+
+      <!-- FIELD 4 + 5: DOB + Age -->
+      <div class="field-row">
+        <span class="num">4)</span>
+        <span class="lbl" style="min-width:130px">DATE OF BIRTH :</span>
+        <div class="inp" style="flex:2">${dob}</div>
+        <span class="num" style="margin-left:16px">5)</span>
+        <span class="lbl">AGE :</span>
+        <div class="inp" style="width:60px">${age}</div>
+      </div>
+
+      <!-- FIELDS 6–7 -->
+      <div class="field-row">
+        <span class="num">6)</span>
+        <span class="lbl" style="min-width:190px">MOTHER TONGUE :</span>
+        <div class="inp" style="flex:1">${motherTongue}</div>
+      </div>
+      <div class="field-row">
+        <span class="num">7)</span>
+        <span class="lbl" style="min-width:190px">PREVIOUS SCHOOL :</span>
+        <div class="inp" style="flex:1">${previousSchool}</div>
+      </div>
+
+      <!-- FIELD 8: Medium + Class + Percent -->
+      <div class="field-row">
+        <span class="num">8)</span>
+        <span class="lbl">MEDIUM :</span>
+        <div class="inp" style="width:100px">${medium}</div>
+        <span class="lbl" style="margin-left:12px">CLASS :</span>
+        <div class="inp" style="width:80px">${className}</div>
+        <span class="lbl" style="margin-left:12px">PERCENT :</span>
+        <div class="inp" style="width:80px">${percent}</div>
+      </div>
+
+      <!-- FIELD 9: Guardian -->
+      <div class="field-row">
+        <span class="num">9)</span>
+        <span class="lbl" style="min-width:230px">NAME OF PARENT OR GUARDIAN :</span>
+        <div class="inp" style="flex:1">${guardianName}</div>
+      </div>
+
+      <!-- FIELD 10: Address -->
+      <div class="field-row" style="align-items:flex-start">
+        <span class="num">10)</span>
+        <span class="lbl" style="min-width:80px">ADDRESS :</span>
+        <div class="addr-box">${enq.address || ""}</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- FIELDS 11–13: Contact -->
+      <div class="field-row">
+        <span class="num">11)</span>
+        <span class="lbl" style="min-width:220px">STUDENT MOBILE NUMBER : <span style="color:#cc0000">*</span></span>
+        <div class="inp" style="flex:1">${enq.phone || ""}</div>
+      </div>
+      <div class="field-row">
+        <span class="num">12)</span>
+        <span class="lbl" style="min-width:220px">PARENT MOBILE NUMBER : <span style="color:#cc0000">*</span></span>
+        <div class="inp" style="flex:1">${enq.parent_phone || ""}</div>
+      </div>
+      <div class="field-row">
+        <span class="num">13)</span>
+        <span class="lbl" style="min-width:220px">EMAIL ID :</span>
+        <div class="inp" style="flex:1">${enq.email || ""}</div>
+      </div>
+
+      <div style="border-top:2px solid #333;margin:18px 0"></div>
+
+      <!-- DECLARATION -->
+      <div class="declaration">
+        <div class="decl-title">DECLARATION BY PARENTS / GUARDIAN</div>
+        <div class="decl-text">
+          I <span class="blank" style="min-width:180px">&nbsp;</span>
+          REQUEST TO ADMIT MY SON / DAUGHTER IN CLASS
+          <span class="blank" style="min-width:60px">&nbsp;</span>
+          OF THE NISHCHAY ACADEMY, NAGPUR. I AGREE TO THE TERMS AND CONDITIONS
+          OF THE INSTITUTE AND ASSURE TO ABIDE BY THEM. I ALSO UNDERTAKE TO PAY THE FEES LEVIED.
+        </div>
+        <div class="sign-row">
+          <div>DATE : <span class="blank" style="min-width:130px">&nbsp;</span></div>
+          <div>SIGNATURE : ___________________</div>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        For Official Use : 200/- Form Fees &nbsp;|&nbsp; Receiver Sign : _______________
+      </div>
     </div>
-    </body></html>`);
+  </div>
+
+  <!-- Print button (hidden when printing) -->
+  <div class="no-print no-print-btn">
+    <button class="print-btn" onclick="window.print()">🖨 PRINT FORM</button>
+  </div>
+</body>
+</html>`);
     w.document.close();
-    setTimeout(() => w.print(), 400);
   };
 
   const filtered = enquiries.filter((e) => filter === "all" ? true : e.status === filter);
-
   const statusColor = (s) => s === "approved" ? "badge-green" : s === "rejected" ? "badge-red" : "badge-yellow";
 
   return (
@@ -117,8 +322,6 @@ export default function Admissions() {
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">📱 Admission QR Code</div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
-
-          {/* QR Image */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
             {qrDataUrl ? (
               <div style={{ background: "white", padding: 12, borderRadius: 12, border: "2px solid var(--border)", boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
@@ -135,7 +338,6 @@ export default function Admissions() {
             }}>⬇ Download QR</button>
           </div>
 
-          {/* Link + instructions */}
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 13, marginBottom: 8, color: "var(--text2)" }}>
               Share this link or print the QR code. Students scan it to fill the admission form — no login required!
