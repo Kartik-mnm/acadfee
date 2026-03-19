@@ -8,32 +8,38 @@ export function AuthProvider({ children }) {
     try { return JSON.parse(localStorage.getItem("user")); } catch { return null; }
   });
 
-  const login = (token, userData) => {
+  // Called after a successful login — stores both tokens + user info
+  const login = (token, userData, refreshToken) => {
     localStorage.setItem("token", token);
     localStorage.setItem("user", JSON.stringify(userData));
+    if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
     setUser(userData);
   };
 
-  // #36 — On logout, clear this device's FCM token from the server
-  // so this device no longer receives notifications for this student.
   const logout = async () => {
     try {
-      const storedUser = JSON.parse(localStorage.getItem("user"));
-      const fcmToken   = localStorage.getItem("fcm_token");
+      const storedUser    = JSON.parse(localStorage.getItem("user"));
+      const fcmToken      = localStorage.getItem("fcm_token");
+      const refreshToken  = localStorage.getItem("refreshToken");
 
       if (storedUser?.role === "student" && fcmToken) {
         // Tell the server to un-register this device's FCM token
         await API.post("/auth/student-logout", {
-          student_id: storedUser.id,
-          token:      fcmToken,
-          type:       "student",
-        }).catch(() => {}); // non-blocking — don't block logout on failure
+          student_id:   storedUser.id,
+          token:        fcmToken,
+          type:         "student",
+          refreshToken, // also invalidates the refresh token server-side
+        }).catch(() => {});
+      } else if (refreshToken) {
+        // For admin/manager: just invalidate the refresh token
+        await API.post("/auth/logout", { refreshToken }).catch(() => {});
       }
     } catch (_) {}
 
     localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
-    localStorage.removeItem("fcm_token"); // clear stored FCM token for this device
+    localStorage.removeItem("fcm_token");
     setUser(null);
   };
 
