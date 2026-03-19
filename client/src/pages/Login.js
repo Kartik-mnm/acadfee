@@ -16,7 +16,8 @@ export default function Login() {
     try {
       const endpoint = panel === "student" ? "/auth/student-login" : "/auth/login";
       const { data } = await API.post(endpoint, form);
-      login(data.token, data.user);
+      // Pass refreshToken as 3rd arg so api.js can silently renew access tokens
+      login(data.token, data.user, data.refreshToken);
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {
