@@ -23,9 +23,8 @@ function initFCM() {
   }
 }
 
-// Build the notification icon URL.
-// Uses nishchay-logo.png which is confirmed present in /public.
-// APP_URL is set in Render env vars: https://acadfee-app.onrender.com
+// Absolute URL to the academy logo hosted on the frontend
+// APP_URL is set in Render env: https://acadfee-app.onrender.com
 function getIconUrl() {
   const base = (process.env.APP_URL || "https://acadfee-app.onrender.com").replace(/\/$/, "");
   return `${base}/nishchay-logo.png`;
@@ -45,27 +44,23 @@ async function sendNotification(token, title, body, data = {}) {
         notification: {
           title,
           body,
-          icon:    iconUrl,   // absolute HTTPS URL → shows academy logo in browser notifications
-          badge:   iconUrl,   // small monochrome badge icon (Android Chrome)
+          // icon  → large image on the RIGHT of the Android notification (working correctly)
+          // badge → omitted intentionally:
+          //          Android requires a white-on-transparent monochrome PNG for the left slot.
+          //          Passing a full-colour logo causes Android to show Chrome's blue square
+          //          as a fallback, which looks worse than no badge at all.
+          icon:    iconUrl,
           vibrate: [200, 100, 200],
           requireInteraction: false,
-          // Click action: opens the app
-          click_action: process.env.APP_URL || "https://acadfee-app.onrender.com",
+          tag:      "nishchay-attendance",
+          renotify: true,
         },
         fcmOptions: {
           link: process.env.APP_URL || "https://acadfee-app.onrender.com",
         },
       },
-      android: {
-        notification: {
-          icon: "ic_launcher",  // uses native Android icon if app is installed as PWA
-          color: "#2563eb",     // Arctic Blue accent
-          sound: "default",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
-      },
     });
-    console.log(`✅ FCM sent to token: ${token.substring(0, 20)}… | ${title}`);
+    console.log(`✅ FCM sent: ${title}`);
     return { success: true, result };
   } catch (e) {
     console.error("FCM send error:", e.message);
