@@ -12,36 +12,42 @@ function statusBadge(s) {
 
 export default function Fees() {
   const { user } = useAuth();
-  const [records, setRecords] = useState([]);
-  const [branches, setBranches] = useState([]);
+  const [records,      setRecords]      = useState([]);
+  const [branches,     setBranches]     = useState([]);
+  const [students,     setStudents]     = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const [search, setSearch] = useState("");
+  const [search,       setSearch]       = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
-  const [showManual, setShowManual] = useState(false);
-  const [students, setStudents] = useState([]);
+  const [showManual,   setShowManual]   = useState(false);
   const [genForm, setGenForm] = useState({ branch_id: "", month: new Date().getMonth() + 1, year: new Date().getFullYear() });
   const [manForm, setManForm] = useState({ student_id: "", amount_due: "", due_date: "", period_label: "" });
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [manError, setManError] = useState("");
+  const [msg,    setMsg]    = useState("");
 
   const load = () => {
     const q = new URLSearchParams();
     if (filterBranch) q.set("branch_id", filterBranch);
-    if (filterStatus) q.set("status", filterStatus);
+    if (filterStatus) q.set("status",    filterStatus);
     API.get(`/fees?${q}`).then((r) => setRecords(r.data));
   };
 
   useEffect(() => {
     load();
-    API.get("/students").then((r) => setStudents(r.data));
+    // Load students for manual modal — unwrap paginated response
+    API.get("/students?limit=1000").then((r) => {
+      const res = r.data;
+      setStudents(Array.isArray(res) ? res : (res.data || []));
+    });
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch, filterStatus]);
 
   const markOverdue = async () => {
     const { data } = await API.patch("/fees/mark-overdue");
     setMsg(`✓ Marked ${data.updated} records as overdue`);
-    load(); setTimeout(() => setMsg(""), 3000);
+    load();
+    setTimeout(() => setMsg(""), 3000);
   };
 
   const generate = async () => {
@@ -55,13 +61,24 @@ export default function Fees() {
     finally { setSaving(false); }
   };
 
+  // Fix #3 — validate before submit and show inline error
   const addManual = async () => {
+    setManError("");
+    if (!manForm.student_id) { setManError("⚠ Please select a student"); return; }
+    if (!manForm.amount_due || parseFloat(manForm.amount_due) <= 0) { setManError("⚠ Amount Due must be greater than 0"); return; }
+    if (!manForm.due_date) { setManError("⚠ Due Date is required"); return; }
+    if (!manForm.period_label) { setManError("⚠ Period Label is required (e.g. June 2025)"); return; }
     setSaving(true);
     try {
       await API.post("/fees", manForm);
-      setShowManual(false); load();
-    } catch (e) { setMsg("⚠ " + (e.response?.data?.error || "Failed")); }
-    finally { setSaving(false); }
+      setShowManual(false);
+      setManForm({ student_id: "", amount_due: "", due_date: "", period_label: "" });
+      load();
+      setMsg("✓ Fee record added successfully");
+      setTimeout(() => setMsg(""), 3000);
+    } catch (e) {
+      setManError("⚠ " + (e.response?.data?.error || "Failed to add record"));
+    } finally { setSaving(false); }
   };
 
   const filtered = records.filter((r) => {
@@ -78,8 +95,8 @@ export default function Fees() {
         </div>
         <div className="gap-row">
           <button className="btn btn-secondary" onClick={markOverdue}>⚠ Mark Overdue</button>
-          <button className="btn btn-secondary" onClick={() => setShowManual(true)}>+ Manual Record</button>
-          <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>⚡ Generate Monthly</button>
+          <button className="btn btn-secondary" onClick={() => { setManError(""); setShowManual(true); }}>+ Manual Record</button>
+          <button className="btn btn-primary"   onClick={() => setShowGenerate(true)}>⚡ Generate Monthly</button>
         </div>
       </div>
 
@@ -187,7 +204,7 @@ export default function Fees() {
         </div>
       )}
 
-      {/* Manual Modal */}
+      {/* Manual Record Modal — Fixed #3 */}
       {showManual && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowManual(false)}>
           <div className="modal">
@@ -199,28 +216,55 @@ export default function Fees() {
               <div className="form-grid">
                 <div className="form-group full">
                   <label>Student *</label>
-                  <select value={manForm.student_id} onChange={(e) => setManForm({ ...manForm, student_id: e.target.value })}>
+                  <select
+                    value={manForm.student_id}
+                    onChange={(e) => setManForm({ ...manForm, student_id: e.target.value })}
+                  >
                     <option value="">Select Student</option>
-                    {students.map((s) => <option key={s.id} value={s.id}>{s.name} – {s.batch_name || "No batch"}</option>)}
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} – {s.batch_name || "No batch"} ({s.branch_name || ""})
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="form-group">
                   <label>Amount Due (₹) *</label>
-                  <input type="number" value={manForm.amount_due} onChange={(e) => setManForm({ ...manForm, amount_due: e.target.value })} />
+                  <input
+                    type="number" min="1"
+                    placeholder="e.g. 2500"
+                    value={manForm.amount_due}
+                    onChange={(e) => setManForm({ ...manForm, amount_due: e.target.value })}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Due Date *</label>
-                  <input type="date" value={manForm.due_date} onChange={(e) => setManForm({ ...manForm, due_date: e.target.value })} />
+                  <input
+                    type="date"
+                    value={manForm.due_date}
+                    onChange={(e) => setManForm({ ...manForm, due_date: e.target.value })}
+                  />
                 </div>
                 <div className="form-group full">
-                  <label>Period Label</label>
-                  <input value={manForm.period_label} onChange={(e) => setManForm({ ...manForm, period_label: e.target.value })} placeholder="e.g. June 2025" />
+                  <label>Period Label *</label>
+                  <input
+                    placeholder="e.g. June 2025"
+                    value={manForm.period_label}
+                    onChange={(e) => setManForm({ ...manForm, period_label: e.target.value })}
+                  />
                 </div>
               </div>
+              {manError && (
+                <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, color: "var(--red)", fontSize: 13 }}>
+                  {manError}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowManual(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={addManual} disabled={saving}>{saving ? "Saving…" : "Add Record"}</button>
+              <button className="btn btn-primary" onClick={addManual} disabled={saving}>
+                {saving ? "Saving…" : "Add Record"}
+              </button>
             </div>
           </div>
         </div>

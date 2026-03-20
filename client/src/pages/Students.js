@@ -15,6 +15,9 @@ function PhotoUpload({ value, onChange }) {
   const [uploading, setUploading] = useState(false);
   const [preview,   setPreview]   = useState(value || "");
 
+  // Sync preview when value changes from outside (e.g. editing existing student)
+  useEffect(() => { setPreview(value || ""); }, [value]);
+
   const handleFile = async (file) => {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { alert("Image must be under 5MB"); return; }
@@ -27,9 +30,9 @@ function PhotoUpload({ value, onChange }) {
         try {
           const { data } = await API.post("/upload/photo", { image: base64 });
           setPreview(data.url);
-          onChange(data.url);
+          onChange(data.url); // ← passes Cloudinary URL up to form
         } catch {
-          onChange(base64);
+          onChange(base64); // fallback: use base64 directly
         }
         setUploading(false);
       };
@@ -70,7 +73,6 @@ function PhotoUpload({ value, onChange }) {
   );
 }
 
-// #13 — Pagination component
 function Pagination({ page, totalPages, total, limit, onPage }) {
   if (totalPages <= 1) return null;
   const pages = [];
@@ -96,6 +98,132 @@ function Pagination({ page, totalPages, total, limit, onPage }) {
   );
 }
 
+// ── Device Sessions Modal ───────────────────────────────────────────────────────────────
+function DeviceSessionsModal({ student, onClose }) {
+  const [sessions,     setSessions]     = useState([]);
+  const [deviceLimit,  setDeviceLimit]  = useState(2);
+  const [newLimit,     setNewLimit]     = useState(2);
+  const [loading,      setLoading]      = useState(true);
+  const [savingLimit,  setSavingLimit]  = useState(false);
+  const [msg,          setMsg]          = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.get(`/auth/student-sessions/${student.id}`);
+      setSessions(data.sessions);
+      setDeviceLimit(data.device_limit);
+      setNewLimit(data.device_limit);
+    } catch (e) { setMsg("⚠ " + (e.response?.data?.error || "Failed to load")); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const revokeSession = async (tokenId) => {
+    if (!window.confirm("Remove this device's access? The student will be logged out on that device.")) return;
+    try {
+      await API.delete(`/auth/student-sessions/${tokenId}`);
+      setMsg("✅ Device removed");
+      load();
+    } catch { setMsg("⚠ Failed to remove"); }
+  };
+
+  const revokeAll = async () => {
+    if (!window.confirm(`Log out ${student.name} from ALL devices?`)) return;
+    try {
+      const { data } = await API.delete(`/auth/student-sessions-all/${student.id}`);
+      setMsg(`✅ Revoked ${data.revoked} session(s)`);
+      load();
+    } catch { setMsg("⚠ Failed"); }
+  };
+
+  const updateLimit = async () => {
+    setSavingLimit(true);
+    try {
+      await API.patch(`/auth/student-device-limit/${student.id}`, { limit: parseInt(newLimit) });
+      setDeviceLimit(parseInt(newLimit));
+      setMsg(`✅ Device limit updated to ${newLimit}`);
+    } catch { setMsg("⚠ Failed to update limit"); }
+    finally { setSavingLimit(false); setTimeout(() => setMsg(""), 3000); }
+  };
+
+  const fmtTime = (d) => new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 500 }}>
+        <div className="modal-header">
+          <div className="modal-title">📱 Device Sessions — {student.name}</div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {/* Device limit control */}
+          <div style={{ background: "var(--bg3)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Max Concurrent Logins</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="number" min="1" max="10"
+                value={newLimit}
+                onChange={(e) => setNewLimit(e.target.value)}
+                style={{ width: 80 }}
+              />
+              <button className="btn btn-primary btn-sm" onClick={updateLimit} disabled={savingLimit}>
+                {savingLimit ? "Saving…" : "Update"}
+              </button>
+              <span style={{ fontSize: 12, color: "var(--text2)" }}>
+                Currently: <strong>{deviceLimit}</strong> device(s)
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>
+              If a student tries to login from more devices than this limit, they’ll be blocked and must ask admin to free a slot.
+            </div>
+          </div>
+
+          {/* Active sessions */}
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+            Active Sessions ({sessions.length} / {deviceLimit})
+          </div>
+          {loading ? (
+            <div style={{ color: "var(--text3)", fontSize: 13, padding: "12px 0" }}>Loading…</div>
+          ) : sessions.length === 0 ? (
+            <div style={{ color: "var(--text3)", fontSize: 13, padding: "12px 0" }}>
+              No active sessions — student is not logged in anywhere.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {sessions.map((s, i) => (
+                <div key={s.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "10px 14px", background: "var(--bg3)", borderRadius: 8,
+                  border: "1px solid var(--border)"
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>Device {i + 1}</div>
+                    <div style={{ fontSize: 11, color: "var(--text3)" }}>Logged in: {fmtTime(s.created_at)}</div>
+                    <div style={{ fontSize: 11, color: "var(--text3)" }}>Expires: {fmtTime(s.expires_at)}</div>
+                  </div>
+                  <button className="btn btn-danger btn-sm" onClick={() => revokeSession(s.id)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {msg && (
+            <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13 }}>{msg}</div>
+          )}
+        </div>
+        <div className="modal-footer">
+          {sessions.length > 0 && (
+            <button className="btn btn-danger" onClick={revokeAll}>Logout All Devices</button>
+          )}
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Students() {
   const { user } = useAuth();
   const [students, setStudents]         = useState([]);
@@ -113,15 +241,12 @@ export default function Students() {
   const [portalStudent,  setPortalStudent]  = useState(null);
   const [portalPassword, setPortalPassword] = useState("");
   const [portalMsg,      setPortalMsg]      = useState("");
+  const [devicesStudent, setDevicesStudent] = useState(null);
   const [loading,  setLoading]          = useState(false);
-
-  // #13 — Pagination state
   const [page,       setPage]       = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total,      setTotal]      = useState(0);
   const LIMIT = 20;
-
-  // #14 — Debounced search ref
   const searchTimer = useRef(null);
 
   const load = useCallback((p = 1, q = "", branch = "", status = "") => {
@@ -130,18 +255,13 @@ export default function Students() {
     if (q)      params.set("search", q);
     if (branch) params.set("branch_id", branch);
     if (status) params.set("status", status);
-
     API.get(`/students?${params}`)
       .then((r) => {
         const res = r.data;
-        // Handle paginated response {data:[...], page, total, totalPages}
         if (res && res.data) {
-          setStudents(res.data);
-          setPage(res.page);
-          setTotalPages(res.totalPages);
-          setTotal(res.total);
+          setStudents(res.data); setPage(res.page);
+          setTotalPages(res.totalPages); setTotal(res.total);
         } else {
-          // Fallback for plain array
           setStudents(Array.isArray(res) ? res : []);
         }
       })
@@ -155,13 +275,10 @@ export default function Students() {
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch, filterStatus]);
 
-  // #14 — Debounce search 400ms
   const handleSearch = (val) => {
     setSearch(val);
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      load(1, val, filterBranch, filterStatus);
-    }, 400);
+    searchTimer.current = setTimeout(() => { load(1, val, filterBranch, filterStatus); }, 400);
   };
 
   const handlePage = (p) => load(p, search, filterBranch, filterStatus);
@@ -169,7 +286,8 @@ export default function Students() {
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
   const openEdit = (s) => {
     setEditing(s.id);
-    setForm({ ...s, dob: s.dob?.split("T")[0] || "", admission_date: s.admission_date?.split("T")[0] || "" });
+    // Fix #1: ensure photo_url is passed into form so PhotoUpload shows existing photo
+    setForm({ ...s, dob: s.dob?.split("T")[0] || "", admission_date: s.admission_date?.split("T")[0] || "", photo_url: s.photo_url || "" });
     setError(""); setShowModal(true);
   };
 
@@ -246,9 +364,7 @@ export default function Students() {
 
       <div className="card">
         {loading ? (
-          <div className="empty-state">
-            <div className="empty-text" style={{ color: "var(--text2)" }}>Loading students…</div>
-          </div>
+          <div className="empty-state"><div className="empty-text" style={{ color: "var(--text2)" }}>Loading students…</div></div>
         ) : students.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">👤</div>
@@ -263,7 +379,7 @@ export default function Students() {
                   <tr>
                     <th>#</th><th>Photo</th><th>Name</th><th>Batch</th>
                     {user.role === "super_admin" && <th>Branch</th>}
-                    <th>Phone</th><th>Fee Type</th><th>Due Day</th><th>Status</th><th>Actions</th>
+                    <th>Phone</th><th>Status</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -286,13 +402,12 @@ export default function Students() {
                       <td>{s.batch_name || <span className="text-muted">—</span>}</td>
                       {user.role === "super_admin" && <td>{s.branch_name}</td>}
                       <td className="mono">{s.phone}</td>
-                      <td><span className="badge badge-blue">{s.fee_type}</span></td>
-                      <td><span className="badge badge-gray">📅 {s.due_day || 10}th</span></td>
                       <td><span className={`badge ${s.status === "active" ? "badge-green" : "badge-gray"}`}>{s.status}</span></td>
                       <td>
                         <div className="gap-row">
                           <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                          <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Student Portal">🎓</button>
+                          <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Portal Password">🎓</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setDevicesStudent(s)} title="Device Sessions">📱</button>
                           <button className="btn btn-success btn-sm" onClick={() => sendEmail(s)} title="Send Email">📧</button>
                           <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
                         </div>
@@ -318,7 +433,8 @@ export default function Students() {
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: 20 }}>
                 <label>Profile Photo</label>
-                <PhotoUpload value={form.photo_url} onChange={(url) => f("photo_url", url)} />
+                {/* Fix #1: key prop forces PhotoUpload to re-mount with fresh value when editing */}
+                <PhotoUpload key={editing || "new"} value={form.photo_url} onChange={(url) => f("photo_url", url)} />
               </div>
               <div className="form-grid">
                 <div className="form-group full"><label>Full Name *</label><input value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="Student full name" /></div>
@@ -356,9 +472,8 @@ export default function Students() {
                 <div className="form-group"><label>Discount (%)</label><input type="number" min="0" max="100" value={form.discount} onChange={(e) => f("discount", e.target.value)} placeholder="0" /></div>
                 <div className="form-group full"><label>Discount Reason</label><input value={form.discount_reason} onChange={(e) => f("discount_reason", e.target.value)} placeholder="e.g. Sibling discount" /></div>
                 <div className="form-group">
-                  <label>Fee Due Day (1–28) 📅</label>
+                  <label>Fee Due Day (1–28)</label>
                   <input type="number" min="1" max="28" value={form.due_day} onChange={(e) => f("due_day", e.target.value)} placeholder="10" />
-                  <span style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>Day of month when fee is due</span>
                 </div>
                 <div className="form-group full"><label>Address</label><textarea value={form.address} onChange={(e) => f("address", e.target.value)} /></div>
                 {editing && (
@@ -407,6 +522,14 @@ export default function Students() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Device Sessions Modal */}
+      {devicesStudent && (
+        <DeviceSessionsModal
+          student={devicesStudent}
+          onClose={() => setDevicesStudent(null)}
+        />
       )}
     </div>
   );

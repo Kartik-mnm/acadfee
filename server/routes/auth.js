@@ -6,8 +6,8 @@ const crypto = require("crypto");
 const db = require("../db");
 const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
-// ── Create refresh_tokens table on startup if it doesn't exist ────────────────
-async function initRefreshTokensTable() {
+// ── Init refresh_tokens table ────────────────────────────────────────────────────
+async function initTables() {
   try {
     await db.query(`
       CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -20,14 +20,16 @@ async function initRefreshTokensTable() {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token   ON refresh_tokens(token)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at)`);
-    console.log("✅ refresh_tokens table ready");
+    // Student session tracking: max 2 concurrent logins per student
+    await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_device_limit INT DEFAULT 2`);
+    console.log("✅ auth tables ready");
   } catch (e) {
-    console.error("Failed to init refresh_tokens table:", e.message);
+    console.error("Failed to init auth tables:", e.message);
   }
 }
-initRefreshTokensTable();
+initTables();
 
-// ── Cleanup expired tokens once per hour ─────────────────────────────────────
+// ── Cleanup expired tokens every hour ────────────────────────────────────────────
 setInterval(async () => {
   try {
     const { rowCount } = await db.query("DELETE FROM refresh_tokens WHERE expires_at < NOW()");
@@ -37,78 +39,59 @@ setInterval(async () => {
   }
 }, 60 * 60 * 1000);
 
-// ── Rate limiting on login endpoints ─────────────────────────────────────────
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  skipSuccessfulRequests: true,
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 10,
+  skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
   keyGenerator: (req) => req.ip,
   message: { error: "Too many login attempts. Please wait 15 minutes." },
 });
 
-const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-// ── Issue a new token pair and persist the refresh token to DB ───────────────
 async function issueTokenPair(payload) {
   const accessToken  = jwt.sign(payload, getJwtSecret(), { expiresIn: "12h" });
   const refreshToken = crypto.randomBytes(40).toString("hex");
   const expiresAt    = new Date(Date.now() + REFRESH_TTL_MS);
-
   await db.query(
     `INSERT INTO refresh_tokens (token, payload, expires_at) VALUES ($1, $2, $3)`,
     [refreshToken, JSON.stringify(payload), expiresAt]
   );
-
   return { accessToken, refreshToken };
 }
 
-// ── Admin Login ───────────────────────────────────────────────────────────────
+// ── Admin Login ─────────────────────────────────────────────────────────────
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ error: "Email and password are required" });
+  if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
   try {
     const { rows } = await db.query(
       `SELECT u.*, b.name AS branch_name FROM users u
-       LEFT JOIN branches b ON b.id = u.branch_id
-       WHERE u.email = $1`,
-      [email]
+       LEFT JOIN branches b ON b.id = u.branch_id WHERE u.email = $1`, [email]
     );
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password)))
       return res.status(401).json({ error: "Invalid email or password" });
-
-    const payload = {
-      id: user.id, role: user.role,
-      branch_id: user.branch_id, name: user.name,
-      branch_name: user.branch_name,
-    };
+    const payload = { id: user.id, role: user.role, branch_id: user.branch_id, name: user.name, branch_name: user.branch_name };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
-    res.json({
-      token: accessToken, refreshToken,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, branch_id: user.branch_id, branch_name: user.branch_name },
-    });
+    res.json({ token: accessToken, refreshToken,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, branch_id: user.branch_id, branch_name: user.branch_name } });
   } catch (e) {
     console.error("Login error:", e.message);
     res.status(500).json({ error: "Login failed" });
   }
 });
 
-// ── Student Login ─────────────────────────────────────────────────────────────
+// ── Student Login — enforces 2-device limit ───────────────────────────────────────
 router.post("/student-login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ error: "Email and password are required" });
+  if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
   try {
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
        FROM students s
        LEFT JOIN batches b ON b.id = s.batch_id
        LEFT JOIN branches br ON br.id = s.branch_id
-       WHERE s.email = $1 AND s.login_enabled = true`,
-      [email]
+       WHERE s.email = $1 AND s.login_enabled = true`, [email]
     );
     const student = rows[0];
     if (!student) return res.status(401).json({ error: "Invalid email or student portal not enabled" });
@@ -116,11 +99,29 @@ router.post("/student-login", loginLimiter, async (req, res) => {
     if (!(await bcrypt.compare(password, student.login_password)))
       return res.status(401).json({ error: "Invalid email or password" });
 
+    // ── Device limit check: count active refresh tokens for this student ──
+    const deviceLimit = student.login_device_limit ?? 2;
+    const { rows: activeTokens } = await db.query(
+      `SELECT COUNT(*) AS cnt FROM refresh_tokens
+       WHERE (payload->>'id')::int = $1 AND payload->>'role' = 'student' AND expires_at > NOW()`,
+      [student.id]
+    );
+    const activeCount = parseInt(activeTokens[0].cnt);
+    if (activeCount >= deviceLimit) {
+      return res.status(403).json({
+        error: `Maximum ${deviceLimit} device(s) already logged in. Ask your admin to remove a device or increase the limit.`,
+        code: "DEVICE_LIMIT_REACHED",
+        active_devices: activeCount,
+        limit: deviceLimit,
+      });
+    }
+
     const payload = { id: student.id, role: "student", branch_id: student.branch_id, name: student.name };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
     res.json({
       token: accessToken, refreshToken,
-      user: { id: student.id, name: student.name, email: student.email, role: "student", branch_id: student.branch_id, branch_name: student.branch_name, batch_name: student.batch_name },
+      user: { id: student.id, name: student.name, email: student.email, role: "student",
+        branch_id: student.branch_id, branch_name: student.branch_name, batch_name: student.batch_name },
     });
   } catch (e) {
     console.error("Student login error:", e.message);
@@ -128,18 +129,74 @@ router.post("/student-login", loginLimiter, async (req, res) => {
   }
 });
 
-// ── Refresh access token — survives server restarts/deploys ──────────────────
+// ── Get active sessions for a student (admin only) ─────────────────────────────
+router.get("/student-sessions/:studentId", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { rows } = await db.query(
+      `SELECT id, created_at, expires_at,
+              EXTRACT(EPOCH FROM (expires_at - NOW())) AS seconds_left
+       FROM refresh_tokens
+       WHERE (payload->>'id')::int = $1 AND payload->>'role' = 'student' AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [req.params.studentId]
+    );
+    const { rows: student } = await db.query(
+      `SELECT login_device_limit FROM students WHERE id=$1`, [req.params.studentId]
+    );
+    res.json({ sessions: rows, device_limit: student[0]?.login_device_limit ?? 2 });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Revoke a specific session (admin: remove device access) ─────────────────────
+router.delete("/student-sessions/:tokenId", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    await db.query("DELETE FROM refresh_tokens WHERE id=$1", [req.params.tokenId]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Revoke ALL sessions for a student (admin: full logout all devices) ──────────
+router.delete("/student-sessions-all/:studentId", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { rowCount } = await db.query(
+      `DELETE FROM refresh_tokens WHERE (payload->>'id')::int = $1 AND payload->>'role' = 'student'`,
+      [req.params.studentId]
+    );
+    res.json({ success: true, revoked: rowCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Update student device limit (admin) ──────────────────────────────────────────
+router.patch("/student-device-limit/:studentId", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  const { limit } = req.body;
+  if (!limit || limit < 1 || limit > 10) return res.status(400).json({ error: "limit must be 1–10" });
+  try {
+    await db.query("UPDATE students SET login_device_limit=$1 WHERE id=$2", [limit, req.params.studentId]);
+    res.json({ success: true, limit });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Refresh token ───────────────────────────────────────────────────────────────
 router.post("/refresh", async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ error: "refreshToken required" });
   try {
     const { rows } = await db.query(
-      `SELECT * FROM refresh_tokens WHERE token = $1 AND expires_at > NOW()`,
-      [refreshToken]
+      `SELECT * FROM refresh_tokens WHERE token = $1 AND expires_at > NOW()`, [refreshToken]
     );
     if (!rows[0]) return res.status(401).json({ error: "Invalid or expired refresh token — please log in again" });
-
-    // Rotate: delete old token, issue new pair
     await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]);
     const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(rows[0].payload);
     res.json({ token: accessToken, refreshToken: newRefreshToken });
@@ -149,39 +206,32 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-// ── Logout — delete refresh token from DB ────────────────────────────────────
+// ── Logout ───────────────────────────────────────────────────────────────
 router.post("/logout", async (req, res) => {
   const { refreshToken } = req.body;
-  if (refreshToken) {
-    await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]).catch(() => {});
-  }
+  if (refreshToken) await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]).catch(() => {});
   res.json({ success: true });
 });
 
-// ── Student logout — clear FCM token + refresh token ─────────────────────────
 router.post("/student-logout", auth, async (req, res) => {
   try {
     const { student_id, token, type, refreshToken } = req.body;
-    if (!student_id || !token)
-      return res.status(400).json({ error: "student_id and token required" });
+    if (!student_id || !token) return res.status(400).json({ error: "student_id and token required" });
     if (req.user.role === "student" && req.user.id !== parseInt(student_id))
       return res.status(403).json({ error: "Access denied" });
     const col = type === "parent" ? "parent_fcm_token" : "fcm_token";
     await db.query(`UPDATE students SET ${col} = NULL WHERE id = $1 AND ${col} = $2`, [student_id, token]);
-    if (refreshToken) {
-      await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]).catch(() => {});
-    }
+    if (refreshToken) await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]).catch(() => {});
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ── Create user — super admin only ───────────────────────────────────────────
+// ── User management ─────────────────────────────────────────────────────────────
 router.post("/users", auth, superAdmin, async (req, res) => {
   const { name, email, password, role, branch_id } = req.body;
-  if (!name || !email || !password || !role)
-    return res.status(400).json({ error: "name, email, password and role are required" });
+  if (!name || !email || !password || !role) return res.status(400).json({ error: "name, email, password and role are required" });
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
@@ -195,7 +245,6 @@ router.post("/users", auth, superAdmin, async (req, res) => {
   }
 });
 
-// ── List users — super admin only ────────────────────────────────────────────
 router.get("/users", auth, superAdmin, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -203,25 +252,18 @@ router.get("/users", auth, superAdmin, async (req, res) => {
        FROM users u LEFT JOIN branches b ON b.id = u.branch_id ORDER BY u.id`
     );
     res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Delete user ───────────────────────────────────────────────────────────────
 router.delete("/users/:id", auth, superAdmin, async (req, res) => {
   const { id } = req.params;
-  if (parseInt(id) === req.user.id)
-    return res.status(400).json({ error: "Cannot delete your own account!" });
+  if (parseInt(id) === req.user.id) return res.status(400).json({ error: "Cannot delete your own account!" });
   try {
     await db.query("DELETE FROM users WHERE id=$1", [id]);
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Reset user password ───────────────────────────────────────────────────────
 router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
   try {
     const { password } = req.body;
@@ -229,12 +271,9 @@ router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     await db.query("UPDATE users SET password=$1 WHERE id=$2", [hash, req.params.id]);
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Set student portal password ───────────────────────────────────────────────
 router.post("/set-student-password", auth, async (req, res) => {
   const { student_id, password, enabled } = req.body;
   if (!student_id || !password) return res.status(400).json({ error: "student_id and password are required" });
