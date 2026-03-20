@@ -1,17 +1,40 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart } from "recharts";
 
 const fmt = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
 
+// Custom tooltip for charts
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: "rgba(15,23,42,0.95)",
+      border: "1px solid rgba(59,130,246,0.2)",
+      borderRadius: 10,
+      padding: "10px 14px",
+      fontSize: 12,
+      backdropFilter: "blur(16px)",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+    }}>
+      <div style={{ color: "#94a3b8", marginBottom: 4, fontWeight: 600 }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: p.color, fontWeight: 700, fontSize: 13 }}>
+          {fmt(p.value)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard({ onNavigate }) {
   const { user } = useAuth();
-  const [data, setData] = useState(null);
+  const [data, setData]               = useState(null);
   const [branchStats, setBranchStats] = useState([]);
-  const [trend, setTrend] = useState([]);
+  const [trend, setTrend]             = useState([]);
   const [branchFilter, setBranchFilter] = useState("");
-  const [branches, setBranches] = useState([]);
+  const [branches, setBranches]       = useState([]);
 
   useEffect(() => {
     if (user.role === "super_admin") {
@@ -30,67 +53,146 @@ export default function Dashboard({ onNavigate }) {
 
   if (!data) return <div className="loading">Loading dashboard…</div>;
 
+  const statCards = [
+    {
+      key: "students", color: "blue", label: "Active Students",
+      value: data.active_students, suffix: "",
+      icon: "◉", hint: "Total enrolled",
+    },
+    {
+      key: "collected", color: "green", label: "Total Collected",
+      value: fmt(data.total_collected), suffix: "",
+      icon: "⬡", hint: "All time",
+    },
+    {
+      key: "due", color: "yellow", label: "Pending Dues",
+      value: fmt(data.total_due), suffix: "",
+      icon: "◎", hint: "Outstanding",
+    },
+    {
+      key: "overdue", color: "red", label: "Overdue",
+      value: data.overdue_count, suffix: " records",
+      icon: "▲", hint: "Needs attention",
+    },
+  ];
+
   return (
     <div>
+      {/* ── Header ── */}
       <div className="page-header">
         <div>
           <div className="page-title">Dashboard</div>
           <div className="page-sub">
-            {user.role === "super_admin" ? "All Branches Overview" : `Branch: ${user.branch_name}`}
+            {user.role === "super_admin"
+              ? "All branches overview"
+              : `Branch: ${user.branch_name}`}
           </div>
         </div>
         {user.role === "super_admin" && (
-          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} style={{ width: 200 }}>
+          <select
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            style={{ width: 200 }}
+          >
             <option value="">All Branches</option>
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
           </select>
         )}
       </div>
 
+      {/* ── Stat cards ── */}
       <div className="stat-grid">
-        <div className="stat-card blue">
-          <div className="stat-label">Active Students</div>
-          <div className="stat-value blue">{data.active_students}</div>
-        </div>
-        <div className="stat-card green">
-          <div className="stat-label">Total Collected</div>
-          <div className="stat-value green">{fmt(data.total_collected)}</div>
-        </div>
-        <div className="stat-card yellow">
-          <div className="stat-label">Pending Dues</div>
-          <div className="stat-value yellow">{fmt(data.total_due)}</div>
-        </div>
-        <div className="stat-card red">
-          <div className="stat-label">Overdue Records</div>
-          <div className="stat-value red">{data.overdue_count}</div>
-        </div>
+        {statCards.map((s) => (
+          <div key={s.key} className={`stat-card ${s.color}`}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div className="stat-label">{s.label}</div>
+              <div style={{
+                width: 32, height: 32, borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 14,
+                background: s.color === "blue"   ? "rgba(59,130,246,0.12)"
+                          : s.color === "green"  ? "rgba(16,217,160,0.12)"
+                          : s.color === "yellow" ? "rgba(251,191,36,0.12)"
+                          : "rgba(248,113,113,0.12)",
+                color: s.color === "blue"   ? "var(--blue-400)"
+                     : s.color === "green"  ? "var(--green)"
+                     : s.color === "yellow" ? "var(--yellow)"
+                     : "var(--red)",
+              }}>
+                {s.icon}
+              </div>
+            </div>
+            <div className={`stat-value ${s.color}`} style={{ marginTop: 12 }}>
+              {s.value}{s.suffix}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>{s.hint}</div>
+          </div>
+        ))}
       </div>
 
+      {/* ── Charts row ── */}
       <div className="grid-2" style={{ marginBottom: 24 }}>
-        {/* Monthly Trend */}
+
+        {/* Monthly Collection Trend */}
         <div className="card">
-          <div className="card-title">Monthly Collection Trend</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: 2 }}>Collection Trend</div>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>Last 12 months</div>
+            </div>
+          </div>
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2a3248" />
-                <XAxis dataKey="month" tick={{ fill: "#8b93aa", fontSize: 11 }} />
-                <YAxis tickFormatter={(v) => `₹${v/1000}k`} tick={{ fill: "#8b93aa", fontSize: 11 }} />
-                <Tooltip
-                  formatter={(v) => [fmt(v), "Collected"]}
-                  contentStyle={{ background: "#1e2535", border: "1px solid #2a3248", borderRadius: 8, color: "#e8eaf0" }}
+              <AreaChart data={trend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  axisLine={false} tickLine={false}
                 />
-                <Bar dataKey="collected" fill="#4f8ef7" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <YAxis
+                  tickFormatter={(v) => `₹${v/1000}k`}
+                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  axisLine={false} tickLine={false}
+                />
+                <Tooltip content={<ChartTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="collected"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  fill="url(#blueGrad)"
+                  dot={false}
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Recent Payments */}
         <div className="card">
-          <div className="card-title">Recent Payments</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: 2 }}>Recent Payments</div>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>Latest transactions</div>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => onNavigate?.("payments")}
+            >
+              View all
+            </button>
+          </div>
           {data.recent_payments.length === 0 ? (
-            <div className="empty-state" style={{ padding: 20 }}>
+            <div className="empty-state" style={{ padding: 24 }}>
               <div className="empty-text">No payments yet</div>
             </div>
           ) : (
@@ -108,12 +210,22 @@ export default function Dashboard({ onNavigate }) {
                   {data.recent_payments.map((p, i) => (
                     <tr key={i}>
                       <td>
-                        <div style={{ fontWeight: 600 }}>{p.student_name}</div>
-                        {user.role === "super_admin" && <div className="text-muted text-sm">{p.branch_name}</div>}
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{p.student_name}</div>
+                        {user.role === "super_admin" && (
+                          <div className="text-muted text-sm">{p.branch_name}</div>
+                        )}
                       </td>
-                      <td className="mono" style={{ color: "var(--green)", fontWeight: 700 }}>{fmt(p.amount)}</td>
-                      <td><span className="badge badge-blue">{p.payment_mode}</span></td>
-                      <td className="text-muted">{new Date(p.paid_on).toLocaleDateString("en-IN")}</td>
+                      <td>
+                        <span style={{ color: "var(--green)", fontWeight: 700, fontFamily: "JetBrains Mono, monospace" }}>
+                          {fmt(p.amount)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-blue">{p.payment_mode}</span>
+                      </td>
+                      <td style={{ color: "var(--text3)", fontSize: 12 }}>
+                        {new Date(p.paid_on).toLocaleDateString("en-IN")}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -123,24 +235,79 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </div>
 
-      {/* Branch Comparison (super admin only) */}
+      {/* ── Branch comparison (super admin) ── */}
       {user.role === "super_admin" && !branchFilter && branchStats.length > 0 && (
         <div className="card">
-          <div className="card-title">Branch-wise Summary</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: 2 }}>Branch Performance</div>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>All branches at a glance</div>
+            </div>
+          </div>
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Branch</th><th>Students</th><th>Collected</th><th>Pending</th></tr>
+                <tr>
+                  <th>Branch</th>
+                  <th>Students</th>
+                  <th>Collected</th>
+                  <th>Pending</th>
+                  <th>Collection %</th>
+                </tr>
               </thead>
               <tbody>
-                {branchStats.map((b, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 600 }}>{b.branch}</td>
-                    <td>{b.students}</td>
-                    <td className="mono" style={{ color: "var(--green)" }}>{fmt(b.collected)}</td>
-                    <td className="mono" style={{ color: "var(--yellow)" }}>{fmt(b.pending)}</td>
-                  </tr>
-                ))}
+                {branchStats.map((b, i) => {
+                  const total    = parseFloat(b.collected) + parseFloat(b.pending);
+                  const collPct  = total > 0 ? Math.round((parseFloat(b.collected) / total) * 100) : 0;
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 8,
+                            background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(56,189,248,0.1))",
+                            border: "1px solid rgba(59,130,246,0.15)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 700, color: "var(--blue-400)",
+                          }}>
+                            {b.branch?.[0]?.toUpperCase() || "B"}
+                          </div>
+                          <span style={{ fontWeight: 600 }}>{b.branch}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 600 }}>{b.students}</span>
+                      </td>
+                      <td>
+                        <span style={{ color: "var(--green)", fontWeight: 700, fontFamily: "JetBrains Mono, monospace" }}>
+                          {fmt(b.collected)}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ color: "var(--yellow)", fontWeight: 600, fontFamily: "JetBrains Mono, monospace" }}>
+                          {fmt(b.pending)}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ flex: 1, background: "rgba(148,163,184,0.08)", borderRadius: 4, height: 5 }}>
+                            <div style={{
+                              width: `${collPct}%`,
+                              height: "100%",
+                              background: collPct >= 80 ? "var(--green)" : collPct >= 60 ? "var(--yellow)" : "var(--red)",
+                              borderRadius: 4,
+                              transition: "width 0.6s ease",
+                            }}/>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, minWidth: 36,
+                            color: collPct >= 80 ? "var(--green)" : collPct >= 60 ? "var(--yellow)" : "var(--red)" }}>
+                            {collPct}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
