@@ -89,36 +89,53 @@ router.post("/scan", auth, async (req, res) => {
 
     let scanType, result;
     if (scanRows.length === 0) {
+      // ── First scan of the day → entry ──
       const { rows } = await db.query(
-        `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, scanned_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, scanned_by)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
         [student_id, branch_id, today, now, req.user.id]
       );
       scanType = "entry"; result = rows[0];
+
     } else if (!scanRows[0].exit_time) {
+      // ── Second scan → exit ──
       const { rows } = await db.query(
-        `UPDATE qr_scans SET exit_time=$1, scanned_by=$2 WHERE student_id=$3 AND scan_date=$4 RETURNING *`,
+        `UPDATE qr_scans SET exit_time=$1, scanned_by=$2
+         WHERE student_id=$3 AND scan_date=$4 RETURNING *`,
         [now, req.user.id, student_id, today]
       );
       scanType = "exit"; result = rows[0];
+
+      // ── Update attendance ONLY on a working day ──
+      // Fix: NEVER touch total_days here.
+      // total_days is owned by generate-month / manual entry.
+      // We only increment the present count; total_days stays as-is.
+      // If no attendance record exists yet for this month, create one with
+      // present=1 and total_days=0 (generate-month will correct total_days later).
       if (isWorkingDay) {
         await db.query(
           `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
-           VALUES ($1, $2, $3, $4, 1, 1)
+           VALUES ($1, $2, $3, $4, 0, 1)
            ON CONFLICT (student_id, month, year)
-           DO UPDATE SET total_days = attendance.total_days + 1, present = attendance.present + 1`,
+           DO UPDATE SET present = LEAST(attendance.present + 1, GREATEST(attendance.total_days, attendance.present + 1))`,
           [student_id, branch_id, istMonth, istYear]
         );
       }
+
     } else {
       return res.status(400).json({
-        error: "Already scanned twice today", student: student.name,
-        entry_time: toIST(scanRows[0].entry_time), exit_time: toIST(scanRows[0].exit_time),
+        error: "Already scanned twice today",
+        student: student.name,
+        entry_time: toIST(scanRows[0].entry_time),
+        exit_time:  toIST(scanRows[0].exit_time),
       });
     }
 
     sendAttendanceNotification({
-      studentName: student.name, scanType, time: now, timeIST: toIST(now),
-      studentToken: student.fcm_token, parentToken: student.parent_fcm_token,
+      studentName:  student.name, scanType,
+      time: now, timeIST: toIST(now),
+      studentToken: student.fcm_token,
+      parentToken:  student.parent_fcm_token,
     }).catch(console.error);
 
     res.json({
@@ -133,14 +150,12 @@ router.post("/scan", auth, async (req, res) => {
   }
 });
 
-// Today's scans — parameterized branch filter (no SQL injection)
+// Today's scans
 router.get("/today", auth, async (req, res) => {
   if (!["super_admin", "branch_manager"].includes(req.user.role))
     return res.status(403).json({ error: "Access denied" });
   try {
     const todayIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0].trim();
-
-    // Use parameterized query — never interpolate branch_id directly into SQL
     let query, params;
     if (req.user.role === "branch_manager") {
       query = `SELECT qs.*, s.name AS student_name, s.phone, b.name AS batch_name, br.name AS branch_name, u.name AS scanned_by_name

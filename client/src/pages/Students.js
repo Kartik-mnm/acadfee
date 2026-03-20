@@ -15,7 +15,6 @@ function PhotoUpload({ value, onChange }) {
   const [uploading, setUploading] = useState(false);
   const [preview,   setPreview]   = useState(value || "");
 
-  // Sync preview when value changes from outside (e.g. editing existing student)
   useEffect(() => { setPreview(value || ""); }, [value]);
 
   const handleFile = async (file) => {
@@ -29,11 +28,8 @@ function PhotoUpload({ value, onChange }) {
         setPreview(base64);
         try {
           const { data } = await API.post("/upload/photo", { image: base64 });
-          setPreview(data.url);
-          onChange(data.url); // ← passes Cloudinary URL up to form
-        } catch {
-          onChange(base64); // fallback: use base64 directly
-        }
+          setPreview(data.url); onChange(data.url);
+        } catch { onChange(base64); }
         setUploading(false);
       };
       reader.readAsDataURL(file);
@@ -41,20 +37,16 @@ function PhotoUpload({ value, onChange }) {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+    <div style={{ display:"flex",alignItems:"center",gap:14 }}>
       <div onClick={() => inputRef.current.click()} style={{
-        width: 80, height: 80, borderRadius: "50%", cursor: "pointer",
-        background: "var(--bg3)", border: "2px dashed var(--border)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        overflow: "hidden", flexShrink: 0, position: "relative"
+        width:80,height:80,borderRadius:"50%",cursor:"pointer",
+        background:"var(--bg3)",border:"2px dashed var(--border)",
+        display:"flex",alignItems:"center",justifyContent:"center",
+        overflow:"hidden",flexShrink:0,position:"relative"
       }}>
-        {preview
-          ? <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <span style={{ fontSize: 28 }}>👤</span>}
+        {preview ? <img src={preview} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} /> : <span style={{ fontSize:28 }}>👤</span>}
         {uploading && (
-          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11 }}>
-            Uploading…
-          </div>
+          <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11 }}>Uploading…</div>
         )}
       </div>
       <div>
@@ -62,12 +54,12 @@ function PhotoUpload({ value, onChange }) {
           {uploading ? "Uploading…" : preview ? "Change Photo" : "Upload Photo"}
         </button>
         {preview && (
-          <button type="button" className="btn btn-danger btn-sm" style={{ marginLeft: 8 }}
+          <button type="button" className="btn btn-danger btn-sm" style={{ marginLeft:8 }}
             onClick={() => { setPreview(""); onChange(""); }}>Remove</button>
         )}
-        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>JPG/PNG, max 5MB</div>
+        <div style={{ fontSize:11,color:"var(--text2)",marginTop:4 }}>JPG/PNG, max 5MB</div>
       </div>
-      <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }}
+      <input ref={inputRef} type="file" accept="image/*" style={{ display:"none" }}
         onChange={(e) => handleFile(e.target.files[0])} />
     </div>
   );
@@ -81,18 +73,18 @@ function Pagination({ page, totalPages, total, limit, onPage }) {
     else if (pages[pages.length - 1] !== "…") pages.push("…");
   }
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, flexWrap: "wrap", gap: 8 }}>
-      <div style={{ fontSize: 13, color: "var(--text2)" }}>
-        Showing {((page - 1) * limit) + 1}–{Math.min(page * limit, total)} of <strong>{total}</strong> students
+    <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:16,flexWrap:"wrap",gap:8 }}>
+      <div style={{ fontSize:13,color:"var(--text2)" }}>
+        Showing {((page-1)*limit)+1}–{Math.min(page*limit,total)} of <strong>{total}</strong> students
       </div>
-      <div style={{ display: "flex", gap: 6 }}>
-        <button className="btn btn-secondary btn-sm" onClick={() => onPage(page - 1)} disabled={page === 1}>← Prev</button>
-        {pages.map((p, i) =>
+      <div style={{ display:"flex",gap:6 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => onPage(page-1)} disabled={page===1}>← Prev</button>
+        {pages.map((p,i) =>
           p === "…"
-            ? <span key={i} style={{ padding: "4px 8px", color: "var(--text2)" }}>…</span>
-            : <button key={p} className={`btn btn-sm ${p === page ? "btn-primary" : "btn-secondary"}`} onClick={() => onPage(p)}>{p}</button>
+            ? <span key={i} style={{ padding:"4px 8px",color:"var(--text2)" }}>…</span>
+            : <button key={p} className={`btn btn-sm ${p===page?"btn-primary":"btn-secondary"}`} onClick={() => onPage(p)}>{p}</button>
         )}
-        <button className="btn btn-secondary btn-sm" onClick={() => onPage(page + 1)} disabled={page === totalPages}>Next →</button>
+        <button className="btn btn-secondary btn-sm" onClick={() => onPage(page+1)} disabled={page===totalPages}>Next →</button>
       </div>
     </div>
   );
@@ -100,20 +92,18 @@ function Pagination({ page, totalPages, total, limit, onPage }) {
 
 // ── Device Sessions Modal ───────────────────────────────────────────────────────────────
 function DeviceSessionsModal({ student, onClose }) {
-  const [sessions,     setSessions]     = useState([]);
-  const [deviceLimit,  setDeviceLimit]  = useState(2);
-  const [newLimit,     setNewLimit]     = useState(2);
-  const [loading,      setLoading]      = useState(true);
-  const [savingLimit,  setSavingLimit]  = useState(false);
-  const [msg,          setMsg]          = useState("");
+  const [sessions,    setSessions]    = useState([]);
+  const [deviceLimit, setDeviceLimit] = useState(2);
+  const [newLimit,    setNewLimit]    = useState(2);
+  const [loading,     setLoading]     = useState(true);
+  const [savingLimit, setSavingLimit] = useState(false);
+  const [msg,         setMsg]         = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
       const { data } = await API.get(`/auth/student-sessions/${student.id}`);
-      setSessions(data.sessions);
-      setDeviceLimit(data.device_limit);
-      setNewLimit(data.device_limit);
+      setSessions(data.sessions); setDeviceLimit(data.device_limit); setNewLimit(data.device_limit);
     } catch (e) { setMsg("⚠ " + (e.response?.data?.error || "Failed to load")); }
     finally { setLoading(false); }
   };
@@ -121,102 +111,62 @@ function DeviceSessionsModal({ student, onClose }) {
   useEffect(() => { load(); }, []);
 
   const revokeSession = async (tokenId) => {
-    if (!window.confirm("Remove this device's access? The student will be logged out on that device.")) return;
-    try {
-      await API.delete(`/auth/student-sessions/${tokenId}`);
-      setMsg("✅ Device removed");
-      load();
-    } catch { setMsg("⚠ Failed to remove"); }
+    if (!window.confirm("Remove this device? The student will be logged out on that device.")) return;
+    try { await API.delete(`/auth/student-sessions/${tokenId}`); setMsg("✅ Device removed"); load(); }
+    catch { setMsg("⚠ Failed to remove"); }
   };
 
   const revokeAll = async () => {
     if (!window.confirm(`Log out ${student.name} from ALL devices?`)) return;
-    try {
-      const { data } = await API.delete(`/auth/student-sessions-all/${student.id}`);
-      setMsg(`✅ Revoked ${data.revoked} session(s)`);
-      load();
-    } catch { setMsg("⚠ Failed"); }
+    try { const { data } = await API.delete(`/auth/student-sessions-all/${student.id}`); setMsg(`✅ Revoked ${data.revoked} session(s)`); load(); }
+    catch { setMsg("⚠ Failed"); }
   };
 
   const updateLimit = async () => {
     setSavingLimit(true);
-    try {
-      await API.patch(`/auth/student-device-limit/${student.id}`, { limit: parseInt(newLimit) });
-      setDeviceLimit(parseInt(newLimit));
-      setMsg(`✅ Device limit updated to ${newLimit}`);
-    } catch { setMsg("⚠ Failed to update limit"); }
+    try { await API.patch(`/auth/student-device-limit/${student.id}`, { limit: parseInt(newLimit) }); setDeviceLimit(parseInt(newLimit)); setMsg(`✅ Limit updated to ${newLimit}`); }
+    catch { setMsg("⚠ Failed to update limit"); }
     finally { setSavingLimit(false); setTimeout(() => setMsg(""), 3000); }
   };
 
-  const fmtTime = (d) => new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const fmtTime = (d) => new Date(d).toLocaleString("en-IN", { dateStyle:"medium", timeStyle:"short" });
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 500 }}>
+    <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth:500 }}>
         <div className="modal-header">
           <div className="modal-title">📱 Device Sessions — {student.name}</div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          {/* Device limit control */}
-          <div style={{ background: "var(--bg3)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Max Concurrent Logins</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input
-                type="number" min="1" max="10"
-                value={newLimit}
-                onChange={(e) => setNewLimit(e.target.value)}
-                style={{ width: 80 }}
-              />
-              <button className="btn btn-primary btn-sm" onClick={updateLimit} disabled={savingLimit}>
-                {savingLimit ? "Saving…" : "Update"}
-              </button>
-              <span style={{ fontSize: 12, color: "var(--text2)" }}>
-                Currently: <strong>{deviceLimit}</strong> device(s)
-              </span>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>
-              If a student tries to login from more devices than this limit, they’ll be blocked and must ask admin to free a slot.
+          <div style={{ background:"var(--bg3)",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
+            <div style={{ fontWeight:700,fontSize:13,marginBottom:8 }}>Max Concurrent Logins</div>
+            <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+              <input type="number" min="1" max="10" value={newLimit} onChange={(e) => setNewLimit(e.target.value)} style={{ width:80 }}/>
+              <button className="btn btn-primary btn-sm" onClick={updateLimit} disabled={savingLimit}>{savingLimit?"Saving…":"Update"}</button>
+              <span style={{ fontSize:12,color:"var(--text2)" }}>Currently: <strong>{deviceLimit}</strong></span>
             </div>
           </div>
-
-          {/* Active sessions */}
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
-            Active Sessions ({sessions.length} / {deviceLimit})
-          </div>
-          {loading ? (
-            <div style={{ color: "var(--text3)", fontSize: 13, padding: "12px 0" }}>Loading…</div>
-          ) : sessions.length === 0 ? (
-            <div style={{ color: "var(--text3)", fontSize: 13, padding: "12px 0" }}>
-              No active sessions — student is not logged in anywhere.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {sessions.map((s, i) => (
-                <div key={s.id} style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "10px 14px", background: "var(--bg3)", borderRadius: 8,
-                  border: "1px solid var(--border)"
-                }}>
+          <div style={{ fontWeight:700,fontSize:13,marginBottom:8 }}>Active Sessions ({sessions.length} / {deviceLimit})</div>
+          {loading ? <div style={{ color:"var(--text3)",fontSize:13 }}>Loading…</div>
+          : sessions.length === 0 ? <div style={{ color:"var(--text3)",fontSize:13 }}>No active sessions</div>
+          : (
+            <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+              {sessions.map((s,i) => (
+                <div key={s.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"var(--bg3)",borderRadius:8,border:"1px solid var(--border)" }}>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>Device {i + 1}</div>
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>Logged in: {fmtTime(s.created_at)}</div>
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>Expires: {fmtTime(s.expires_at)}</div>
+                    <div style={{ fontWeight:600,fontSize:13 }}>Device {i+1}</div>
+                    <div style={{ fontSize:11,color:"var(--text3)" }}>Logged in: {fmtTime(s.created_at)}</div>
                   </div>
                   <button className="btn btn-danger btn-sm" onClick={() => revokeSession(s.id)}>Remove</button>
                 </div>
               ))}
             </div>
           )}
-
-          {msg && (
-            <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13 }}>{msg}</div>
-          )}
+          {msg && <div style={{ marginTop:12,padding:"8px 12px",background:"var(--bg3)",borderRadius:6,fontSize:13 }}>{msg}</div>}
         </div>
         <div className="modal-footer">
-          {sessions.length > 0 && (
-            <button className="btn btn-danger" onClick={revokeAll}>Logout All Devices</button>
-          )}
+          {sessions.length > 0 && <button className="btn btn-danger" onClick={revokeAll}>Logout All Devices</button>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -249,21 +199,19 @@ export default function Students() {
   const LIMIT = 20;
   const searchTimer = useRef(null);
 
-  const load = useCallback((p = 1, q = "", branch = "", status = "") => {
+  const load = useCallback((p=1, q="", branch="", status="") => {
     setLoading(true);
-    const params = new URLSearchParams({ page: p, limit: LIMIT });
-    if (q)      params.set("search", q);
+    const params = new URLSearchParams({ page:p, limit:LIMIT });
+    if (q)      params.set("search",    q);
     if (branch) params.set("branch_id", branch);
-    if (status) params.set("status", status);
+    if (status) params.set("status",    status);
     API.get(`/students?${params}`)
       .then((r) => {
         const res = r.data;
         if (res && res.data) {
           setStudents(res.data); setPage(res.page);
           setTotalPages(res.totalPages); setTotal(res.total);
-        } else {
-          setStudents(Array.isArray(res) ? res : []);
-        }
+        } else { setStudents(Array.isArray(res) ? res : []); }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -286,8 +234,7 @@ export default function Students() {
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
   const openEdit = (s) => {
     setEditing(s.id);
-    // Fix #1: ensure photo_url is passed into form so PhotoUpload shows existing photo
-    setForm({ ...s, dob: s.dob?.split("T")[0] || "", admission_date: s.admission_date?.split("T")[0] || "", photo_url: s.photo_url || "" });
+    setForm({ ...s, dob: s.dob?.split("T")[0]||"", admission_date: s.admission_date?.split("T")[0]||"", photo_url: s.photo_url||"", });
     setError(""); setShowModal(true);
   };
 
@@ -296,11 +243,9 @@ export default function Students() {
     try {
       if (editing) await API.put(`/students/${editing}`, form);
       else         await API.post("/students", form);
-      setShowModal(false);
-      load(page, search, filterBranch, filterStatus);
-    } catch (e) {
-      setError(e.response?.data?.error || "Save failed");
-    } finally { setSaving(false); }
+      setShowModal(false); load(page, search, filterBranch, filterStatus);
+    } catch (e) { setError(e.response?.data?.error || "Save failed"); }
+    finally { setSaving(false); }
   };
 
   const del = async (id) => {
@@ -319,19 +264,14 @@ export default function Students() {
   const sendEmail = async (s) => {
     if (!s.email) { alert("This student has no email address!"); return; }
     if (!window.confirm(`Send fee summary email to ${s.name} at ${s.email}?`)) return;
-    try {
-      await API.post(`/students/${s.id}/send-email`);
-      alert(`✅ Email sent to ${s.email}!`);
-    } catch (e) { alert("⚠ Failed: " + (e.response?.data?.error || e.message)); }
+    try { await API.post(`/students/${s.id}/send-email`); alert(`✅ Email sent to ${s.email}!`); }
+    catch (e) { alert("⚠ Failed: " + (e.response?.data?.error || e.message)); }
   };
 
   const savePortal = async () => {
     if (!portalPassword || portalPassword.length < 4) { setPortalMsg("⚠ Password must be at least 4 characters"); return; }
-    try {
-      await API.post("/auth/set-student-password", { student_id: portalStudent.id, password: portalPassword });
-      setPortalMsg("✅ Portal password set! Student can now login.");
-      setPortalPassword("");
-    } catch (e) { setPortalMsg("⚠ Failed to set password"); }
+    try { await API.post("/auth/set-student-password", { student_id: portalStudent.id, password: portalPassword }); setPortalMsg("✅ Portal password set!"); setPortalPassword(""); }
+    catch (e) { setPortalMsg("⚠ Failed to set password"); }
   };
 
   if (profileId) return <StudentProfile studentId={profileId} onBack={() => setProfileId(null)} />;
@@ -364,7 +304,7 @@ export default function Students() {
 
       <div className="card">
         {loading ? (
-          <div className="empty-state"><div className="empty-text" style={{ color: "var(--text2)" }}>Loading students…</div></div>
+          <div className="empty-state"><div className="empty-text" style={{ color:"var(--text2)" }}>Loading students…</div></div>
         ) : students.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">👤</div>
@@ -385,16 +325,15 @@ export default function Students() {
                 <tbody>
                   {students.map((s, i) => (
                     <tr key={s.id}>
-                      <td className="text-muted">{((page - 1) * LIMIT) + i + 1}</td>
+                      <td className="text-muted">{((page-1)*LIMIT)+i+1}</td>
                       <td>
-                        <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "var(--bg3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-                          {s.photo_url
-                            ? <img src={s.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : "👤"}
+                        <div style={{ width:36,height:36,borderRadius:"50%",overflow:"hidden",background:"var(--bg3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18 }}>
+                          {s.photo_url ? <img src={s.photo_url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} /> : "👤"}
                         </div>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: "var(--accent)", cursor: "pointer" }} onClick={() => setProfileId(s.id)}>
+                        {/* Fix: use var(--link-color) which is blue-400 in dark, dark-blue in light */}
+                        <div className="student-link" onClick={() => setProfileId(s.id)}>
                           {s.name}
                         </div>
                         <div className="text-muted text-sm">{s.email}</div>
@@ -402,7 +341,7 @@ export default function Students() {
                       <td>{s.batch_name || <span className="text-muted">—</span>}</td>
                       {user.role === "super_admin" && <td>{s.branch_name}</td>}
                       <td className="mono">{s.phone}</td>
-                      <td><span className={`badge ${s.status === "active" ? "badge-green" : "badge-gray"}`}>{s.status}</span></td>
+                      <td><span className={`badge ${s.status==="active"?"badge-green":"badge-gray"}`}>{s.status}</span></td>
                       <td>
                         <div className="gap-row">
                           <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
@@ -424,67 +363,61 @@ export default function Students() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
+        <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget && setShowModal(false)}>
           <div className="modal modal-lg">
             <div className="modal-header">
               <div className="modal-title">{editing ? "Edit Student" : "Add New Student"}</div>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="form-group" style={{ marginBottom: 20 }}>
+              <div className="form-group" style={{ marginBottom:20 }}>
                 <label>Profile Photo</label>
-                {/* Fix #1: key prop forces PhotoUpload to re-mount with fresh value when editing */}
-                <PhotoUpload key={editing || "new"} value={form.photo_url} onChange={(url) => f("photo_url", url)} />
+                <PhotoUpload key={editing||"new"} value={form.photo_url} onChange={(url) => f("photo_url",url)} />
               </div>
               <div className="form-grid">
-                <div className="form-group full"><label>Full Name *</label><input value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="Student full name" /></div>
-                <div className="form-group"><label>Phone</label><input value={form.phone} onChange={(e) => f("phone", e.target.value)} /></div>
-                <div className="form-group"><label>Parent Phone</label><input value={form.parent_phone} onChange={(e) => f("parent_phone", e.target.value)} /></div>
-                <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={(e) => f("email", e.target.value)} /></div>
-                <div className="form-group"><label>Date of Birth</label><input type="date" value={form.dob} onChange={(e) => f("dob", e.target.value)} /></div>
+                <div className="form-group full"><label>Full Name *</label><input value={form.name} onChange={(e) => f("name",e.target.value)} placeholder="Student full name" /></div>
+                <div className="form-group"><label>Phone</label><input value={form.phone} onChange={(e) => f("phone",e.target.value)} /></div>
+                <div className="form-group"><label>Parent Phone</label><input value={form.parent_phone} onChange={(e) => f("parent_phone",e.target.value)} /></div>
+                <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={(e) => f("email",e.target.value)} /></div>
+                <div className="form-group"><label>Date of Birth</label><input type="date" value={form.dob} onChange={(e) => f("dob",e.target.value)} /></div>
                 <div className="form-group"><label>Gender</label>
-                  <select value={form.gender} onChange={(e) => f("gender", e.target.value)}>
-                    <option value="">Select</option><option>Male</option><option>Female</option><option>Other</option>
-                  </select>
+                  <select value={form.gender} onChange={(e) => f("gender",e.target.value)}><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select>
                 </div>
-                <div className="form-group"><label>Admission Date</label><input type="date" value={form.admission_date} onChange={(e) => f("admission_date", e.target.value)} /></div>
+                <div className="form-group"><label>Admission Date</label><input type="date" value={form.admission_date} onChange={(e) => f("admission_date",e.target.value)} /></div>
                 {user.role === "super_admin" && (
                   <div className="form-group"><label>Branch *</label>
-                    <select value={form.branch_id} onChange={(e) => f("branch_id", e.target.value)}>
+                    <select value={form.branch_id} onChange={(e) => f("branch_id",e.target.value)}>
                       <option value="">Select Branch</option>
                       {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </div>
                 )}
                 <div className="form-group"><label>Batch</label>
-                  <select value={form.batch_id} onChange={(e) => f("batch_id", e.target.value)}>
+                  <select value={form.batch_id} onChange={(e) => f("batch_id",e.target.value)}>
                     <option value="">Select Batch</option>
                     {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
                 <div className="form-group"><label>Fee Type</label>
-                  <select value={form.fee_type} onChange={(e) => f("fee_type", e.target.value)}>
+                  <select value={form.fee_type} onChange={(e) => f("fee_type",e.target.value)}>
                     <option value="monthly">Monthly</option><option value="quarterly">Quarterly</option>
                     <option value="yearly">Yearly</option><option value="course">Per Course</option>
                   </select>
                 </div>
-                <div className="form-group"><label>Admission Fee (₹)</label><input type="number" value={form.admission_fee} onChange={(e) => f("admission_fee", e.target.value)} placeholder="0" /></div>
-                <div className="form-group"><label>Discount (%)</label><input type="number" min="0" max="100" value={form.discount} onChange={(e) => f("discount", e.target.value)} placeholder="0" /></div>
-                <div className="form-group full"><label>Discount Reason</label><input value={form.discount_reason} onChange={(e) => f("discount_reason", e.target.value)} placeholder="e.g. Sibling discount" /></div>
-                <div className="form-group">
-                  <label>Fee Due Day (1–28)</label>
-                  <input type="number" min="1" max="28" value={form.due_day} onChange={(e) => f("due_day", e.target.value)} placeholder="10" />
-                </div>
-                <div className="form-group full"><label>Address</label><textarea value={form.address} onChange={(e) => f("address", e.target.value)} /></div>
+                <div className="form-group"><label>Admission Fee (₹)</label><input type="number" value={form.admission_fee} onChange={(e) => f("admission_fee",e.target.value)} placeholder="0" /></div>
+                <div className="form-group"><label>Discount (%)</label><input type="number" min="0" max="100" value={form.discount} onChange={(e) => f("discount",e.target.value)} placeholder="0" /></div>
+                <div className="form-group full"><label>Discount Reason</label><input value={form.discount_reason} onChange={(e) => f("discount_reason",e.target.value)} placeholder="e.g. Sibling discount" /></div>
+                <div className="form-group"><label>Fee Due Day (1–28)</label><input type="number" min="1" max="28" value={form.due_day} onChange={(e) => f("due_day",e.target.value)} placeholder="10" /></div>
+                <div className="form-group full"><label>Address</label><textarea value={form.address} onChange={(e) => f("address",e.target.value)} /></div>
                 {editing && (
                   <div className="form-group"><label>Status</label>
-                    <select value={form.status} onChange={(e) => f("status", e.target.value)}>
+                    <select value={form.status} onChange={(e) => f("status",e.target.value)}>
                       <option value="active">Active</option><option value="inactive">Inactive</option>
                     </select>
                   </div>
                 )}
               </div>
-              {error && <div className="error-msg" style={{ marginTop: 12 }}>⚠ {error}</div>}
+              {error && <div className="error-msg" style={{ marginTop:12 }}>⚠ {error}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
@@ -498,23 +431,23 @@ export default function Students() {
 
       {/* Portal Modal */}
       {portalStudent && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setPortalStudent(null)}>
-          <div className="modal" style={{ maxWidth: 400 }}>
+        <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget && setPortalStudent(null)}>
+          <div className="modal" style={{ maxWidth:400 }}>
             <div className="modal-header">
               <div className="modal-title">🎓 Student Portal Access</div>
               <button className="modal-close" onClick={() => setPortalStudent(null)}>✕</button>
             </div>
             <div className="modal-body">
-              <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8 }}>
-                <div style={{ fontWeight: 700 }}>{portalStudent.name}</div>
-                <div style={{ fontSize: 12, color: "var(--text2)" }}>{portalStudent.email}</div>
+              <div style={{ marginBottom:16,padding:"10px 14px",background:"var(--bg3)",borderRadius:8 }}>
+                <div style={{ fontWeight:700 }}>{portalStudent.name}</div>
+                <div style={{ fontSize:12,color:"var(--text2)" }}>{portalStudent.email}</div>
               </div>
               <div className="form-group">
                 <label>Portal Password</label>
                 <input type="password" placeholder="Enter password for student"
                   value={portalPassword} onChange={(e) => setPortalPassword(e.target.value)} />
               </div>
-              {portalMsg && <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13 }}>{portalMsg}</div>}
+              {portalMsg && <div style={{ marginTop:10,padding:"8px 12px",background:"var(--bg3)",borderRadius:6,fontSize:13 }}>{portalMsg}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setPortalStudent(null)}>Close</button>
@@ -524,13 +457,7 @@ export default function Students() {
         </div>
       )}
 
-      {/* Device Sessions Modal */}
-      {devicesStudent && (
-        <DeviceSessionsModal
-          student={devicesStudent}
-          onClose={() => setDevicesStudent(null)}
-        />
-      )}
+      {devicesStudent && <DeviceSessionsModal student={devicesStudent} onClose={() => setDevicesStudent(null)} />}
     </div>
   );
 }

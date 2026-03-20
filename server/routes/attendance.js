@@ -2,7 +2,7 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
-// ── Get attendance list ──────────────────────────────────────────────────────
+// ── Get attendance list ────────────────────────────────────────────────────────
 router.get("/", auth, branchFilter, async (req, res) => {
   try {
     const { month, year, student_id } = req.query;
@@ -99,11 +99,11 @@ router.post("/bulk", auth, async (req, res) => {
   }
 });
 
-// ── Auto-generate attendance records for a month ─────────────────────────────
-// Creates a record for every active student who doesn't have one yet.
-// total_days = number of working days in that month for the branch.
-// present = number of QR scans (entry+exit) the student already had.
-// absent  = total_days - present  (computed automatically)
+// ── Auto-generate attendance for a month ────────────────────────────────────────
+// Correctly calculates:
+//   total_days = working days in the month (calendar days minus holidays)
+//   present    = days where the student had BOTH entry AND exit QR scans
+//   absent     = total_days - present (auto)
 router.post("/generate-month", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -112,84 +112,101 @@ router.post("/generate-month", auth, async (req, res) => {
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     if (!bid) return res.status(400).json({ error: "branch_id required" });
 
-    // 1. Count working days for this branch+month from the working_days table
-    //    Days NOT marked as holidays (or not in the table at all) are working days.
-    const daysInMonth = new Date(year, month, 0).getDate();
-
-    // Fetch all holidays for this branch+month
-    const { rows: holidays } = await db.query(
-      `SELECT DATE_PART('day', date) AS day
-       FROM working_days
-       WHERE branch_id=$1
-         AND EXTRACT(YEAR FROM date)=$2
-         AND EXTRACT(MONTH FROM date)=$3
-         AND is_working=false`,
-      [bid, year, month]
-    );
-    const holidayDays = new Set(holidays.map((h) => parseInt(h.day)));
-    const totalWorkingDays = daysInMonth - holidayDays.size;
-
-    // 2. Get all active students in this branch
-    const { rows: students } = await db.query(
-      `SELECT id FROM students WHERE branch_id=$1 AND status='active'`, [bid]
-    );
-
-    // 3. Count QR scans (full entry+exit pairs) per student for this month
-    const { rows: scanCounts } = await db.query(
-      `SELECT student_id, COUNT(*) AS scan_days
-       FROM qr_scans
-       WHERE branch_id=$1
-         AND EXTRACT(YEAR  FROM scan_date)=$2
-         AND EXTRACT(MONTH FROM scan_date)=$3
-         AND exit_time IS NOT NULL
-       GROUP BY student_id`,
-      [bid, year, month]
-    );
-    const scanMap = {};
-    scanCounts.forEach((s) => { scanMap[s.student_id] = parseInt(s.scan_days); });
-
-    // 4. Upsert attendance records for all students
-    const client = await db.pool.connect();
-    let created = 0; let updated = 0;
-    try {
-      await client.query("BEGIN");
-      for (const s of students) {
-        const present = Math.min(scanMap[s.id] || 0, totalWorkingDays);
-        const { rows: existing } = await client.query(
-          `SELECT id FROM attendance WHERE student_id=$1 AND month=$2 AND year=$3`,
-          [s.id, month, year]
-        );
-        if (existing.length === 0) {
-          await client.query(
-            `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-            [s.id, bid, month, year, totalWorkingDays, present]
-          );
-          created++;
-        } else {
-          // Only update total_days; keep manually-edited present values unless overwrite=true
-          await client.query(
-            `UPDATE attendance SET total_days=$1, present=$2 WHERE student_id=$3 AND month=$4 AND year=$5`,
-            [totalWorkingDays, present, s.id, month, year]
-          );
-          updated++;
-        }
-      }
-      await client.query("COMMIT");
-      res.json({ created, updated, total_working_days: totalWorkingDays, students: students.length });
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    const result = await generateMonthForBranch(bid, parseInt(month), parseInt(year));
+    res.json(result);
   } catch (e) {
     console.error("Generate month attendance error:", e.message);
     res.status(500).json({ error: "Failed to generate attendance" });
   }
 });
 
-// ── Get working days count for a branch+month (used by frontend) ─────────────
+// ── Shared logic used by both API and cron ───────────────────────────────────
+async function generateMonthForBranch(bid, month, year) {
+  // 1. Count only past/today days as working (don't count future dates)
+  const today = new Date();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  // Only count days up to today if we're in the current month, else full month
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month;
+  const countUpToDay   = isCurrentMonth ? today.getDate() : daysInMonth;
+
+  // 2. Fetch holidays for this branch+month
+  const { rows: holidays } = await db.query(
+    `SELECT DATE_PART('day', date)::int AS day
+     FROM working_days
+     WHERE branch_id=$1
+       AND EXTRACT(YEAR  FROM date)=$2
+       AND EXTRACT(MONTH FROM date)=$3
+       AND is_working=false`,
+    [bid, year, month]
+  );
+  // Only count holidays that fall within our counting window
+  const holidaySet = new Set(
+    holidays
+      .map((h) => h.day)
+      .filter((d) => d <= countUpToDay)
+  );
+  const totalWorkingDays = countUpToDay - holidaySet.size;
+
+  // 3. Get all active students in this branch
+  const { rows: students } = await db.query(
+    `SELECT id FROM students WHERE branch_id=$1 AND status='active'`, [bid]
+  );
+
+  // 4. Count completed scans (entry + exit both present) per student
+  //    This is the definitive "present" count — one row per day with exit_time set
+  const { rows: scanCounts } = await db.query(
+    `SELECT student_id, COUNT(*) AS present_days
+     FROM qr_scans
+     WHERE branch_id=$1
+       AND EXTRACT(YEAR  FROM scan_date)=$2
+       AND EXTRACT(MONTH FROM scan_date)=$3
+       AND exit_time IS NOT NULL
+     GROUP BY student_id`,
+    [bid, year, month]
+  );
+  const scanMap = {};
+  scanCounts.forEach((s) => { scanMap[s.student_id] = parseInt(s.present_days); });
+
+  // 5. Upsert records for all students
+  const client = await db.pool.connect();
+  let created = 0; let updated = 0;
+  try {
+    await client.query("BEGIN");
+    for (const s of students) {
+      // present can't exceed totalWorkingDays
+      const present = Math.min(scanMap[s.id] || 0, totalWorkingDays);
+      const { rows: existing } = await client.query(
+        `SELECT id FROM attendance WHERE student_id=$1 AND month=$2 AND year=$3`,
+        [s.id, month, year]
+      );
+      if (existing.length === 0) {
+        await client.query(
+          `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [s.id, bid, month, year, totalWorkingDays, present]
+        );
+        created++;
+      } else {
+        await client.query(
+          `UPDATE attendance
+           SET total_days=$1, present=$2
+           WHERE student_id=$3 AND month=$4 AND year=$5`,
+          [totalWorkingDays, present, s.id, month, year]
+        );
+        updated++;
+      }
+    }
+    await client.query("COMMIT");
+    return { created, updated, total_working_days: totalWorkingDays, students: students.length };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Get working days count for a branch+month ─────────────────────────────────
 router.get("/working-days-count", auth, async (req, res) => {
   try {
     const { month, year, branch_id } = req.query;
@@ -197,17 +214,32 @@ router.get("/working-days-count", auth, async (req, res) => {
     const bid = branch_id || (req.user.role !== "super_admin" ? req.user.branch_id : null);
     if (!bid) return res.status(400).json({ error: "branch_id required" });
 
+    const today = new Date();
     const daysInMonth = new Date(year, month, 0).getDate();
+    const isCurrentMonth = today.getFullYear() === parseInt(year) && today.getMonth() + 1 === parseInt(month);
+    const countUpToDay   = isCurrentMonth ? today.getDate() : daysInMonth;
+
     const { rows: holidays } = await db.query(
       `SELECT COUNT(*) AS cnt FROM working_days
-       WHERE branch_id=$1 AND EXTRACT(YEAR FROM date)=$2 AND EXTRACT(MONTH FROM date)=$3 AND is_working=false`,
-      [bid, year, month]
+       WHERE branch_id=$1
+         AND EXTRACT(YEAR  FROM date)=$2
+         AND EXTRACT(MONTH FROM date)=$3
+         AND is_working=false
+         AND DATE_PART('day', date)::int <= $4`,
+      [bid, year, month, countUpToDay]
     );
-    const workingDays = daysInMonth - parseInt(holidays[0].cnt);
-    res.json({ working_days: workingDays, total_days: daysInMonth, holidays: parseInt(holidays[0].cnt) });
+    const workingDays = countUpToDay - parseInt(holidays[0].cnt);
+    res.json({
+      working_days:  workingDays,
+      total_days:    daysInMonth,
+      counted_days:  countUpToDay,
+      holidays:      parseInt(holidays[0].cnt),
+      is_current_month: isCurrentMonth,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 module.exports = router;
+module.exports.generateMonthForBranch = generateMonthForBranch;
