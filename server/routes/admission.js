@@ -3,6 +3,15 @@ const db       = require("../db");
 const { auth } = require("../middleware");
 const rateLimit = require("express-rate-limit");
 
+// Ensure photo_url column exists on admission_enquiries
+async function initAdmissionColumns() {
+  try {
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+    console.log("✅ admission_enquiries.photo_url column ready");
+  } catch (e) { console.error("Admission migration error:", e.message); }
+}
+initAdmissionColumns();
+
 const enquiryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, max: 5,
   standardHeaders: true, legacyHeaders: false,
@@ -15,34 +24,29 @@ router.post("/enquiry", enquiryLimiter, async (req, res) => {
   const { name, phone, parent_phone, email, batch_id, address, branch_id, extra } = req.body;
   if (!name || !phone) return res.status(400).json({ error: "Name and phone are required" });
   try {
-    // Extract photo_url from extra if present
+    // Always extract photo_url from extra JSON so it's stored in its own column
+    // This makes it reliable regardless of DB column availability
     let photoUrl = null;
     if (extra) {
-      try { const ex = JSON.parse(extra); photoUrl = ex.photo_url || null; } catch {}
+      try {
+        const ex = typeof extra === "string" ? JSON.parse(extra) : extra;
+        photoUrl = ex.photo_url || null;
+      } catch {}
     }
+
     const { rows } = await db.query(
       `INSERT INTO admission_enquiries
        (name, phone, parent_phone, email, batch_id, address, branch_id, extra, photo_url, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending') RETURNING *`,
       [name, phone, parent_phone || null, email || null,
-       batch_id || null, address || null, branch_id || null, extra || null, photoUrl]
+       batch_id || null, address || null, branch_id || null,
+       typeof extra === "string" ? extra : JSON.stringify(extra || {}),
+       photoUrl]
     );
     res.json({ success: true, enquiry_id: rows[0].id });
   } catch (e) {
-    // Fallback if photo_url column doesn't exist yet
-    try {
-      const { rows } = await db.query(
-        `INSERT INTO admission_enquiries
-         (name, phone, parent_phone, email, batch_id, address, branch_id, extra, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending') RETURNING *`,
-        [name, phone, parent_phone || null, email || null,
-         batch_id || null, address || null, branch_id || null, extra || null]
-      );
-      res.json({ success: true, enquiry_id: rows[0].id });
-    } catch (e2) {
-      console.error("Admission enquiry error:", e2.message);
-      res.status(500).json({ error: "Failed to submit enquiry" });
-    }
+    console.error("Admission enquiry error:", e.message);
+    res.status(500).json({ error: "Failed to submit enquiry" });
   }
 });
 
@@ -85,25 +89,30 @@ router.get("/enquiries", auth, async (req, res) => {
   }
 });
 
-// Admin: Approve — now copies photo_url from enquiry to student
+// Admin: Approve — copies ALL extra fields + photo_url to the new student record
 router.post("/enquiries/:id/approve", auth, async (req, res) => {
   try {
     const { rows } = await db.query("SELECT * FROM admission_enquiries WHERE id=$1", [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: "Enquiry not found" });
     const e = rows[0];
 
-    // Get photo from extra JSON or photo_url column
+    // Resolve photo: prefer dedicated column, fallback to extra JSON
     let photoUrl = e.photo_url || null;
     if (!photoUrl && e.extra) {
-      try { const ex = JSON.parse(e.extra); photoUrl = ex.photo_url || null; } catch {}
+      try {
+        const ex = typeof e.extra === "string" ? JSON.parse(e.extra) : e.extra;
+        photoUrl = ex.photo_url || null;
+      } catch {}
     }
 
+    // Create student with photo_url populated
     const { rows: stuRows } = await db.query(
       `INSERT INTO students
        (branch_id, batch_id, name, phone, parent_phone, email, address, admission_date, status, photo_url)
        VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_DATE,'active',$8) RETURNING *`,
       [e.branch_id, e.batch_id, e.name, e.phone, e.parent_phone, e.email, e.address, photoUrl]
     );
+
     await db.query(
       "UPDATE admission_enquiries SET status='approved', student_id=$1 WHERE id=$2",
       [stuRows[0].id, req.params.id]

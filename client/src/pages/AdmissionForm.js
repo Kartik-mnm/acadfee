@@ -3,22 +3,24 @@ import API from "../api";
 
 export default function AdmissionForm() {
   const [branches, setBranches] = useState([]);
-  const [batches, setBatches] = useState([]);
+  const [batches,  setBatches]  = useState([]);
   const [form, setForm] = useState({
     name: "", father_name: "", mother_name: "", dob: "", phone: "",
     parent_phone: "", email: "", address: "", batch_id: "", branch_id: "",
     aadhar: "", age: "", mother_tongue: "", previous_school: "",
     medium: "", class_name: "", percent: "", guardian_name: "", photo_url: "",
   });
-  const [saving, setSaving] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
-  const [photoPreview, setPhotoPreview] = useState("");
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [submitted,     setSubmitted]     = useState(false);
+  const [error,         setError]         = useState("");
+  const [photoPreview,  setPhotoPreview]  = useState("");
+  const [uploadingPhoto,setUploadingPhoto]= useState(false);
   const photoRef = useRef();
 
   useEffect(() => {
-    API.get("/admission/form-data").then((r) => { setBranches(r.data.branches); setBatches(r.data.batches); }).catch(() => {});
+    API.get("/admission/form-data")
+      .then((r) => { setBranches(r.data.branches); setBatches(r.data.batches); })
+      .catch(() => {});
   }, []);
 
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -31,11 +33,18 @@ export default function AdmissionForm() {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const base64 = e.target.result;
+      // Show preview immediately
       setPhotoPreview(base64);
       try {
         const { data } = await API.post("/upload/photo", { image: base64 });
+        // Store Cloudinary URL in form state
         f("photo_url", data.url);
-      } catch { f("photo_url", base64); }
+        // Also update preview to the final hosted URL
+        setPhotoPreview(data.url);
+      } catch {
+        // Fallback: keep base64 if Cloudinary upload fails
+        f("photo_url", base64);
+      }
       setUploadingPhoto(false);
     };
     reader.readAsDataURL(file);
@@ -47,15 +56,31 @@ export default function AdmissionForm() {
     if (!form.parent_phone) { setError("Parent mobile number is required"); return; }
     setSaving(true); setError("");
     try {
+      // Build extra JSON — always include photo_url here so it's preserved
+      const extraData = {
+        father_name: form.father_name,
+        mother_name: form.mother_name,
+        dob: form.dob,
+        aadhar: form.aadhar,
+        age: form.age,
+        mother_tongue: form.mother_tongue,
+        previous_school: form.previous_school,
+        medium: form.medium,
+        class_name: form.class_name,
+        percent: form.percent,
+        guardian_name: form.guardian_name,
+        photo_url: form.photo_url, // ← always stored here
+      };
+
       await API.post("/admission/enquiry", {
-        ...form,
-        extra: JSON.stringify({
-          father_name: form.father_name, mother_name: form.mother_name, dob: form.dob,
-          aadhar: form.aadhar, age: form.age, mother_tongue: form.mother_tongue,
-          previous_school: form.previous_school, medium: form.medium,
-          class_name: form.class_name, percent: form.percent,
-          guardian_name: form.guardian_name, photo_url: form.photo_url,
-        }),
+        name:         form.name,
+        phone:        form.phone,
+        parent_phone: form.parent_phone,
+        email:        form.email,
+        address:      form.address,
+        batch_id:     form.batch_id,
+        branch_id:    form.branch_id,
+        extra:        JSON.stringify(extraData),
       });
       setSubmitted(true);
     } catch (e) {
@@ -63,16 +88,10 @@ export default function AdmissionForm() {
     } finally { setSaving(false); }
   };
 
-  // Print the filled admission form in the exact same layout the student sees
+  // Print the filled admission form — exact same layout as the student sees on screen
   const printForm = () => {
-    const extra = {
-      father_name: form.father_name, mother_name: form.mother_name, dob: form.dob,
-      aadhar: form.aadhar, age: form.age, mother_tongue: form.mother_tongue,
-      previous_school: form.previous_school, medium: form.medium,
-      class_name: form.class_name, percent: form.percent, guardian_name: form.guardian_name,
-    };
     const branchName = branches.find((b) => b.id == form.branch_id)?.name || "";
-    const batchName  = batches.find((b) => b.id == form.batch_id)?.name || "";
+    const batchName  = batches.find((b)  => b.id == form.batch_id)?.name  || "";
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html><html><head><title>Registration Form</title>
     <style>
@@ -83,84 +102,80 @@ export default function AdmissionForm() {
       .header { padding: 20px 28px 16px; border-bottom: 4px solid #cc0000; }
       .header-inner { display: flex; align-items: center; justify-content: center; gap: 20px; }
       .academy-name { font-size: 36px; font-weight: 900; color: #cc0000; font-family: 'Arial Black', Arial, sans-serif; letter-spacing: 2px; line-height: 1; }
-      .academy-addr { font-size: 11px; color: #333; margin-top: 8px; line-height: 1.8; }
+      .academy-addr { font-size: 11px; color: #333; margin-top: 8px; line-height: 1.8; text-align: center; }
       .form-title-bar { text-align: center; padding: 10px; border-bottom: 2px solid #cc0000; }
       .form-title-text { font-size: 17px; font-weight: 900; color: #cc0000; letter-spacing: 3px; text-decoration: underline; }
       .body { padding: 18px 28px; }
       .top-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 20px; }
       .photo-box { width: 100px; height: 120px; border: 2px solid #333; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fafafa; border-radius: 2px; flex-shrink: 0; font-size: 13px; font-weight: 900; color: #333; }
-      .inp { width: 100%; padding: 5px 2px; border: none; border-bottom: 1.5px solid #333; background: transparent; font-size: 13px; font-family: Arial, sans-serif; color: #000; min-height: 22px; }
+      .inp { width: 100%; padding: 3px 2px; border: none; border-bottom: 1.5px solid #333; background: transparent; font-size: 13px; font-family: Arial, sans-serif; color: #000; min-height: 22px; display: inline-block; vertical-align: bottom; }
       .lbl { font-size: 12px; font-weight: 700; color: #111; white-space: nowrap; }
       .field-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
       .num { font-size: 12px; font-weight: 700; color: #111; min-width: 22px; }
       .divider { border-top: 1px solid #ccc; margin-bottom: 14px; }
-      .addr-textarea { flex: 1; resize: none; height: 55px; border: 1px solid #999; padding: 6px 8px; border-radius: 2px; font-size: 13px; font-family: Arial, sans-serif; color: #000; background: white; }
+      .addr-box { flex: 1; min-height: 55px; border: 1px solid #999; padding: 6px 8px; border-radius: 2px; font-size: 13px; font-family: Arial, sans-serif; color: #000; background: white; white-space: pre-wrap; word-break: break-word; }
       .declaration { border: 2px solid #333; border-radius: 4px; padding: 14px 18px; margin-bottom: 18px; }
       .decl-title { text-align: center; font-size: 13px; font-weight: 900; color: #cc0000; text-decoration: underline; margin-bottom: 12px; letter-spacing: 1px; }
       .decl-text { font-size: 12px; line-height: 2; color: #111; }
-      .underline-blank { display: inline-block; border-bottom: 1px solid #333; }
-      .sign-row { display: flex; justify-content: space-between; margin-top: 20px; }
+      .blank { display: inline-block; border-bottom: 1px solid #333; }
+      .sign-row { display: flex; justify-content: space-between; margin-top: 20px; font-size: 12px; }
       .footer-note { text-align: center; font-size: 11px; color: #888; margin-top: 10px; padding-bottom: 16px; }
     </style></head><body>
     <div class="form-wrap">
-      <div class="header">
-        <div class="header-inner">
-          <div style="text-align:center">
-            <div class="academy-name">NISHCHAY ACADEMY</div>
-            <div class="academy-addr">
-              Branch 1. Beside P.D. Hospital, Dabha, Khadgaon Road, Wadi, Nagpur- 23<br/>
-              Branch 2. 1st Floor, Seva Medical, Dattwadi, Nagpur- 23<br/>
-              Branch 3. G-34, Sai Regency, Ravinagar, Nagpur -01<br/>
-              Mob: 8208145483, 9371333013 &nbsp;|&nbsp; nishchayacademy20@gmail.com
-            </div>
-          </div>
+      <div class="header"><div class="header-inner"><div style="text-align:center">
+        <div class="academy-name">NISHCHAY ACADEMY</div>
+        <div class="academy-addr">
+          Branch 1. Beside P.D. Hospital, Dabha, Khadgaon Road, Wadi, Nagpur- 23<br/>
+          Branch 2. 1st Floor, Seva Medical, Dattwadi, Nagpur- 23<br/>
+          Branch 3. G-34 , Sai Regency , Ravinagar , Nagpur -01<br/>
+          Mob: 8208145483, 9371333013 &nbsp;|&nbsp; nishchayacademy20@gmail.com
         </div>
-      </div>
+      </div></div></div>
       <div class="form-title-bar"><span class="form-title-text">REGISTRATION FORM</span></div>
       <div class="body">
         <div class="top-row">
           <div style="flex:1">
-            <div class="field-row"><span class="lbl">AADHAR NO. :</span><div class="inp">${extra.aadhar || ""}</div></div>
+            <div class="field-row"><span class="lbl">AADHAR NO. :</span><div class="inp">${form.aadhar || ""}</div></div>
             <div class="field-row"><span class="lbl" style="min-width:60px">BRANCH :</span><div class="inp">${branchName}</div></div>
             <div class="field-row"><span class="lbl" style="min-width:60px">COURSE :</span><div class="inp">${batchName}</div></div>
           </div>
           <div class="photo-box">
             ${form.photo_url
-              ? `<img src="${form.photo_url}" style="width:100%;height:100%;object-fit:cover"/>`
+              ? `<img src="${form.photo_url}" style="width:100%;height:100%;object-fit:cover" />`
               : "PHOTO"}
           </div>
         </div>
         <div class="divider"></div>
-        <div class="field-row"><span class="num">1)</span><span class="lbl" style="min-width:190px">FULL NAME OF STUDENT :</span><div class="inp">${form.name}</div></div>
-        <div class="field-row"><span class="num">2)</span><span class="lbl" style="min-width:190px">FATHER NAME :</span><div class="inp">${extra.father_name || ""}</div></div>
-        <div class="field-row"><span class="num">3)</span><span class="lbl" style="min-width:190px">MOTHER NAME :</span><div class="inp">${extra.mother_name || ""}</div></div>
+        <div class="field-row"><span class="num">1)</span><span class="lbl" style="min-width:190px">FULL NAME OF STUDENT :</span><div class="inp" style="flex:1">${form.name || ""}</div></div>
+        <div class="field-row"><span class="num">2)</span><span class="lbl" style="min-width:190px">FATHER NAME :</span><div class="inp" style="flex:1">${form.father_name || ""}</div></div>
+        <div class="field-row"><span class="num">3)</span><span class="lbl" style="min-width:190px">MOTHER NAME :</span><div class="inp" style="flex:1">${form.mother_name || ""}</div></div>
         <div class="field-row">
-          <span class="num">4)</span><span class="lbl" style="min-width:130px">DATE OF BIRTH :</span><div class="inp" style="flex:2">${extra.dob || ""}</div>
-          <span class="num">5)</span><span class="lbl">AGE :</span><div class="inp" style="width:60px">${extra.age || ""}</div>
+          <span class="num">4)</span><span class="lbl" style="min-width:130px">DATE OF BIRTH :</span><div class="inp" style="flex:2">${form.dob || ""}</div>
+          <span class="num" style="margin-left:12px">5)</span><span class="lbl">AGE :</span><div class="inp" style="width:60px">${form.age || ""}</div>
         </div>
-        <div class="field-row"><span class="num">6)</span><span class="lbl" style="min-width:190px">MOTHER TONGUE :</span><div class="inp">${extra.mother_tongue || ""}</div></div>
-        <div class="field-row"><span class="num">7)</span><span class="lbl" style="min-width:190px">PREVIOUS SCHOOL :</span><div class="inp">${extra.previous_school || ""}</div></div>
+        <div class="field-row"><span class="num">6)</span><span class="lbl" style="min-width:190px">MOTHER TONGUE :</span><div class="inp" style="flex:1">${form.mother_tongue || ""}</div></div>
+        <div class="field-row"><span class="num">7)</span><span class="lbl" style="min-width:190px">PREVIOUS SCHOOL :</span><div class="inp" style="flex:1">${form.previous_school || ""}</div></div>
         <div class="field-row">
-          <span class="num">8)</span><span class="lbl">MEDIUM :</span><div class="inp" style="width:100px">${extra.medium || ""}</div>
-          <span class="lbl">CLASS :</span><div class="inp" style="width:80px">${extra.class_name || ""}</div>
-          <span class="lbl">PERCENT :</span><div class="inp" style="width:80px">${extra.percent || ""}</div>
+          <span class="num">8)</span><span class="lbl">MEDIUM :</span><div class="inp" style="width:100px">${form.medium || ""}</div>
+          <span class="lbl" style="margin-left:10px">CLASS :</span><div class="inp" style="width:80px">${form.class_name || ""}</div>
+          <span class="lbl" style="margin-left:10px">PERCENT :</span><div class="inp" style="width:80px">${form.percent || ""}</div>
         </div>
-        <div class="field-row"><span class="num">9)</span><span class="lbl" style="min-width:230px">NAME OF PARENT OR GUARDIAN :</span><div class="inp">${extra.guardian_name || ""}</div></div>
+        <div class="field-row"><span class="num">9)</span><span class="lbl" style="min-width:230px">NAME OF PARENT OR GUARDIAN :</span><div class="inp" style="flex:1">${form.guardian_name || ""}</div></div>
         <div class="field-row" style="align-items:flex-start">
           <span class="num">10)</span><span class="lbl" style="min-width:80px">ADDRESS :</span>
-          <textarea class="addr-textarea">${form.address || ""}</textarea>
+          <div class="addr-box">${form.address || ""}</div>
         </div>
         <div class="divider"></div>
-        <div class="field-row"><span class="num">11)</span><span class="lbl" style="min-width:220px">STUDENT MOBILE NUMBER :</span><div class="inp">${form.phone}</div></div>
-        <div class="field-row"><span class="num">12)</span><span class="lbl" style="min-width:220px">PARENT MOBILE NUMBER :</span><div class="inp">${form.parent_phone}</div></div>
-        <div class="field-row"><span class="num">13)</span><span class="lbl" style="min-width:220px">EMAIL ID :</span><div class="inp">${form.email || ""}</div></div>
+        <div class="field-row"><span class="num">11)</span><span class="lbl" style="min-width:220px">STUDENT MOBILE NUMBER :</span><div class="inp" style="flex:1">${form.phone || ""}</div></div>
+        <div class="field-row"><span class="num">12)</span><span class="lbl" style="min-width:220px">PARENT MOBILE NUMBER :</span><div class="inp" style="flex:1">${form.parent_phone || ""}</div></div>
+        <div class="field-row"><span class="num">13)</span><span class="lbl" style="min-width:220px">EMAIL ID :</span><div class="inp" style="flex:1">${form.email || ""}</div></div>
         <div style="border-top:2px solid #333;margin:18px 0"></div>
         <div class="declaration">
           <div class="decl-title">DECLARATION BY PARENTS / GUARDIAN</div>
-          <div class="decl-text">I <span class="underline-blank" style="min-width:180px">&nbsp;</span> REQUEST TO ADMIT MY SON / DAUGHTER IN CLASS <span class="underline-blank" style="min-width:60px">&nbsp;</span> OF THE NISHCHAY ACADEMY, NAGPUR. I AGREE TO THE TERMS AND CONDITIONS OF THE INSTITUTE AND ASSURE TO ABIDE BY THEM. I ALSO UNDERTAKE TO PAY THE FEES LEVIED.</div>
+          <div class="decl-text">I <span class="blank" style="min-width:180px">&nbsp;</span> REQUEST TO ADMIT MY SON / DAUGHTER IN CLASS <span class="blank" style="min-width:60px">&nbsp;</span> OF THE NISHCHAY ACADEMY, NAGPUR. I AGREE TO THE TERMS AND CONDITIONS OF THE INSTITUTE AND ASSURE TO ABIDE BY THEM. I ALSO UNDERTAKE TO PAY THE FEES LEVIED.</div>
           <div class="sign-row">
-            <div style="font-size:12px">DATE : <span class="underline-blank" style="min-width:130px">&nbsp;</span></div>
-            <div style="font-size:12px">SIGNATURE : ___________________</div>
+            <div>DATE : <span class="blank" style="min-width:130px">&nbsp;</span></div>
+            <div>SIGNATURE : ___________________</div>
           </div>
         </div>
         <div class="footer-note">For Official Use : 200/- Form Fees &nbsp;|&nbsp; Receiver Sign : _______________</div>
@@ -201,6 +216,7 @@ export default function AdmissionForm() {
         .admission-form select option { color: #000; background: white; }
       `}</style>
       <div className="admission-form" style={{ maxWidth: 720, margin: "0 auto", background: "white", boxShadow: "0 4px 32px rgba(0,0,0,0.18)", borderRadius: 4 }}>
+
         {/* HEADER */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "4px solid #cc0000" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20 }}>
@@ -216,10 +232,12 @@ export default function AdmissionForm() {
             </div>
           </div>
         </div>
+
         {/* FORM TITLE */}
         <div style={{ textAlign: "center", padding: "10px", borderBottom: "2px solid #cc0000" }}>
           <span style={{ fontSize: 17, fontWeight: 900, color: "#cc0000", letterSpacing: 3, textDecoration: "underline" }}>REGISTRATION FORM</span>
         </div>
+
         <div style={{ padding: "18px 28px" }}>
           {error && <div style={{ background: "#fff0f0", border: "1px solid #cc0000", borderRadius: 6, padding: "8px 12px", marginBottom: 12, color: "#cc0000", fontSize: 13 }}>⚠️ {error}</div>}
 
@@ -246,20 +264,35 @@ export default function AdmissionForm() {
                 </select>
               </div>
             </div>
+
             {/* Photo Upload */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <div onClick={() => photoRef.current.click()} style={{ width: 100, height: 120, border: "2px solid #333", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fafafa", borderRadius: 2, position: "relative", flexShrink: 0 }}>
-                {photoPreview ? <img src={photoPreview} alt="Photo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <div
+                onClick={() => !uploadingPhoto && photoRef.current.click()}
+                style={{ width: 100, height: 120, border: "2px solid #333", cursor: uploadingPhoto ? "default" : "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fafafa", borderRadius: 2, position: "relative", flexShrink: 0 }}
+              >
+                {photoPreview
+                  ? <img src={photoPreview} alt="Photo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   : <><div style={{ fontSize: 13, fontWeight: 900, color: "#333", letterSpacing: 1 }}>PHOTO</div><div style={{ fontSize: 10, color: "#888", marginTop: 4, textAlign: "center", padding: "0 4px" }}>Click to upload</div></>}
-                {uploadingPhoto && <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.85)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>Uploading…</div>}
+                {uploadingPhoto && (
+                  <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 10, gap: 4 }}>
+                    <div style={{ width: 20, height: 20, border: "2px solid #cc0000", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    Uploading…
+                  </div>
+                )}
               </div>
-              {photoPreview && <button type="button" onClick={() => { setPhotoPreview(""); f("photo_url", ""); }} style={{ fontSize: 10, color: "#cc0000", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Remove</button>}
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              {photoPreview && !uploadingPhoto && (
+                <button type="button" onClick={() => { setPhotoPreview(""); f("photo_url", ""); }}
+                  style={{ fontSize: 10, color: "#cc0000", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Remove</button>
+              )}
               <input ref={photoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handlePhoto(e.target.files[0])} />
             </div>
           </div>
 
           <div style={{ borderTop: "1px solid #ccc", marginBottom: 14 }} />
 
+          {/* Fields 1-3 */}
           {[{num:"1)",label:"FULL NAME OF STUDENT :",key:"name",required:true},{num:"2)",label:"FATHER NAME :",key:"father_name"},{num:"3)",label:"MOTHER NAME :",key:"mother_name"}].map((row) => (
             <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <span style={{ ...lbl, minWidth: 22 }}>{row.num}</span>
@@ -268,6 +301,7 @@ export default function AdmissionForm() {
             </div>
           ))}
 
+          {/* DOB + Age */}
           <div style={{ display: "flex", gap: 16, marginBottom: 12, alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 2 }}>
               <span style={{ ...lbl, minWidth: 22 }}>4)</span>
@@ -281,6 +315,7 @@ export default function AdmissionForm() {
             </div>
           </div>
 
+          {/* Fields 6-7 */}
           {[{num:"6)",label:"MOTHER TONGUE :",key:"mother_tongue"},{num:"7)",label:"PREVIOUS SCHOOL :",key:"previous_school"}].map((row) => (
             <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <span style={{ ...lbl, minWidth: 22 }}>{row.num}</span>
@@ -289,6 +324,7 @@ export default function AdmissionForm() {
             </div>
           ))}
 
+          {/* Field 8 */}
           <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
             <span style={{ ...lbl, minWidth: 22 }}>8)</span>
             <span style={lbl}>MEDIUM :</span>
@@ -299,13 +335,14 @@ export default function AdmissionForm() {
             <input style={{ ...inp, width: 80 }} value={form.percent} onChange={(e) => f("percent", e.target.value)} />
           </div>
 
+          {/* Field 9 */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <span style={{ ...lbl, minWidth: 22 }}>9)</span>
             <span style={{ ...lbl, minWidth: 230 }}>NAME OF PARENT OR GUARDIAN :</span>
             <input style={{ ...inp, flex: 1 }} value={form.guardian_name} onChange={(e) => f("guardian_name", e.target.value)} />
           </div>
 
-          {/* Fix #3 — Address textarea background is now white */}
+          {/* Field 10 - Address */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
             <span style={{ ...lbl, minWidth: 22 }}>10)</span>
             <span style={{ ...lbl, minWidth: 80 }}>ADDRESS :</span>
@@ -317,6 +354,7 @@ export default function AdmissionForm() {
 
           <div style={{ borderTop: "1px solid #ccc", marginBottom: 14 }} />
 
+          {/* Fields 11-13 */}
           {[{num:"11)",label:"STUDENT MOBILE NUMBER :",key:"phone",required:true,type:"tel"},{num:"12)",label:"PARENT MOBILE NUMBER :",key:"parent_phone",required:true,type:"tel"},{num:"13)",label:"EMAIL ID :",key:"email",type:"email"}].map((row) => (
             <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <span style={{ ...lbl, minWidth: 22 }}>{row.num}</span>
@@ -327,6 +365,7 @@ export default function AdmissionForm() {
 
           <div style={{ borderTop: "2px solid #333", margin: "18px 0" }} />
 
+          {/* Declaration */}
           <div style={{ border: "2px solid #333", borderRadius: 4, padding: "14px 18px", marginBottom: 18 }}>
             <div style={{ textAlign: "center", fontSize: 13, fontWeight: 900, color: "#cc0000", textDecoration: "underline", marginBottom: 12, letterSpacing: 1 }}>DECLARATION BY PARENTS / GUARDIAN</div>
             <div style={{ fontSize: 12, lineHeight: 2, color: "#111" }}>
@@ -343,8 +382,10 @@ export default function AdmissionForm() {
             🖨 Print This Form
           </button>
 
-          <button onClick={submit} disabled={saving} style={{ width: "100%", padding: "13px", background: saving ? "#999" : "#cc0000", color: "white", border: "none", borderRadius: 6, fontSize: 15, fontWeight: 900, cursor: saving ? "not-allowed" : "pointer", letterSpacing: 2 }}>
-            {saving ? "SUBMITTING…" : "SUBMIT REGISTRATION FORM"}
+          {/* Submit button */}
+          <button onClick={submit} disabled={saving || uploadingPhoto}
+            style={{ width: "100%", padding: "13px", background: (saving || uploadingPhoto) ? "#999" : "#cc0000", color: "white", border: "none", borderRadius: 6, fontSize: 15, fontWeight: 900, cursor: (saving || uploadingPhoto) ? "not-allowed" : "pointer", letterSpacing: 2 }}>
+            {saving ? "SUBMITTING…" : uploadingPhoto ? "PLEASE WAIT — UPLOADING PHOTO…" : "SUBMIT REGISTRATION FORM"}
           </button>
 
           <div style={{ textAlign: "center", fontSize: 11, color: "#888", marginTop: 10, paddingBottom: 16 }}>
