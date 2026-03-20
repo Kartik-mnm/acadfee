@@ -197,36 +197,22 @@ body::after {
 table { width:100%; border-collapse:collapse; font-size:13px; }
 thead { position:sticky; top:0; z-index:1; }
 th { text-align:left; padding:10px 16px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text3); background:rgba(10,16,32,0.75); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%); border-bottom:1px solid var(--border); white-space:nowrap; }
-td { padding:12px 16px; border-bottom:1px solid var(--border2); vertical-align:middle; transition:background 0.15s; }
+td { padding:12px 16px; border-bottom:1px solid var(--border2); vertical-align:middle; transition:background 0.15s; color:var(--text); }
 tr:last-child td { border-bottom:none; }
 tr:hover td { background:rgba(59,130,246,0.05); }
 
 /* ══════════════════════════════════════════════════════
-   STUDENT LINK — clickable name in Students table
-   Dark mode : bright blue-400 on dark background ✓
-   Light mode: deep navy-blue on white background ✓
-   Uses explicit selector on body.light to guarantee
-   the correct colour regardless of cascade order.
+   STUDENT LINK — clickable name
+   Dark:  bright blue-400 on dark bg
+   Light: deep navy #1e3a8a on white bg
    ══════════════════════════════════════════════════════ */
 .student-link {
-  color: #60a5fa;        /* blue-400 — bright, visible on dark navy bg */
+  color: #60a5fa;
   cursor: pointer;
   font-weight: 600;
   transition: color 0.15s;
-  text-decoration: none;
 }
-.student-link:hover {
-  color: #93c5fd;        /* lighter on hover in dark mode */
-  text-decoration: underline;
-}
-
-/* Light mode override — must come AFTER .student-link */
-body.light .student-link {
-  color: #1e3a8a !important;   /* deep navy-blue, high contrast on white */
-}
-body.light .student-link:hover {
-  color: #1d4ed8 !important;   /* slightly lighter on hover */
-}
+.student-link:hover { color: #93c5fd; text-decoration: underline; }
 
 /* ══ BADGES ══ */
 .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; border:1px solid transparent; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
@@ -355,7 +341,9 @@ select option:checked, select option:focus { background-color:#2563eb; color:#ff
 }
 @media (max-width:480px) { .stat-grid { grid-template-columns:1fr; } .btn { padding:7px 14px; font-size:12.5px; } }
 
-/* ══ LIGHT MODE ══ */
+/* ══════════════════════════════════════════════════════
+   LIGHT MODE
+   ══════════════════════════════════════════════════════ */
 body.light {
   --bg:      #eef2fb;
   --bg2:     #ffffff;
@@ -382,31 +370,64 @@ body.light select option:checked, body.light select option:focus { background-co
 
 body.light .sidebar { background:rgba(255,255,255,0.70); backdrop-filter:blur(40px) saturate(200%) brightness(1.04); -webkit-backdrop-filter:blur(40px) saturate(200%) brightness(1.04); border-color:rgba(30,58,138,0.08); box-shadow:inset 0 1px 0 rgba(255,255,255,0.9),1px 0 0 rgba(30,58,138,0.06); }
 body.light .card { background:rgba(255,255,255,0.58); backdrop-filter:blur(28px) saturate(180%) brightness(1.02); -webkit-backdrop-filter:blur(28px) saturate(180%) brightness(1.02); border-color:rgba(30,58,138,0.08); box-shadow:inset 0 1px 0 rgba(255,255,255,0.95),var(--shadow); }
+body.light .card:hover { background:rgba(255,255,255,0.72); }
 body.light .card::before { background:linear-gradient(180deg,rgba(255,255,255,0.5) 0%,transparent 100%); }
 body.light .stat-card { background:rgba(255,255,255,0.58); backdrop-filter:blur(28px) saturate(180%); -webkit-backdrop-filter:blur(28px) saturate(180%); border-color:rgba(30,58,138,0.10); box-shadow:inset 0 1px 0 rgba(255,255,255,0.95),var(--shadow); }
-body.light input, body.light select, body.light textarea { background:rgba(255,255,255,0.70); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border-color:rgba(30,58,138,0.14); color:var(--text); box-shadow:inset 0 1px 0 rgba(255,255,255,0.8),inset 0 -1px 0 rgba(30,58,138,0.04); }
-body.light th { background:rgba(240,244,255,0.85); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); color:var(--text3); border-color:rgba(30,58,138,0.08); }
-body.light .nav-item { color:var(--text3); }
-body.light .nav-item:hover { background:rgba(30,58,138,0.05); color:var(--text); }
-body.light .nav-item.active { background:linear-gradient(135deg,rgba(37,99,235,0.12),rgba(56,189,248,0.07)); color:var(--blue-600); border-color:rgba(37,99,235,0.15); box-shadow:inset 0 1px 0 rgba(255,255,255,0.8); }
-body.light .modal { background:rgba(255,255,255,0.82); backdrop-filter:blur(40px) saturate(200%) brightness(1.04); -webkit-backdrop-filter:blur(40px) saturate(200%) brightness(1.04); border-color:rgba(30,58,138,0.10); box-shadow:inset 0 1px 0 rgba(255,255,255,0.95),var(--shadow-lg); }
-body.light .btn-secondary { background:rgba(255,255,255,0.60); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-color:rgba(30,58,138,0.14); color:var(--text2); box-shadow:inset 0 1px 0 rgba(255,255,255,0.85); }
-body.light .login-card { background:rgba(255,255,255,0.78); backdrop-filter:blur(48px) saturate(200%) brightness(1.04); -webkit-backdrop-filter:blur(48px) saturate(200%) brightness(1.04); border-color:rgba(30,58,138,0.10); box-shadow:inset 0 1px 0 rgba(255,255,255,0.95),var(--shadow-lg); }
-body.light .brand-title { background:linear-gradient(135deg,var(--blue-600),#0ea5e9); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+body.light input, body.light select, body.light textarea { background:rgba(255,255,255,0.70); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border-color:rgba(30,58,138,0.14); color:#0f172a; box-shadow:inset 0 1px 0 rgba(255,255,255,0.8),inset 0 -1px 0 rgba(30,58,138,0.04); }
+body.light th { background:rgba(220,230,255,0.90); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); color:#334155; border-color:rgba(30,58,138,0.12); font-weight:800; }
 
 /* ══════════════════════════════════════════════════════
-   STUDENT LINK — explicit light mode rule
-   Placed AFTER body.light block to guarantee highest
-   cascade priority without needing !important.
-   body.light .student-link has specificity 0,2,0
-   which beats .student-link (0,1,0) every time.
+   LIGHT MODE — TABLE CELL TEXT
+   Every td and all text inside tables must be fully dark.
+   This is the definitive fix — no variable indirection.
    ══════════════════════════════════════════════════════ */
+body.light td {
+  color: #1e293b !important;    /* main cell text — dark slate */
+}
+body.light td .text-muted,
+body.light td .text-sm,
+body.light .text-muted {
+  color: #475569 !important;    /* secondary text — medium slate, still readable */
+}
+body.light td .mono {
+  color: #1e293b !important;    /* phone numbers, roll numbers */
+}
+
+/* Student name link */
 body.light .student-link {
-  color: #1e3a8a !important;  /* deep navy-blue — high contrast on white/light-blue bg */
+  color: #1e3a8a !important;    /* deep navy-blue, high contrast on white */
 }
 body.light .student-link:hover {
   color: #1d4ed8 !important;
 }
+
+/* Page titles and headers */
+body.light .page-title { color: #0f172a; }
+body.light .page-sub   { color: #475569; }
+body.light .card-title { color: #64748b; }
+body.light .modal-title { color: #0f172a; }
+
+/* Nav */
+body.light .nav-item { color:#475569; }
+body.light .nav-item:hover { background:rgba(30,58,138,0.05); color:#0f172a; }
+body.light .nav-item.active { background:linear-gradient(135deg,rgba(37,99,235,0.12),rgba(56,189,248,0.07)); color:#1e3a8a; border-color:rgba(37,99,235,0.15); box-shadow:inset 0 1px 0 rgba(255,255,255,0.8); }
+body.light .user-name { color:#0f172a; }
+body.light .user-role { color:#64748b; }
+
+body.light .modal { background:rgba(255,255,255,0.82); backdrop-filter:blur(40px) saturate(200%) brightness(1.04); -webkit-backdrop-filter:blur(40px) saturate(200%) brightness(1.04); border-color:rgba(30,58,138,0.10); box-shadow:inset 0 1px 0 rgba(255,255,255,0.95),var(--shadow-lg); }
+body.light .btn-secondary { background:rgba(255,255,255,0.60); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-color:rgba(30,58,138,0.14); color:#334155; box-shadow:inset 0 1px 0 rgba(255,255,255,0.85); }
+body.light .btn-secondary:hover { color:#0f172a; }
+body.light .login-card { background:rgba(255,255,255,0.78); backdrop-filter:blur(48px) saturate(200%) brightness(1.04); -webkit-backdrop-filter:blur(48px) saturate(200%) brightness(1.04); border-color:rgba(30,58,138,0.10); box-shadow:inset 0 1px 0 rgba(255,255,255,0.95),var(--shadow-lg); }
+body.light .brand-title { background:linear-gradient(135deg,#1e3a8a,#0ea5e9); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+body.light .logout-btn { color:#64748b; }
+body.light .logout-btn:hover { color:#f87171; }
+
+/* tr hover: use a gentle blue tint instead of near-transparent */
+body.light tr:hover td { background:rgba(37,99,235,0.04) !important; }
+
+/* Empty state text */
+body.light .empty-text { color:#334155; }
+body.light .empty-sub  { color:#64748b; }
 
 @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
 .card, .stat-card { animation:fadeUp 0.3s ease both; }
