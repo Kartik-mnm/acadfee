@@ -38,13 +38,19 @@ function PhotoUpload({ value, onChange }) {
 
   return (
     <div style={{ display:"flex",alignItems:"center",gap:14 }}>
-      <div onClick={() => inputRef.current.click()} style={{
-        width:80,height:80,borderRadius:"50%",cursor:"pointer",
-        background:"var(--bg3)",border:"2px dashed var(--border)",
-        display:"flex",alignItems:"center",justifyContent:"center",
-        overflow:"hidden",flexShrink:0,position:"relative"
-      }}>
-        {preview ? <img src={preview} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} /> : <span style={{ fontSize:28 }}>👤</span>}
+      <div
+        onClick={() => inputRef.current.click()}
+        style={{
+          width:80, height:80, borderRadius:"50%", cursor:"pointer",
+          background:"linear-gradient(135deg,#3b82f6,#06b6d4)",
+          border:"2px dashed rgba(99,143,255,0.4)",
+          display:"flex", alignItems:"center", justifyContent:"center",
+          overflow:"hidden", flexShrink:0, position:"relative"
+        }}
+      >
+        {preview
+          ? <img src={preview} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
+          : <span style={{ fontSize:28, color:"#fff" }}>👤</span>}
         {uploading && (
           <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11 }}>Uploading…</div>
         )}
@@ -57,7 +63,7 @@ function PhotoUpload({ value, onChange }) {
           <button type="button" className="btn btn-danger btn-sm" style={{ marginLeft:8 }}
             onClick={() => { setPreview(""); onChange(""); }}>Remove</button>
         )}
-        <div style={{ fontSize:11,color:"var(--text2)",marginTop:4 }}>JPG/PNG, max 5MB</div>
+        <div className="text-muted" style={{ fontSize:11, marginTop:4 }}>JPG/PNG, max 5MB</div>
       </div>
       <input ref={inputRef} type="file" accept="image/*" style={{ display:"none" }}
         onChange={(e) => handleFile(e.target.files[0])} />
@@ -74,14 +80,14 @@ function Pagination({ page, totalPages, total, limit, onPage }) {
   }
   return (
     <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:16,flexWrap:"wrap",gap:8 }}>
-      <div style={{ fontSize:13,color:"var(--text2)" }}>
+      <div className="text-muted" style={{ fontSize:13 }}>
         Showing {((page-1)*limit)+1}–{Math.min(page*limit,total)} of <strong>{total}</strong> students
       </div>
       <div style={{ display:"flex",gap:6 }}>
         <button className="btn btn-secondary btn-sm" onClick={() => onPage(page-1)} disabled={page===1}>← Prev</button>
         {pages.map((p,i) =>
           p === "…"
-            ? <span key={i} style={{ padding:"4px 8px",color:"var(--text2)" }}>…</span>
+            ? <span key={i} className="text-muted" style={{ padding:"4px 8px" }}>…</span>
             : <button key={p} className={`btn btn-sm ${p===page?"btn-primary":"btn-secondary"}`} onClick={() => onPage(p)}>{p}</button>
         )}
         <button className="btn btn-secondary btn-sm" onClick={() => onPage(page+1)} disabled={page===totalPages}>Next →</button>
@@ -90,7 +96,22 @@ function Pagination({ page, totalPages, total, limit, onPage }) {
   );
 }
 
-// ── Device Sessions Modal ───────────────────────────────────────────────────────────────
+function AvatarCircle({ photoUrl, name, size = 36 }) {
+  /* Always visible in both themes — gradient bg so emoji shows on any background */
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0,
+      background: "linear-gradient(135deg,#3b82f6,#06b6d4)",
+      display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.5,
+    }}>
+      {photoUrl
+        ? <img src={photoUrl} alt={name} style={{ width:"100%",height:"100%",objectFit:"cover" }} />
+        : <span style={{ color:"#fff" }}>👤</span>}
+    </div>
+  );
+}
+
+// ── Device Sessions Modal ─────────────────────────────────────────────────
 function DeviceSessionsModal({ student, onClose }) {
   const [sessions,    setSessions]    = useState([]);
   const [deviceLimit, setDeviceLimit] = useState(2);
@@ -140,30 +161,32 @@ function DeviceSessionsModal({ student, onClose }) {
         </div>
         <div className="modal-body">
           <div style={{ background:"var(--bg3)",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
-            <div style={{ fontWeight:700,fontSize:13,marginBottom:8 }}>Max Concurrent Logins</div>
-            <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Max Concurrent Logins</div>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <input type="number" min="1" max="10" value={newLimit} onChange={(e) => setNewLimit(e.target.value)} style={{ width:80 }}/>
               <button className="btn btn-primary btn-sm" onClick={updateLimit} disabled={savingLimit}>{savingLimit?"Saving…":"Update"}</button>
-              <span style={{ fontSize:12,color:"var(--text2)" }}>Currently: <strong>{deviceLimit}</strong></span>
+              <span className="text-muted" style={{ fontSize:12 }}>Currently: <strong>{deviceLimit}</strong></span>
             </div>
           </div>
-          <div style={{ fontWeight:700,fontSize:13,marginBottom:8 }}>Active Sessions ({sessions.length} / {deviceLimit})</div>
-          {loading ? <div style={{ color:"var(--text3)",fontSize:13 }}>Loading…</div>
-          : sessions.length === 0 ? <div style={{ color:"var(--text3)",fontSize:13 }}>No active sessions</div>
-          : (
-            <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-              {sessions.map((s,i) => (
-                <div key={s.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"var(--bg3)",borderRadius:8,border:"1px solid var(--border)" }}>
-                  <div>
-                    <div style={{ fontWeight:600,fontSize:13 }}>Device {i+1}</div>
-                    <div style={{ fontSize:11,color:"var(--text3)" }}>Logged in: {fmtTime(s.created_at)}</div>
-                  </div>
-                  <button className="btn btn-danger btn-sm" onClick={() => revokeSession(s.id)}>Remove</button>
+          <div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Active Sessions ({sessions.length} / {deviceLimit})</div>
+          {loading
+            ? <div className="text-muted" style={{ fontSize:13 }}>Loading…</div>
+            : sessions.length === 0
+              ? <div className="text-muted" style={{ fontSize:13 }}>No active sessions</div>
+              : (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {sessions.map((s,i) => (
+                    <div key={s.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"var(--bg3)",borderRadius:8,border:"1px solid var(--border)" }}>
+                      <div>
+                        <div style={{ fontWeight:600, fontSize:13 }}>Device {i+1}</div>
+                        <div className="text-muted" style={{ fontSize:11 }}>Logged in: {fmtTime(s.created_at)}</div>
+                      </div>
+                      <button className="btn btn-danger btn-sm" onClick={() => revokeSession(s.id)}>Remove</button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-          {msg && <div style={{ marginTop:12,padding:"8px 12px",background:"var(--bg3)",borderRadius:6,fontSize:13 }}>{msg}</div>}
+              )}
+          {msg && <div style={{ marginTop:12, padding:"8px 12px", background:"var(--bg3)", borderRadius:6, fontSize:13 }}>{msg}</div>}
         </div>
         <div className="modal-footer">
           {sessions.length > 0 && <button className="btn btn-danger" onClick={revokeAll}>Logout All Devices</button>}
@@ -176,26 +199,26 @@ function DeviceSessionsModal({ student, onClose }) {
 
 export default function Students() {
   const { user } = useAuth();
-  const [students, setStudents]         = useState([]);
-  const [batches,  setBatches]          = useState([]);
-  const [branches, setBranches]         = useState([]);
-  const [search,   setSearch]           = useState("");
-  const [filterBranch, setFilterBranch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [showModal, setShowModal]       = useState(false);
-  const [editing,  setEditing]          = useState(null);
-  const [form,     setForm]             = useState(EMPTY);
-  const [saving,   setSaving]           = useState(false);
-  const [error,    setError]            = useState("");
-  const [profileId, setProfileId]       = useState(null);
+  const [students, setStudents]             = useState([]);
+  const [batches,  setBatches]              = useState([]);
+  const [branches, setBranches]             = useState([]);
+  const [search,   setSearch]               = useState("");
+  const [filterBranch, setFilterBranch]     = useState("");
+  const [filterStatus, setFilterStatus]     = useState("");
+  const [showModal, setShowModal]           = useState(false);
+  const [editing,  setEditing]              = useState(null);
+  const [form,     setForm]                 = useState(EMPTY);
+  const [saving,   setSaving]               = useState(false);
+  const [error,    setError]                = useState("");
+  const [profileId, setProfileId]           = useState(null);
   const [portalStudent,  setPortalStudent]  = useState(null);
   const [portalPassword, setPortalPassword] = useState("");
   const [portalMsg,      setPortalMsg]      = useState("");
   const [devicesStudent, setDevicesStudent] = useState(null);
-  const [loading,  setLoading]          = useState(false);
-  const [page,       setPage]       = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total,      setTotal]      = useState(0);
+  const [loading,  setLoading]              = useState(false);
+  const [page,       setPage]               = useState(1);
+  const [totalPages, setTotalPages]         = useState(1);
+  const [total,      setTotal]              = useState(0);
   const LIMIT = 20;
   const searchTimer = useRef(null);
 
@@ -304,7 +327,7 @@ export default function Students() {
 
       <div className="card">
         {loading ? (
-          <div className="empty-state"><div className="empty-text" style={{ color:"var(--text2)" }}>Loading students…</div></div>
+          <div className="loading">Loading students…</div>
         ) : students.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">👤</div>
@@ -327,12 +350,9 @@ export default function Students() {
                     <tr key={s.id}>
                       <td className="text-muted">{((page-1)*LIMIT)+i+1}</td>
                       <td>
-                        <div style={{ width:36,height:36,borderRadius:"50%",overflow:"hidden",background:"var(--bg3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18 }}>
-                          {s.photo_url ? <img src={s.photo_url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} /> : "👤"}
-                        </div>
+                        <AvatarCircle photoUrl={s.photo_url} name={s.name} size={36} />
                       </td>
                       <td>
-                        {/* Fix: use var(--link-color) which is blue-400 in dark, dark-blue in light */}
                         <div className="student-link" onClick={() => setProfileId(s.id)}>
                           {s.name}
                         </div>
@@ -438,16 +458,16 @@ export default function Students() {
               <button className="modal-close" onClick={() => setPortalStudent(null)}>✕</button>
             </div>
             <div className="modal-body">
-              <div style={{ marginBottom:16,padding:"10px 14px",background:"var(--bg3)",borderRadius:8 }}>
+              <div style={{ marginBottom:16, padding:"10px 14px", background:"var(--bg3)", borderRadius:8 }}>
                 <div style={{ fontWeight:700 }}>{portalStudent.name}</div>
-                <div style={{ fontSize:12,color:"var(--text2)" }}>{portalStudent.email}</div>
+                <div className="text-muted" style={{ fontSize:12 }}>{portalStudent.email}</div>
               </div>
               <div className="form-group">
                 <label>Portal Password</label>
                 <input type="password" placeholder="Enter password for student"
                   value={portalPassword} onChange={(e) => setPortalPassword(e.target.value)} />
               </div>
-              {portalMsg && <div style={{ marginTop:10,padding:"8px 12px",background:"var(--bg3)",borderRadius:6,fontSize:13 }}>{portalMsg}</div>}
+              {portalMsg && <div style={{ marginTop:10, padding:"8px 12px", background:"var(--bg3)", borderRadius:6, fontSize:13 }}>{portalMsg}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setPortalStudent(null)}>Close</button>

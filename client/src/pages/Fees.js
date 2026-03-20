@@ -35,7 +35,6 @@ export default function Fees() {
 
   useEffect(() => {
     load();
-    // Load students for manual modal — unwrap paginated response
     API.get("/students?limit=1000").then((r) => {
       const res = r.data;
       setStudents(Array.isArray(res) ? res : (res.data || []));
@@ -61,13 +60,12 @@ export default function Fees() {
     finally { setSaving(false); }
   };
 
-  // Fix #3 — validate before submit and show inline error
   const addManual = async () => {
     setManError("");
-    if (!manForm.student_id) { setManError("⚠ Please select a student"); return; }
+    if (!manForm.student_id)                              { setManError("⚠ Please select a student"); return; }
     if (!manForm.amount_due || parseFloat(manForm.amount_due) <= 0) { setManError("⚠ Amount Due must be greater than 0"); return; }
-    if (!manForm.due_date) { setManError("⚠ Due Date is required"); return; }
-    if (!manForm.period_label) { setManError("⚠ Period Label is required (e.g. June 2025)"); return; }
+    if (!manForm.due_date)                                { setManError("⚠ Due Date is required"); return; }
+    if (!manForm.period_label)                            { setManError("⚠ Period Label is required"); return; }
     setSaving(true);
     try {
       await API.post("/fees", manForm);
@@ -81,10 +79,12 @@ export default function Fees() {
     } finally { setSaving(false); }
   };
 
-  const filtered = records.filter((r) => {
-    if (search && !r.student_name?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const filtered = records.filter((r) =>
+    !search || r.student_name?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Determine colour class for balance amount
+  const balanceClass = (r) => r.amount_due - r.amount_paid > 0 ? "fee-debit" : "fee-credit";
 
   return (
     <div>
@@ -100,7 +100,11 @@ export default function Fees() {
         </div>
       </div>
 
-      {msg && <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>{msg}</div>}
+      {msg && (
+        <div style={{ marginBottom:16, padding:"10px 14px", background:"var(--bg3)", borderRadius:8, fontSize:13 }}>
+          {msg}
+        </div>
+      )}
 
       <div className="filters-bar">
         <input className="search-input" placeholder="Search student…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -141,7 +145,7 @@ export default function Fees() {
                 {filtered.map((r) => (
                   <tr key={r.id}>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{r.student_name}</div>
+                      <div style={{ fontWeight:600 }}>{r.student_name}</div>
                       <div className="text-muted text-sm mono">{r.phone}</div>
                     </td>
                     {user.role === "super_admin" && <td className="text-muted">{r.branch_name}</td>}
@@ -149,10 +153,8 @@ export default function Fees() {
                     <td>{r.period_label || "—"}</td>
                     <td className="text-muted">{new Date(r.due_date).toLocaleDateString("en-IN")}</td>
                     <td className="mono">{fmt(r.amount_due)}</td>
-                    <td className="mono" style={{ color: "var(--green)" }}>{fmt(r.amount_paid)}</td>
-                    <td className="mono" style={{ color: r.amount_due - r.amount_paid > 0 ? "var(--red)" : "var(--green)" }}>
-                      {fmt(r.amount_due - r.amount_paid)}
-                    </td>
+                    <td className="mono fee-credit">{fmt(r.amount_paid)}</td>
+                    <td className={`mono ${balanceClass(r)}`}>{fmt(r.amount_due - r.amount_paid)}</td>
                     <td>{statusBadge(r.status)}</td>
                   </tr>
                 ))}
@@ -171,7 +173,7 @@ export default function Fees() {
               <button className="modal-close" onClick={() => setShowGenerate(false)}>✕</button>
             </div>
             <div className="modal-body">
-              <p style={{ color: "var(--text2)", marginBottom: 16, fontSize: 13 }}>
+              <p className="text-muted" style={{ marginBottom:16, fontSize:13 }}>
                 Automatically creates fee records for all active students based on their batch fee and discount.
               </p>
               <div className="form-grid">
@@ -204,7 +206,7 @@ export default function Fees() {
         </div>
       )}
 
-      {/* Manual Record Modal — Fixed #3 */}
+      {/* Manual Record Modal */}
       {showManual && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowManual(false)}>
           <div className="modal">
@@ -216,10 +218,7 @@ export default function Fees() {
               <div className="form-grid">
                 <div className="form-group full">
                   <label>Student *</label>
-                  <select
-                    value={manForm.student_id}
-                    onChange={(e) => setManForm({ ...manForm, student_id: e.target.value })}
-                  >
+                  <select value={manForm.student_id} onChange={(e) => setManForm({ ...manForm, student_id: e.target.value })}>
                     <option value="">Select Student</option>
                     {students.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -230,32 +229,19 @@ export default function Fees() {
                 </div>
                 <div className="form-group">
                   <label>Amount Due (₹) *</label>
-                  <input
-                    type="number" min="1"
-                    placeholder="e.g. 2500"
-                    value={manForm.amount_due}
-                    onChange={(e) => setManForm({ ...manForm, amount_due: e.target.value })}
-                  />
+                  <input type="number" min="1" placeholder="e.g. 2500" value={manForm.amount_due} onChange={(e) => setManForm({ ...manForm, amount_due: e.target.value })} />
                 </div>
                 <div className="form-group">
                   <label>Due Date *</label>
-                  <input
-                    type="date"
-                    value={manForm.due_date}
-                    onChange={(e) => setManForm({ ...manForm, due_date: e.target.value })}
-                  />
+                  <input type="date" value={manForm.due_date} onChange={(e) => setManForm({ ...manForm, due_date: e.target.value })} />
                 </div>
                 <div className="form-group full">
                   <label>Period Label *</label>
-                  <input
-                    placeholder="e.g. June 2025"
-                    value={manForm.period_label}
-                    onChange={(e) => setManForm({ ...manForm, period_label: e.target.value })}
-                  />
+                  <input placeholder="e.g. June 2025" value={manForm.period_label} onChange={(e) => setManForm({ ...manForm, period_label: e.target.value })} />
                 </div>
               </div>
               {manError && (
-                <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, color: "var(--red)", fontSize: 13 }}>
+                <div style={{ marginTop:12, padding:"10px 14px", background:"rgba(220,38,38,0.08)", border:"1px solid rgba(220,38,38,0.2)", borderRadius:8, fontSize:13 }} className="fee-debit">
                   {manError}
                 </div>
               )}
