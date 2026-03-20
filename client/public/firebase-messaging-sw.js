@@ -20,24 +20,25 @@ messaging.onBackgroundMessage((payload) => {
   const title = notification.title || "Nishchay Academy";
   const body  = notification.body  || "";
 
-  // Android Web Push notification layout:
-  //   icon  → large square image shown on the RIGHT of the notification
-  //   badge → tiny monochrome icon shown on the LEFT (must be white-on-transparent)
-  //            If a full-colour image is used Android ignores it and shows Chrome's
-  //            blue square instead. So we omit badge entirely to avoid that.
-  //   image → wide banner image shown BELOW the text (optional, looks great)
+  // Android Web Push notification icon slots:
   //
-  // Result: Nishchay logo appears as the large icon on the right.
-  // The left slot will show the Chrome icon (this is browser-controlled and
-  // cannot be changed without a native Android app / TWA).
+  //   icon  → large square image on the RIGHT  (full-colour, any PNG)
+  //            ✅ nishchay-logo.png — academy logo, already working
+  //
+  //   badge → tiny icon on the LEFT in the status bar / notification shade
+  //            ⚠️  MUST be white-on-transparent monochrome PNG (96×96)
+  //            ✅ badge-icon.png — white version of the logo (upload to /public first)
+  //            If this file is missing, Android falls back to Chrome's blue square
+  //
+  //   image → optional wide banner shown BELOW notification text
 
   self.registration.showNotification(title, {
     body,
-    icon:    "/nishchay-logo.png",   // large icon → right side of notification
-    // badge omitted → avoids Chrome's blue square fallback on the left
+    icon:    "/nishchay-logo.png",  // ← full-colour logo, RIGHT side
+    badge:   "/badge-icon.png",     // ← white monochrome logo, LEFT side / status bar
     vibrate: [200, 100, 200],
     data:    payload.data || {},
-    tag:     "nishchay-attendance",  // replaces previous notification instead of stacking
+    tag:     "nishchay-attendance", // replaces previous notification instead of stacking
     renotify: true,
   });
 });
@@ -47,13 +48,11 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      // If app is already open, just focus it
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && "focus" in client) {
           return client.focus();
         }
       }
-      // Otherwise open a new window
       if (clients.openWindow) return clients.openWindow("/");
     })
   );
