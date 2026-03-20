@@ -13,15 +13,36 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Handle background messages
+// Handle background messages (when browser/tab is not in focus)
 messaging.onBackgroundMessage((payload) => {
-  console.log("Background message:", payload);
-  const { title, body } = payload.notification;
+  console.log("[FCM SW] Background message received:", payload);
+  const notification = payload.notification || {};
+  const title = notification.title || "Nishchay Academy";
+  const body  = notification.body  || "";
+
   self.registration.showNotification(title, {
     body,
-    icon:  "/logo.png",
-    badge: "/logo.png",
+    // Use nishchay-logo.png which is confirmed to exist in /public
+    icon:  "/nishchay-logo.png",
+    badge: "/nishchay-logo.png",
     vibrate: [200, 100, 200],
-    data: payload.data,
+    data: payload.data || {},
+    // Click opens the app
+    actions: [],
   });
+});
+
+// When user clicks the notification, open/focus the app window
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) return clients.openWindow("/");
+    })
+  );
 });
