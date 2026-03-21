@@ -12,20 +12,39 @@ const toIST = (date) => new Date(date).toLocaleString("en-IN", {
 router.get("/token/:student_id", auth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT s.id, s.name, s.branch_id, s.status, br.name AS branch_name
-       FROM students s JOIN branches br ON br.id = s.branch_id
-       WHERE s.id = $1`, [req.params.student_id]
+      `SELECT s.id, s.name, s.branch_id, s.status, s.batch_id,
+              br.name AS branch_name,
+              b.end_date AS batch_end_date
+       FROM students s
+       JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN batches b ON b.id = s.batch_id
+       WHERE s.id = $1`,
+      [req.params.student_id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Student not found" });
-    // Fix 3: inactive students should not get a scannable QR token
-    if (rows[0].status !== "active") {
-      return res.status(403).json({ error: "Student is inactive. QR code is disabled." });
+
+    const student = rows[0];
+
+    if (student.status !== "active") {
+      // Check if the batch has an end date that has passed
+      // (i.e., student is inactive because their session/batch ended)
+      const batchEnded = student.batch_end_date
+        && new Date(student.batch_end_date) < new Date();
+
+      return res.status(403).json({
+        error: batchEnded
+          ? "Session expired. Your batch has ended."
+          : "You are inactive. Contact admin.",
+        // reason is used by the frontend to show the right message
+        reason: batchEnded ? "expired" : "inactive",
+      });
     }
+
     const token = jwt.sign(
-      { student_id: rows[0].id, branch_id: rows[0].branch_id, type: "qr_attendance" },
+      { student_id: student.id, branch_id: student.branch_id, type: "qr_attendance" },
       getJwtSecret()
     );
-    res.json({ token, student: rows[0] });
+    res.json({ token, student });
   } catch (e) {
     console.error("QR token error:", e.message);
     res.status(500).json({ error: "Failed to generate QR token" });
@@ -79,24 +98,25 @@ router.post("/scan", auth, async (req, res) => {
     const isWorkingDay = wdRows.length === 0 ? true : wdRows[0].is_working;
     const holidayNote  = wdRows.length > 0 && !wdRows[0].is_working ? (wdRows[0].note || "Holiday") : null;
 
-    // Fix 3: also check status at scan time (QR codes are long-lived JWTs,
-    // so even if someone saved their QR before being deactivated, we
-    // verify the student is still active before recording the scan.
+    // Check student status — block inactive even if they have a saved QR token
     const { rows: sRows } = await db.query(
       `SELECT s.name, s.phone, s.status, s.fcm_token, s.parent_fcm_token,
-              b.name AS batch_name, br.name AS branch_name
-       FROM students s LEFT JOIN batches b ON b.id = s.batch_id
+              b.name AS batch_name, b.end_date AS batch_end_date,
+              br.name AS branch_name
+       FROM students s
+       LEFT JOIN batches b ON b.id = s.batch_id
        JOIN branches br ON br.id = s.branch_id
        WHERE s.id = $1`, [student_id]
     );
     if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
     const student = sRows[0];
 
-    // Block inactive students at scan time too
     if (student.status !== "active") {
+      const batchEnded = student.batch_end_date && new Date(student.batch_end_date) < new Date();
       return res.status(403).json({
-        error: "Student is inactive. Scan not allowed.",
+        error: batchEnded ? "Session expired. Batch has ended." : "Student is inactive. Scan not allowed.",
         student: student.name,
+        reason: batchEnded ? "expired" : "inactive",
       });
     }
 
@@ -106,7 +126,6 @@ router.post("/scan", auth, async (req, res) => {
 
     let scanType, result;
     if (scanRows.length === 0) {
-      // ── First scan of the day → entry ──
       const { rows } = await db.query(
         `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, scanned_by)
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
@@ -115,7 +134,6 @@ router.post("/scan", auth, async (req, res) => {
       scanType = "entry"; result = rows[0];
 
     } else if (!scanRows[0].exit_time) {
-      // ── Second scan → exit ──
       const { rows } = await db.query(
         `UPDATE qr_scans SET exit_time=$1, scanned_by=$2
          WHERE student_id=$3 AND scan_date=$4 RETURNING *`,

@@ -26,7 +26,7 @@ export default function Admissions() {
 
   const approve = async (id) => {
     try {
-      const { data } = await API.post(`/admission/enquiries/${id}/approve`);
+      await API.post(`/admission/enquiries/${id}/approve`);
       setMsg(`✅ Approved! Student created successfully.`);
       load();
       setTimeout(() => setMsg(""), 4000);
@@ -41,20 +41,13 @@ export default function Admissions() {
     load();
   };
 
-  // Print the EXACT Nishchay Academy registration form with all student data
-  const printForm = (enq) => {
-    // Safely parse extra JSON — handles string, object, or null
+  // Build the full form HTML (shared between preview and print)
+  const buildFormHtml = (enq, { showPrintButton }) => {
     let ex = {};
     if (enq.extra) {
-      try {
-        ex = typeof enq.extra === "string" ? JSON.parse(enq.extra) : enq.extra;
-      } catch { ex = {}; }
+      try { ex = typeof enq.extra === "string" ? JSON.parse(enq.extra) : enq.extra; } catch { ex = {}; }
     }
-
-    // Photo: prefer dedicated column, then extra JSON
-    const photoUrl = enq.photo_url || ex.photo_url || "";
-
-    // All fields from extra (filled in by student on /apply)
+    const photoUrl       = enq.photo_url || ex.photo_url || "";
     const aadhar         = ex.aadhar          || "";
     const fatherName     = ex.father_name     || "";
     const motherName     = ex.mother_name     || "";
@@ -67,9 +60,14 @@ export default function Admissions() {
     const percent        = ex.percent         || "";
     const guardianName   = ex.guardian_name   || "";
 
-    const w = window.open("", "_blank");
-    w.document.write(`<!DOCTYPE html>
-<html><head><title>Registration Form — ${enq.name}</title>
+    const printBtnHtml = showPrintButton
+      ? `<div class="no-print" style="text-align:center;margin-top:20px">
+           <button class="print-btn" onclick="window.print()">🖸 PRINT FORM</button>
+         </div>`
+      : "";
+
+    return `<!DOCTYPE html>
+<html><head><title>${showPrintButton ? "Print" : "Preview"} — ${enq.name}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Arial, sans-serif; background: #e8e8e8; padding: 20px 16px; }
@@ -98,7 +96,9 @@ export default function Admissions() {
   .sign-row { display: flex; justify-content: space-between; margin-top: 20px; font-size: 12px; }
   .footer-note { text-align: center; font-size: 11px; color: #888; margin-top: 10px; padding-bottom: 16px; }
   .print-btn { padding: 10px 28px; background: #cc0000; color: white; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; font-weight: 900; letter-spacing: 1px; }
+  .preview-badge { background: #1a73e8; color: white; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 1px; display:inline-block; margin-bottom: 12px; }
 </style></head><body>
+${!showPrintButton ? `<div class="no-print" style="text-align:center;margin-bottom:12px"><span class="preview-badge">PREVIEW — ${enq.status.toUpperCase()}</span></div>` : ""}
 <div class="form-wrap">
   <div class="header"><div class="header-inner"><div style="text-align:center">
     <div class="academy-name">NISHCHAY ACADEMY</div>
@@ -155,10 +155,21 @@ export default function Admissions() {
     <div class="footer-note">For Official Use : 200/- Form Fees &nbsp;|&nbsp; Receiver Sign : _______________</div>
   </div>
 </div>
-<div class="no-print" style="text-align:center;margin-top:20px">
-  <button class="print-btn" onclick="window.print()">🖨 PRINT FORM</button>
-</div>
-</body></html>`);
+${printBtnHtml}
+</body></html>`;
+  };
+
+  // Preview: opens form WITHOUT print button (for pending enquiries)
+  const previewForm = (enq) => {
+    const w = window.open("", "_blank");
+    w.document.write(buildFormHtml(enq, { showPrintButton: false }));
+    w.document.close();
+  };
+
+  // Print: opens form WITH print button (for approved enquiries)
+  const printForm = (enq) => {
+    const w = window.open("", "_blank");
+    w.document.write(buildFormHtml(enq, { showPrintButton: true }));
     w.document.close();
   };
 
@@ -197,7 +208,7 @@ export default function Admissions() {
                 const w = window.open("", "_blank");
                 w.document.write(`<html><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f0f0f0;font-family:Arial"><div style="text-align:center;background:white;padding:32px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)"><div style="font-size:20px;font-weight:900;color:#0a1628;margin-bottom:4px">NISHCHAY ACADEMY</div><div style="font-size:13px;color:#555;margin-bottom:20px">Scan to fill Admission Form</div><img src="${qrDataUrl}" style="width:200px;height:200px"/><div style="font-size:11px;color:#888;margin-top:16px">${admissionUrl}</div></div></body></html>`);
                 w.document.close(); setTimeout(() => w.print(), 400);
-              }}>🖨 Print QR</button>
+              }}>🖸 Print QR</button>
             </div>
             <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(79,142,247,0.08)", borderRadius: 8, fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
               <strong>How it works:</strong><br/>
@@ -234,7 +245,6 @@ export default function Admissions() {
               </thead>
               <tbody>
                 {filtered.map((e) => {
-                  // Safely get photo from either column or extra
                   let thumbUrl = e.photo_url || "";
                   if (!thumbUrl && e.extra) {
                     try { const ex = typeof e.extra === "string" ? JSON.parse(e.extra) : e.extra; thumbUrl = ex.photo_url || ""; } catch {}
@@ -254,16 +264,31 @@ export default function Admissions() {
                       <td className="text-muted">{new Date(e.created_at).toLocaleDateString("en-IN")}</td>
                       <td><span className={`badge ${statusColor(e.status)}`}>{e.status}</span></td>
                       <td>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button className="btn btn-sm btn-secondary" onClick={() => printForm(e)}>🖨 Print</button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {/* PENDING: Preview (no print button) + Approve + Reject */}
                           {e.status === "pending" && (
                             <>
+                              <button className="btn btn-sm btn-secondary" onClick={() => previewForm(e)}
+                                title="Preview form details">
+                                👁 Preview
+                              </button>
                               <button className="btn btn-sm btn-success" onClick={() => approve(e.id)}>✅ Approve</button>
                               <button className="btn btn-sm btn-danger"  onClick={() => reject(e.id)}>❌ Reject</button>
                             </>
                           )}
-                          {e.status === "approved" && e.student_id && (
-                            <span className="text-muted" style={{ fontSize: 11, alignSelf: "center" }}>Student created</span>
+                          {/* APPROVED: Print (with print button) */}
+                          {e.status === "approved" && (
+                            <button className="btn btn-sm btn-secondary" onClick={() => printForm(e)}
+                              title="Print registration form">
+                              🖸 Print
+                            </button>
+                          )}
+                          {/* REJECTED: Preview only */}
+                          {e.status === "rejected" && (
+                            <button className="btn btn-sm btn-secondary" onClick={() => previewForm(e)}
+                              title="Preview form details">
+                              👁 Preview
+                            </button>
                           )}
                         </div>
                       </td>

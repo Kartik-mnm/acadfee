@@ -20,6 +20,8 @@ export default function StudentDashboard() {
   const [tab,        setTab]        = useState("overview");
   const [loading,    setLoading]    = useState(true);
   const [qrDataUrl,  setQrDataUrl]  = useState("");
+  // null = loading, "active" = scannable, "expired" = batch ended, "inactive" = manually deactivated
+  const [qrStatus,   setQrStatus]   = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -43,7 +45,8 @@ export default function StudentDashboard() {
     load();
   }, []);
 
-  // Generate QR code for the student's attendance (#2)
+  // Generate QR code — always render a QR image.
+  // If the student is inactive, still show a QR but mark it as disabled with the reason.
   useEffect(() => {
     if (!user?.id) return;
     API.get(`/qrscan/token/${user.id}`)
@@ -51,11 +54,25 @@ export default function StudentDashboard() {
         const url = await QRCode.toDataURL(r.data.token, {
           width: 180, margin: 1,
           errorCorrectionLevel: "L",
-          color: { dark: "#0a1628", light: "#ffffff" }
+          color: { dark: "#0a1628", light: "#ffffff" },
         });
         setQrDataUrl(url);
+        setQrStatus("active");
       })
-      .catch(() => {});
+      .catch(async (err) => {
+        const reason = err.response?.data?.reason || "inactive";
+        // Generate a dummy/placeholder QR (encodes the error message) so the card still looks good
+        const dummyText = reason === "expired" ? "SESSION EXPIRED" : "STUDENT INACTIVE";
+        try {
+          const url = await QRCode.toDataURL(dummyText, {
+            width: 180, margin: 1,
+            errorCorrectionLevel: "L",
+            color: { dark: "#94a3b8", light: "#f1f5f9" },  // greyed-out palette
+          });
+          setQrDataUrl(url);
+        } catch { /* ignore */ }
+        setQrStatus(reason === "expired" ? "expired" : "inactive");
+      });
   }, [user?.id]);
 
   if (loading) return (
@@ -71,7 +88,6 @@ export default function StudentDashboard() {
   const avgAtt      = attendance.length ? Math.round(attendance.reduce((s, a) => s + parseFloat(a.percentage || 0), 0) / attendance.length) : null;
   const avgScore    = tests.length      ? Math.round(tests.reduce((s, t)      => s + parseFloat(t.percentage || 0), 0) / tests.length)      : null;
 
-  // Roll number display (#2)
   const rollDisplay = student?.roll_no || `NA-${String(user.id).padStart(5, "0")}`;
 
   const tabs = [
@@ -82,6 +98,33 @@ export default function StudentDashboard() {
     { id: "attendance",  label: "📅 Attendance" },
     { id: "performance", label: "📊 Tests" },
   ];
+
+  // QR overlay content based on status
+  const QrStatusOverlay = () => {
+    if (qrStatus === "active" || qrStatus === null) return null;
+    const isExpired = qrStatus === "expired";
+    return (
+      <div style={{
+        position: "absolute", inset: 0,
+        background: isExpired ? "rgba(239,68,68,0.85)" : "rgba(100,116,139,0.88)",
+        borderRadius: 12,
+        display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        gap: 6, padding: 12,
+        backdropFilter: "blur(2px)",
+      }}>
+        <div style={{ fontSize: 28 }}>{isExpired ? "⏰" : "🚫"}</div>
+        <div style={{ color: "#fff", fontWeight: 900, fontSize: 14, textAlign: "center", lineHeight: 1.3 }}>
+          {isExpired ? "Session Expired" : "You're Inactive"}
+        </div>
+        <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, textAlign: "center", lineHeight: 1.4 }}>
+          {isExpired
+            ? "Your batch has ended. Contact the academy."
+            : "Your account is inactive. Contact admin."}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
@@ -152,11 +195,11 @@ export default function StudentDashboard() {
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
           {[
-            { label: "Total Fees Due",   value: fmt(totalDue),   color: "var(--blue-400)",   icon: "📋" },
-            { label: "Total Paid",       value: fmt(totalPaid),  color: "var(--green)",       icon: "✅" },
-            { label: "Balance Due",      value: fmt(balance),    color: balance > 0 ? "var(--red)" : "var(--green)", icon: "💰" },
-            { label: "Avg Attendance",   value: avgAtt  !== null ? `${avgAtt}%`   : "—", color: avgAtt  !== null ? pctColor(avgAtt)   : "var(--text3)", icon: "📅" },
-            { label: "Avg Test Score",   value: avgScore !== null ? `${avgScore}%` : "—", color: avgScore !== null ? gradeColor(avgScore) : "var(--text3)", icon: "📊" },
+            { label: "Total Fees",      value: fmt(totalDue),   color: "var(--blue-400)",   icon: "📋" },
+            { label: "Total Paid",      value: fmt(totalPaid),  color: "var(--green)",       icon: "✅" },
+            { label: "Balance Due",     value: fmt(balance),    color: balance > 0 ? "var(--red)" : "var(--green)", icon: "💰" },
+            { label: "Avg Attendance",  value: avgAtt  !== null ? `${avgAtt}%`   : "—", color: avgAtt  !== null ? pctColor(avgAtt)   : "var(--text3)", icon: "📅" },
+            { label: "Avg Test Score",  value: avgScore !== null ? `${avgScore}%` : "—", color: avgScore !== null ? gradeColor(avgScore) : "var(--text3)", icon: "📊" },
           ].map((s) => (
             <div key={s.label} style={{
               background: "var(--glass)", backdropFilter: "blur(16px)",
@@ -179,7 +222,7 @@ export default function StudentDashboard() {
           ))}
         </div>
 
-        {/* ── ID Card Tab (#2) ── */}
+        {/* ── ID Card Tab ── */}
         {tab === "idcard" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
             {/* Roll number + info card */}
@@ -212,27 +255,35 @@ export default function StudentDashboard() {
               </div>
             </div>
 
-            {/* QR Code card */}
+            {/* QR Code card — always visible, overlaid with error if inactive */}
             <div className="card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
               <div className="card-title" style={{ alignSelf: "flex-start" }}>Attendance QR Code</div>
-              {qrDataUrl ? (
-                <>
-                  <div style={{
-                    background: "white", padding: 14, borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-                  }}>
-                    <img src={qrDataUrl} alt="QR" style={{ width: 160, height: 160, display: "block" }} />
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{student?.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>Show this QR at entry/exit to mark attendance</div>
-                    <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--cyan-300)", marginTop: 4 }}>{rollDisplay}</div>
-                  </div>
-                </>
-              ) : (
-                <div style={{ color: "var(--text3)", fontSize: 13 }}>Loading QR…</div>
-              )}
+
+              {/* QR wrapper — always show QR image, overlay if disabled */}
+              <div style={{ position: "relative", display: "inline-block" }}>
+                <div style={{
+                  background: "white", padding: 14, borderRadius: 12,
+                  border: `1px solid ${qrStatus === "active" ? "var(--border)" : "rgba(248,113,113,0.3)"}`,
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  opacity: qrStatus !== "active" && qrStatus !== null ? 0.5 : 1,
+                  transition: "opacity 0.3s",
+                }}>
+                  {qrDataUrl
+                    ? <img src={qrDataUrl} alt="QR" style={{ width: 160, height: 160, display: "block" }} />
+                    : <div style={{ width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 12 }}>Loading…</div>
+                  }
+                </div>
+                {/* Status overlay (sits on top of QR) */}
+                <QrStatusOverlay />
+              </div>
+
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{student?.name}</div>
+                {qrStatus === "active" && (
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>Show this QR at entry/exit to mark attendance</div>
+                )}
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--cyan-300)", marginTop: 4 }}>{rollDisplay}</div>
+              </div>
             </div>
           </div>
         )}
