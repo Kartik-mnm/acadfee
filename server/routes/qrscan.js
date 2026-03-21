@@ -8,11 +8,14 @@ const toIST = (date) => new Date(date).toLocaleString("en-IN", {
   timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
 });
 
-// Generate QR token for a student
+// ── Generate QR token ─────────────────────────────────────────────────────────
+// Returns a token only if the student is ACTIVE.
+// For inactive students returns 403 with `reason` field so the frontend
+// can render the right overlay without hiding the QR image.
 router.get("/token/:student_id", auth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT s.id, s.name, s.branch_id, s.status, s.batch_id,
+      `SELECT s.id, s.name, s.branch_id, LOWER(s.status) AS status, s.batch_id,
               br.name AS branch_name,
               b.end_date AS batch_end_date
        FROM students s
@@ -24,18 +27,18 @@ router.get("/token/:student_id", auth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: "Student not found" });
 
     const student = rows[0];
+    console.log(`[QR token] student_id=${student.id} status="${student.status}"`);
 
+    // Block if not active (case-insensitive comparison via LOWER in SQL)
     if (student.status !== "active") {
-      // Check if the batch has an end date that has passed
-      // (i.e., student is inactive because their session/batch ended)
       const batchEnded = student.batch_end_date
         && new Date(student.batch_end_date) < new Date();
 
+      console.log(`[QR token] BLOCKED — batchEnded=${batchEnded}`);
       return res.status(403).json({
         error: batchEnded
           ? "Session expired. Your batch has ended."
           : "You are inactive. Contact admin.",
-        // reason is used by the frontend to show the right message
         reason: batchEnded ? "expired" : "inactive",
       });
     }
@@ -51,7 +54,7 @@ router.get("/token/:student_id", auth, async (req, res) => {
   }
 });
 
-// Register FCM push token for student or parent
+// ── Register FCM token ────────────────────────────────────────────────────────
 router.post("/register-token", auth, async (req, res) => {
   try {
     const { student_id, token, type } = req.body;
@@ -68,14 +71,19 @@ router.post("/register-token", auth, async (req, res) => {
   }
 });
 
-// Process a QR scan (entry or exit)
+// ── Process QR scan (entry or exit) ──────────────────────────────────────────
+// CRITICAL: always re-checks student status from DB at scan time.
+// A student's QR token is a long-lived JWT — it doesn't expire when the
+// admin deactivates them. The DB check here is the enforcement point.
 router.post("/scan", auth, async (req, res) => {
   if (!["super_admin", "branch_manager"].includes(req.user.role))
     return res.status(403).json({ error: "Access denied" });
+
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No QR token provided" });
 
+    // Verify the JWT signature
     let payload;
     try {
       payload = jwt.verify(token, getJwtSecret());
@@ -85,47 +93,64 @@ router.post("/scan", auth, async (req, res) => {
     }
 
     const { student_id, branch_id } = payload;
-    const nowIST  = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" });
-    const today   = nowIST.split(",")[0].trim();
-    const now     = new Date().toISOString();
-    const [istYear, istMonth] = today.split("-").map(Number);
 
-    // Check if today is a working day
-    const { rows: wdRows } = await db.query(
-      "SELECT is_working, note FROM working_days WHERE branch_id = $1 AND date = $2",
-      [branch_id, today]
-    );
-    const isWorkingDay = wdRows.length === 0 ? true : wdRows[0].is_working;
-    const holidayNote  = wdRows.length > 0 && !wdRows[0].is_working ? (wdRows[0].note || "Holiday") : null;
-
-    // Check student status — block inactive even if they have a saved QR token
+    // ── Re-fetch student status live from DB ──────────────────────────────────
+    // Using LOWER() so the check works regardless of how the value was stored.
     const { rows: sRows } = await db.query(
-      `SELECT s.name, s.phone, s.status, s.fcm_token, s.parent_fcm_token,
+      `SELECT s.name, s.phone, LOWER(s.status) AS status,
+              s.fcm_token, s.parent_fcm_token,
               b.name AS batch_name, b.end_date AS batch_end_date,
               br.name AS branch_name
        FROM students s
        LEFT JOIN batches b ON b.id = s.batch_id
        JOIN branches br ON br.id = s.branch_id
-       WHERE s.id = $1`, [student_id]
+       WHERE s.id = $1`,
+      [student_id]
     );
     if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
     const student = sRows[0];
 
+    console.log(`[QR scan] student_id=${student_id} status="${student.status}"`);
+
+    // ── Block inactive students ───────────────────────────────────────────────
     if (student.status !== "active") {
-      const batchEnded = student.batch_end_date && new Date(student.batch_end_date) < new Date();
+      const batchEnded = student.batch_end_date
+        && new Date(student.batch_end_date) < new Date();
+
+      console.log(`[QR scan] BLOCKED — batchEnded=${batchEnded} name="${student.name}"`);
+
       return res.status(403).json({
-        error: batchEnded ? "Session expired. Batch has ended." : "Student is inactive. Scan not allowed.",
+        error: batchEnded
+          ? "Session expired. Batch has ended."
+          : "Student is inactive. Scan not allowed.",
         student: student.name,
         reason: batchEnded ? "expired" : "inactive",
       });
     }
 
+    // ── Check working day ─────────────────────────────────────────────────────
+    const nowIST  = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" });
+    const today   = nowIST.split(",")[0].trim();
+    const now     = new Date().toISOString();
+    const [istYear, istMonth] = today.split("-").map(Number);
+
+    const { rows: wdRows } = await db.query(
+      "SELECT is_working, note FROM working_days WHERE branch_id = $1 AND date = $2",
+      [branch_id, today]
+    );
+    const isWorkingDay = wdRows.length === 0 ? true : wdRows[0].is_working;
+    const holidayNote  = wdRows.length > 0 && !wdRows[0].is_working
+      ? (wdRows[0].note || "Holiday") : null;
+
+    // ── Record scan ───────────────────────────────────────────────────────────
     const { rows: scanRows } = await db.query(
-      "SELECT * FROM qr_scans WHERE student_id=$1 AND scan_date=$2", [student_id, today]
+      "SELECT * FROM qr_scans WHERE student_id=$1 AND scan_date=$2",
+      [student_id, today]
     );
 
     let scanType, result;
     if (scanRows.length === 0) {
+      // First scan → entry
       const { rows } = await db.query(
         `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, scanned_by)
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
@@ -134,6 +159,7 @@ router.post("/scan", auth, async (req, res) => {
       scanType = "entry"; result = rows[0];
 
     } else if (!scanRows[0].exit_time) {
+      // Second scan → exit + mark attendance
       const { rows } = await db.query(
         `UPDATE qr_scans SET exit_time=$1, scanned_by=$2
          WHERE student_id=$3 AND scan_date=$4 RETURNING *`,
@@ -146,7 +172,10 @@ router.post("/scan", auth, async (req, res) => {
           `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
            VALUES ($1, $2, $3, $4, 0, 1)
            ON CONFLICT (student_id, month, year)
-           DO UPDATE SET present = LEAST(attendance.present + 1, GREATEST(attendance.total_days, attendance.present + 1))`,
+           DO UPDATE SET present = LEAST(
+             attendance.present + 1,
+             GREATEST(attendance.total_days, attendance.present + 1)
+           )`,
           [student_id, branch_id, istMonth, istYear]
         );
       }
@@ -173,31 +202,41 @@ router.post("/scan", auth, async (req, res) => {
       time: now, time_ist: toIST(now), scan: result,
       is_working_day: isWorkingDay, holiday_note: holidayNote,
     });
+
   } catch (e) {
     console.error("QR scan error:", e.message);
     res.status(500).json({ error: "Scan failed" });
   }
 });
 
-// Today's scans
+// ── Today's scans ─────────────────────────────────────────────────────────────
 router.get("/today", auth, async (req, res) => {
   if (!["super_admin", "branch_manager"].includes(req.user.role))
     return res.status(403).json({ error: "Access denied" });
   try {
-    const todayIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0].trim();
+    const todayIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" })
+      .split(",")[0].trim();
     let query, params;
     if (req.user.role === "branch_manager") {
-      query = `SELECT qs.*, s.name AS student_name, s.phone, b.name AS batch_name, br.name AS branch_name, u.name AS scanned_by_name
-               FROM qr_scans qs JOIN students s ON s.id = qs.student_id
-               LEFT JOIN batches b ON b.id = s.batch_id JOIN branches br ON br.id = qs.branch_id
+      query = `SELECT qs.*, s.name AS student_name, s.phone,
+                      b.name AS batch_name, br.name AS branch_name,
+                      u.name AS scanned_by_name
+               FROM qr_scans qs
+               JOIN students s ON s.id = qs.student_id
+               LEFT JOIN batches b ON b.id = s.batch_id
+               JOIN branches br ON br.id = qs.branch_id
                LEFT JOIN users u ON u.id = qs.scanned_by
                WHERE qs.scan_date=$1 AND qs.branch_id=$2
                ORDER BY COALESCE(qs.exit_time, qs.entry_time) DESC`;
       params = [todayIST, req.user.branch_id];
     } else {
-      query = `SELECT qs.*, s.name AS student_name, s.phone, b.name AS batch_name, br.name AS branch_name, u.name AS scanned_by_name
-               FROM qr_scans qs JOIN students s ON s.id = qs.student_id
-               LEFT JOIN batches b ON b.id = s.batch_id JOIN branches br ON br.id = qs.branch_id
+      query = `SELECT qs.*, s.name AS student_name, s.phone,
+                      b.name AS batch_name, br.name AS branch_name,
+                      u.name AS scanned_by_name
+               FROM qr_scans qs
+               JOIN students s ON s.id = qs.student_id
+               LEFT JOIN batches b ON b.id = s.batch_id
+               JOIN branches br ON br.id = qs.branch_id
                LEFT JOIN users u ON u.id = qs.scanned_by
                WHERE qs.scan_date=$1
                ORDER BY COALESCE(qs.exit_time, qs.entry_time) DESC`;
