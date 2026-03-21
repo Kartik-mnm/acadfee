@@ -12,11 +12,15 @@ const toIST = (date) => new Date(date).toLocaleString("en-IN", {
 router.get("/token/:student_id", auth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT s.id, s.name, s.branch_id, br.name AS branch_name
+      `SELECT s.id, s.name, s.branch_id, s.status, br.name AS branch_name
        FROM students s JOIN branches br ON br.id = s.branch_id
        WHERE s.id = $1`, [req.params.student_id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Student not found" });
+    // Fix 3: inactive students should not get a scannable QR token
+    if (rows[0].status !== "active") {
+      return res.status(403).json({ error: "Student is inactive. QR code is disabled." });
+    }
     const token = jwt.sign(
       { student_id: rows[0].id, branch_id: rows[0].branch_id, type: "qr_attendance" },
       getJwtSecret()
@@ -75,13 +79,26 @@ router.post("/scan", auth, async (req, res) => {
     const isWorkingDay = wdRows.length === 0 ? true : wdRows[0].is_working;
     const holidayNote  = wdRows.length > 0 && !wdRows[0].is_working ? (wdRows[0].note || "Holiday") : null;
 
+    // Fix 3: also check status at scan time (QR codes are long-lived JWTs,
+    // so even if someone saved their QR before being deactivated, we
+    // verify the student is still active before recording the scan.
     const { rows: sRows } = await db.query(
-      `SELECT s.name, s.phone, s.fcm_token, s.parent_fcm_token, b.name AS batch_name, br.name AS branch_name
-       FROM students s LEFT JOIN batches b ON b.id = s.batch_id JOIN branches br ON br.id = s.branch_id
+      `SELECT s.name, s.phone, s.status, s.fcm_token, s.parent_fcm_token,
+              b.name AS batch_name, br.name AS branch_name
+       FROM students s LEFT JOIN batches b ON b.id = s.batch_id
+       JOIN branches br ON br.id = s.branch_id
        WHERE s.id = $1`, [student_id]
     );
     if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
     const student = sRows[0];
+
+    // Block inactive students at scan time too
+    if (student.status !== "active") {
+      return res.status(403).json({
+        error: "Student is inactive. Scan not allowed.",
+        student: student.name,
+      });
+    }
 
     const { rows: scanRows } = await db.query(
       "SELECT * FROM qr_scans WHERE student_id=$1 AND scan_date=$2", [student_id, today]
@@ -106,12 +123,6 @@ router.post("/scan", auth, async (req, res) => {
       );
       scanType = "exit"; result = rows[0];
 
-      // ── Update attendance ONLY on a working day ──
-      // Fix: NEVER touch total_days here.
-      // total_days is owned by generate-month / manual entry.
-      // We only increment the present count; total_days stays as-is.
-      // If no attendance record exists yet for this month, create one with
-      // present=1 and total_days=0 (generate-month will correct total_days later).
       if (isWorkingDay) {
         await db.query(
           `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)

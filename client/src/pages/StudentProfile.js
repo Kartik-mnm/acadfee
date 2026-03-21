@@ -8,7 +8,6 @@ const grade = (p) => p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B" : p >= 60 ? 
 const gradeColor = (p) => p >= 70 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 
-// #31 — Reusable student avatar: shows photo if available, else colored initial
 function StudentAvatar({ student, size = 72 }) {
   const [imgError, setImgError] = useState(false);
   const showPhoto = student?.photo_url && !imgError;
@@ -80,6 +79,9 @@ export default function StudentProfile({ studentId, onBack }) {
     ? Math.round(tests.reduce((s, t) => s + parseFloat(t.percentage || 0), 0) / tests.length)
     : null;
 
+  // Roll number — same format as ID Card: use roll_no if set, else NA-XXXXX
+  const rollDisplay = student.roll_no || `NA-${String(student.id).padStart(5, "0")}`;
+
   const tabs = [
     { id: "overview",    label: "Overview" },
     { id: "fees",        label: `Fee Records (${fees.length})` },
@@ -102,7 +104,7 @@ export default function StudentProfile({ studentId, onBack }) {
         }}>📧 Send Fee Summary Email</button>
       </div>
 
-      {/* #31 — Profile Header with real photo */}
+      {/* Profile Header */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
           <StudentAvatar student={student} size={80} />
@@ -111,7 +113,7 @@ export default function StudentProfile({ studentId, onBack }) {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               <span className="badge badge-blue">{student.batch_name || "No Batch"}</span>
               <span className="badge badge-gray">{student.branch_name}</span>
-              <span className="badge badge-green">{student.status}</span>
+              <span className={`badge ${student.status === "active" ? "badge-green" : "badge-red"}`}>{student.status}</span>
               <span className="badge badge-yellow">{student.fee_type}</span>
             </div>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 13, color: "var(--text2)" }}>
@@ -119,14 +121,16 @@ export default function StudentProfile({ studentId, onBack }) {
               {student.parent_phone && <span>👨‍👩‍👦 {student.parent_phone}</span>}
               {student.email && <span>✉ {student.email}</span>}
               {student.admission_date && <span>📅 Joined {new Date(student.admission_date).toLocaleDateString("en-IN")}</span>}
-              <span>🪪 ID: NA-{String(student.id).padStart(5,"0")}</span>
+              {/* Fix: show roll_no — same as ID card */}
+              <span>🪪 ID: {rollDisplay}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 20 }}>
-        <div className="stat-card blue"><div className="stat-label">Total Fees Due</div><div className="stat-value blue">{fmt(totalDue)}</div></div>
+        {/* Fix 1: "Total Fees Due" → "Total Fees" */}
+        <div className="stat-card blue"><div className="stat-label">Total Fees</div><div className="stat-value blue">{fmt(totalDue)}</div></div>
         <div className="stat-card green"><div className="stat-label">Total Paid</div><div className="stat-value green">{fmt(totalPaid)}</div></div>
         <div className="stat-card red"><div className="stat-label">Balance Pending</div><div className="stat-value red">{fmt(balance)}</div></div>
         <div className="stat-card yellow"><div className="stat-label">Avg Attendance</div><div className="stat-value yellow">{avgAttendance !== null ? `${avgAttendance}%` : "—"}</div></div>
@@ -144,7 +148,22 @@ export default function StudentProfile({ studentId, onBack }) {
           <div className="card">
             <div className="card-title">👤 Student Details</div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
-              {[["Full Name",student.name],["Phone",student.phone||"—"],["Parent Phone",student.parent_phone||"—"],["Email",student.email||"—"],["Branch",student.branch_name],["Batch",student.batch_name||"—"],["Fee Type",student.fee_type],["Due Day",`${student.due_day||10}th of every month`],["Discount",student.discount>0?`${student.discount}% — ${student.discount_reason||""}`:`None`],["Admission Fee",student.admission_fee>0?fmt(student.admission_fee):"—"],["Admission Date",student.admission_date?new Date(student.admission_date).toLocaleDateString("en-IN"):"—"],["Address",student.address||"—"],["Status",student.status]].map(([label,val])=>(
+              {[
+                ["Full Name",     student.name],
+                ["Roll No.",      rollDisplay],
+                ["Phone",         student.phone||"—"],
+                ["Parent Phone",  student.parent_phone||"—"],
+                ["Email",         student.email||"—"],
+                ["Branch",        student.branch_name],
+                ["Batch",         student.batch_name||"—"],
+                ["Fee Type",      student.fee_type],
+                ["Due Day",       `${student.due_day||10}th of every month`],
+                ["Discount",      student.discount>0?`${student.discount}% — ${student.discount_reason||""}`:`None`],
+                ["Admission Fee", student.admission_fee>0?fmt(student.admission_fee):"—"],
+                ["Admission Date",student.admission_date?new Date(student.admission_date).toLocaleDateString("en-IN"):"—"],
+                ["Address",       student.address||"—"],
+                ["Status",        student.status],
+              ].map(([label,val])=>(
                 <tr key={label} style={{borderBottom:"1px solid var(--border)"}}>
                   <td style={{padding:"8px 0",color:"var(--text2)",fontSize:12,fontWeight:600,width:130}}>{label}</td>
                   <td style={{padding:"8px 0",fontSize:13,fontWeight:500}}>{val}</td>
