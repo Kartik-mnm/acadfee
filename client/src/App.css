@@ -79,8 +79,6 @@ body.light {
 
 /* ══════════════════════════════════════════════════════
    NUCLEAR LIGHT MODE TEXT RESET
-   Forces every element inside .main-content to
-   render dark text. Intentional colours re-declared below.
    ══════════════════════════════════════════════════════ */
 body.light .main-content,
 body.light .main-content * {
@@ -210,12 +208,7 @@ body.light .logout-btn:hover { color: #dc2626; background: rgba(220,38,38,0.06);
 .page-title { font-size:24px; font-weight:800; color:var(--text); letter-spacing:-0.5px; line-height:1.2; }
 .page-sub { font-size:13px; color:var(--text3); margin-top:4px; font-weight:400; }
 
-/* ══════════════════════════════════════════════════════
-   CARDS
-   Dark mode: glass effect with blur
-   Light mode: plain solid white — NO blur, NO overlay,
-   so text inside is never washed out by the shimmer
-   ══════════════════════════════════════════════════════ */
+/* ══ CARDS ══ */
 .card {
   background: var(--glass-thin);
   backdrop-filter: blur(28px) saturate(180%) brightness(1.02);
@@ -227,7 +220,6 @@ body.light .logout-btn:hover { color: #dc2626; background: rgba(220,38,38,0.06);
   position: relative;
   box-shadow: inset 0 1px 0 var(--glass-stroke), var(--shadow);
 }
-/* Dark mode shimmer overlay */
 .card::before {
   content:''; position:absolute; top:0; left:0; right:0; height:50%;
   background:linear-gradient(180deg,rgba(255,255,255,0.045) 0%,transparent 100%);
@@ -239,13 +231,10 @@ body.light .logout-btn:hover { color: #dc2626; background: rgba(220,38,38,0.06);
   background:linear-gradient(90deg,transparent,rgba(255,255,255,0.18),transparent);
   pointer-events:none; z-index:0;
 }
-/* Ensure all direct card children sit above shimmer overlays */
 .card > * { position:relative; z-index:1; }
-
 .card:hover { background:rgba(15,23,42,0.52); border-color:rgba(148,163,184,0.16); transform:translateY(-1px); box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),0 12px 40px rgba(0,0,0,0.5); }
 .card-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--text3); margin-bottom:16px; }
 
-/* Light mode card: plain white, no glass, no shimmer overlay */
 body.light .card {
   background: #ffffff;
   backdrop-filter: none;
@@ -269,25 +258,44 @@ body.light .card::after  { display: none; }
   -webkit-backdrop-filter:blur(28px) saturate(180%) brightness(1.02);
   border:1px solid var(--border); border-radius:var(--radius-lg);
   padding:20px 22px; position:relative;
+  overflow: hidden;          /* clips the accent bar to the card's rounded corners */
   transition:var(--transition); cursor:default;
   box-shadow:inset 0 1px 0 var(--glass-stroke),var(--shadow);
 }
 .stat-card:hover { transform:translateY(-2px); box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 16px 48px rgba(0,0,0,0.5); }
 .stat-card > * { position:relative; z-index:1; }
-.stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; border-radius:2px 2px 0 0; z-index:2; }
-.stat-card.blue::before   { background:linear-gradient(90deg,var(--blue-600),var(--blue-400)); }
-.stat-card.green::before  { background:linear-gradient(90deg,#059669,var(--green)); }
-.stat-card.yellow::before { background:linear-gradient(90deg,#d97706,var(--yellow)); }
-.stat-card.red::before    { background:linear-gradient(90deg,#dc2626,var(--red)); }
+
+/*
+ * Accent bar — the coloured line at the top of each stat card.
+ * FIX: use overflow:hidden on the parent instead of trying to
+ * match border-radius manually. The bar is now a full-width
+ * 3px strip at the very top; overflow:hidden on .stat-card
+ * clips it perfectly to the card's rounded corners.
+ */
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  z-index: 2;
+  /* no border-radius needed — overflow:hidden on parent does the clipping */
+}
+.stat-card.blue::before   { background: linear-gradient(90deg, var(--blue-600), var(--blue-400)); }
+.stat-card.green::before  { background: linear-gradient(90deg, #059669, var(--green)); }
+.stat-card.yellow::before { background: linear-gradient(90deg, #d97706, var(--yellow)); }
+.stat-card.red::before    { background: linear-gradient(90deg, #dc2626, var(--red)); }
+
 .stat-card::after { content:''; position:absolute; bottom:-24px; right:-24px; width:90px; height:90px; border-radius:50%; opacity:0.10; filter:blur(24px); z-index:0; }
 .stat-card.blue::after   { background:var(--accent); }
 .stat-card.green::after  { background:var(--green); }
 .stat-card.yellow::after { background:var(--yellow); }
 .stat-card.red::after    { background:var(--red); }
+
 .stat-card.blue   { border-color:rgba(59,130,246,0.22); }
 .stat-card.green  { border-color:rgba(16,217,160,0.22); }
 .stat-card.yellow { border-color:rgba(251,191,36,0.22); }
 .stat-card.red    { border-color:rgba(248,113,113,0.22); }
+
 .stat-label { font-size:11px; color:var(--text3); font-weight:600; text-transform:uppercase; letter-spacing:0.08em; }
 .stat-value { font-size:28px; font-weight:800; margin:8px 0 0; font-family:'JetBrains Mono',monospace; letter-spacing:-0.5px; line-height:1; }
 .stat-value.blue   { color:var(--blue-400); }
@@ -295,7 +303,6 @@ body.light .card::after  { display: none; }
 .stat-value.yellow { color:var(--yellow); }
 .stat-value.red    { color:var(--red); }
 
-/* Light mode stat cards: plain white */
 body.light .stat-card {
   background: #ffffff;
   backdrop-filter: none;
@@ -314,7 +321,6 @@ td { padding:12px 16px; border-bottom:1px solid var(--border2); vertical-align:m
 tr:last-child td { border-bottom:none; }
 tr:hover td { background:rgba(59,130,246,0.05); }
 
-/* Light mode table: solid header, dark text */
 body.light th { background: #e8eef8; color: #334155; border-color: rgba(30,58,138,0.14); font-weight:800; backdrop-filter:none; -webkit-backdrop-filter:none; }
 body.light td { color: #1e293b; }
 body.light tr:hover td { background: rgba(37,99,235,0.04); }
