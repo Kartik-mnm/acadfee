@@ -9,14 +9,16 @@ const { authenticatePlatformOwner } = require("../middleware");
 router.get("/academies", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(`
-      SELECT a.id, a.name, a.slug, a.logo_url, a.city, a.plan,
-             a.is_active, a.max_students, a.max_branches, a.primary_color, a.created_at,
-             COUNT(DISTINCT s.id) AS student_count,
-             COUNT(DISTINCT b.id) AS branch_count
+      SELECT
+        a.id, a.name, a.slug, a.logo_url, a.city, a.plan,
+        a.is_active, a.max_students, a.max_branches, a.primary_color, a.created_at,
+        COUNT(DISTINCT s.id) AS student_count,
+        COUNT(DISTINCT b.id) AS branch_count
       FROM academies a
       LEFT JOIN students s ON s.academy_id = a.id
       LEFT JOIN branches b ON b.academy_id = a.id
-      GROUP BY a.id ORDER BY a.created_at DESC
+      GROUP BY a.id
+      ORDER BY a.created_at DESC
     `);
     res.json(rows);
   } catch (err) {
@@ -45,6 +47,7 @@ router.post("/academies", authenticatePlatformOwner, async (req, res) => {
     plan = "basic", max_students = 200, max_branches = 3, features
   } = req.body;
   if (!name || !slug) return res.status(400).json({ error: "name and slug are required" });
+
   const defaultFeatures = {
     attendance: true, tests: true, expenses: true, admissions: true,
     notifications: true, id_cards: true, qr_scanner: true, reports: true
@@ -103,7 +106,8 @@ router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
     `, [
       name, tagline, city, state, pincode, phone, phone2, email, website, address,
       primary_color, accent_color, logo_url, plan, max_students, max_branches,
-      features ? JSON.stringify(features) : null, is_active, req.params.id
+      features ? JSON.stringify(features) : null,
+      is_active, req.params.id
     ]);
     if (!rows[0]) return res.status(404).json({ error: "Academy not found" });
     res.json(rows[0]);
@@ -113,10 +117,13 @@ router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// DELETE /platform/academies/:id  (soft deactivate)
+// DELETE /platform/academies/:id (soft deactivate)
 router.delete("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   try {
-    await db.query("UPDATE academies SET is_active=false, updated_at=NOW() WHERE id=$1", [req.params.id]);
+    await db.query(
+      "UPDATE academies SET is_active=false, updated_at=NOW() WHERE id=$1",
+      [req.params.id]
+    );
     res.json({ message: "Academy deactivated successfully" });
   } catch (err) {
     res.status(500).json({ error: "Failed to deactivate academy" });
@@ -138,24 +145,24 @@ router.post("/academies/:id/admin", authenticatePlatformOwner, async (req, res) 
     );
     if (!acadRows[0]) return res.status(404).json({ error: "Academy not found" });
 
-    // Check email not already taken
+    // Check if email already exists in users
     const { rows: existing } = await db.query(
       "SELECT id FROM users WHERE email=$1", [email]
     );
-    if (existing[0]) return res.status(409).json({ error: "Email already in use" });
+    if (existing[0]) return res.status(409).json({ error: "A user with this email already exists" });
 
     // Hash password and create user with super_admin role + academy_id
     const hash = await bcrypt.hash(password, 10);
-    const { rows } = await db.query(`
-      INSERT INTO users (name, email, password, role, academy_id)
-      VALUES ($1, $2, $3, 'super_admin', $4)
-      RETURNING id, name, email, role, academy_id
-    `, [name, email, hash, req.params.id]);
+    const { rows } = await db.query(
+      `INSERT INTO users (name, email, password, role, academy_id)
+       VALUES ($1,$2,$3,'super_admin',$4)
+       RETURNING id, name, email, role, academy_id`,
+      [name, email, hash, req.params.id]
+    );
 
     res.status(201).json({
-      success: true,
-      user: rows[0],
-      message: `Admin created for ${acadRows[0].name}. They can log in at your academy portal.`
+      message: `Admin created for ${acadRows[0].name}`,
+      admin: rows[0]
     });
   } catch (err) {
     console.error("Create academy admin error:", err.message);
@@ -163,14 +170,15 @@ router.post("/academies/:id/admin", authenticatePlatformOwner, async (req, res) 
   }
 });
 
-// GET /platform/academies/:id/admins — list admins for an academy
+// GET /platform/academies/:id/admins — list all admins for an academy
 router.get("/academies/:id/admins", authenticatePlatformOwner, async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT id, name, email, role, created_at
-      FROM users WHERE academy_id=$1 AND role='super_admin'
-      ORDER BY created_at DESC
-    `, [req.params.id]);
+    const { rows } = await db.query(
+      `SELECT id, name, email, role, created_at
+       FROM users WHERE academy_id=$1 AND role='super_admin'
+       ORDER BY created_at ASC`,
+      [req.params.id]
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch admins" });
