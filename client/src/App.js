@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AcademyProvider, useAcademy } from "./context/AcademyContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
@@ -16,10 +17,8 @@ import QRScanner from "./pages/QRScanner";
 import Admissions from "./pages/Admissions";
 import AdmissionForm from "./pages/AdmissionForm";
 import StudentDashboard from "./pages/StudentDashboard";
-import logo from "./logo.png";
 import "./App.css";
 
-// ── Nav config with clean SVG-style icons ─────────────────────────────────
 const NAV_ICONS = {
   dashboard:   "▦",
   students:    "◉",
@@ -37,7 +36,8 @@ const NAV_ICONS = {
 };
 
 function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout }     = useAuth();
+  const { academy, loading } = useAcademy();
   const [page, setPage]             = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme]           = useState(() => localStorage.getItem("theme") || "dark");
@@ -48,31 +48,45 @@ function Layout() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Reset scroll when page changes
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;
   }, [page]);
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
+  if (loading) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100vh", flexDirection: "column", gap: 16,
+        background: "var(--bg1)", color: "var(--text1)"
+      }}>
+        <div style={{ fontSize: 32, animation: "spin 1s linear infinite" }}>⟳</div>
+        <div style={{ fontSize: 14, color: "var(--text3)" }}>Loading...</div>
+      </div>
+    );
+  }
+
   if (!user) return <Login />;
   if (user.role === "student") return <StudentDashboard />;
 
+  // Feature-flag driven nav
+  const f = academy?.features || {};
   const nav = [
-    { id: "dashboard",   label: "Dashboard",   group: "overview" },
-    { id: "students",    label: "Students",    group: "academic" },
-    { id: "admissions",  label: "Admissions",  group: "academic" },
-    { id: "batches",     label: "Batches",     group: "academic" },
-    { id: "attendance",  label: "Attendance",  group: "academic" },
-    { id: "performance", label: "Performance", group: "academic" },
-    { id: "fees",        label: "Fee Records", group: "finance" },
-    { id: "payments",    label: "Payments",    group: "finance" },
-    { id: "expenses",    label: "Expenses",    group: "finance" },
-    { id: "reports",     label: "Reports",     group: "finance" },
-    { id: "idcards",     label: "ID Cards",    group: "tools" },
-    { id: "qrscanner",   label: "QR Scanner",  group: "tools" },
-    ...(user.role === "super_admin" ? [{ id: "users", label: "Users", group: "tools" }] : []),
-  ];
+    { id: "dashboard",   label: "Dashboard",   group: "overview", show: true },
+    { id: "students",    label: "Students",    group: "academic", show: true },
+    { id: "admissions",  label: "Admissions",  group: "academic", show: f.admissions !== false },
+    { id: "batches",     label: "Batches",     group: "academic", show: true },
+    { id: "attendance",  label: "Attendance",  group: "academic", show: f.attendance !== false },
+    { id: "performance", label: "Performance", group: "academic", show: f.tests !== false },
+    { id: "fees",        label: "Fee Records", group: "finance",  show: true },
+    { id: "payments",    label: "Payments",    group: "finance",  show: true },
+    { id: "expenses",    label: "Expenses",    group: "finance",  show: f.expenses !== false },
+    { id: "reports",     label: "Reports",     group: "finance",  show: f.reports !== false },
+    { id: "idcards",     label: "ID Cards",    group: "tools",    show: f.id_cards !== false },
+    { id: "qrscanner",   label: "QR Scanner",  group: "tools",    show: f.qr_scanner !== false },
+    ...(user.role === "super_admin" ? [{ id: "users", label: "Users", group: "tools", show: true }] : []),
+  ].filter((n) => n.show);
 
   const pages = {
     dashboard: Dashboard, students: Students, admissions: Admissions,
@@ -83,7 +97,6 @@ function Layout() {
   const Page = pages[page] || Dashboard;
   const goTo = (id) => { setPage(id); setSidebarOpen(false); };
 
-  // Group nav items with section labels
   const groups = [
     { key: "overview", label: "Overview" },
     { key: "academic", label: "Academic" },
@@ -91,38 +104,50 @@ function Layout() {
     { key: "tools",    label: "Tools" },
   ];
 
+  // Dynamic brand from academy config
+  const academyWords = (academy?.name || "Academy").split(" ");
+  const brandTitle   = academyWords[0].toUpperCase();
+  const brandSub     = academyWords.slice(1).join(" ") || "Portal";
+
   return (
     <div className="app-shell">
-      {/* Mobile hamburger */}
       <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
         {sidebarOpen ? "✕" : "☰"}
       </button>
 
-      {/* Overlay */}
       <div
         className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`}
         onClick={() => setSidebarOpen(false)}
       />
 
-      {/* ── SIDEBAR ── */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        {/* Brand */}
+        {/* Dynamic brand */}
         <div className="sidebar-brand">
-          <img
-            src={logo}
-            alt="Nishchay Academy"
-            style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 8 }}
-          />
+          {academy?.logo_url ? (
+            <img
+              src={academy.logo_url}
+              alt={academy.name}
+              style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 8 }}
+            />
+          ) : (
+            <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              background: "var(--blue-600)", color: "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 700, fontSize: 18, flexShrink: 0
+            }}>
+              {(academy?.name || "A")[0].toUpperCase()}
+            </div>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="brand-title">NISHCHAY</div>
-            <div className="brand-sub">Academy</div>
+            <div className="brand-title">{brandTitle}</div>
+            <div className="brand-sub">{brandSub}</div>
           </div>
           <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">
             {theme === "dark" ? "☀" : "◑"}
           </button>
         </div>
 
-        {/* Nav with group labels */}
         <nav className="sidebar-nav">
           {groups.map((group) => {
             const items = nav.filter((n) => n.group === group.key);
@@ -130,13 +155,9 @@ function Layout() {
             return (
               <div key={group.key}>
                 <div style={{
-                  fontSize: 9,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "var(--text3)",
-                  padding: "12px 12px 4px",
-                  userSelect: "none",
+                  fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                  letterSpacing: "0.12em", color: "var(--text3)",
+                  padding: "12px 12px 4px", userSelect: "none",
                 }}>
                   {group.label}
                 </div>
@@ -157,7 +178,6 @@ function Layout() {
           })}
         </nav>
 
-        {/* Footer */}
         <div className="sidebar-footer">
           <div className="user-pill">
             <div className="user-avatar">
@@ -178,7 +198,6 @@ function Layout() {
         </div>
       </aside>
 
-      {/* ── MAIN CONTENT ── */}
       <main className="main-content" ref={mainRef}>
         <Page onNavigate={goTo} />
       </main>
@@ -189,8 +208,10 @@ function Layout() {
 export default function App() {
   if (window.location.pathname === "/apply") return <AdmissionForm />;
   return (
-    <AuthProvider>
-      <Layout />
-    </AuthProvider>
+    <AcademyProvider>
+      <AuthProvider>
+        <Layout />
+      </AuthProvider>
+    </AcademyProvider>
   );
 }
