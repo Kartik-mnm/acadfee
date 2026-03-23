@@ -1,7 +1,6 @@
 const jwt = require("jsonwebtoken");
 const db  = require("./db");
 
-// JWT secret — crashes on startup if not set
 function getJwtSecret() {
   if (!process.env.JWT_SECRET) {
     console.error("FATAL: JWT_SECRET env var is not set!");
@@ -10,20 +9,13 @@ function getJwtSecret() {
   return process.env.JWT_SECRET;
 }
 
-// ── auth middleware ────────────────────────────────────────────────────────────
+// ── Original academy user auth (unchanged) ────────────────────────────────────
 async function auth(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token" });
   try {
     req.user = jwt.verify(token, getJwtSecret());
 
-    // Fix #2 — For student tokens, verify the student still has login access.
-    // This ensures that when an admin revokes a session (deletes refresh token),
-    // the student's device gets a 401 on the NEXT API call (not just after 12h).
-    // We check that:
-    //   a) login_enabled is still true
-    //   b) at least one valid refresh token still exists for this student
-    //      (i.e. admin hasn't revoked all sessions)
     if (req.user.role === "student") {
       const { rows } = await db.query(
         `SELECT s.login_enabled,
@@ -36,26 +28,43 @@ async function auth(req, res, next) {
       );
       if (!rows[0]) return res.status(401).json({ error: "Student account not found" });
       if (!rows[0].login_enabled) return res.status(401).json({ error: "Student portal access is disabled" });
-      // If admin has revoked all sessions (0 active refresh tokens), force re-login
       if (parseInt(rows[0].active_sessions) === 0) {
         return res.status(401).json({ error: "Session revoked by admin. Please log in again.", code: "SESSION_REVOKED" });
       }
     }
 
+    // Inject academy_id from JWT for multi-tenant queries
+    req.academyId = req.user.academy_id || null;
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
   }
 }
 
-// Restrict to super admins only
+// ── NEW: Platform owner auth ───────────────────────────────────────────────────
+// Protects all /platform/* routes — only role = 'platform_owner' allowed
+function authenticatePlatformOwner(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "No token provided" });
+  try {
+    const decoded = jwt.verify(token, getJwtSecret());
+    if (decoded.role !== "platform_owner") {
+      return res.status(403).json({ error: "Access denied. Platform owner only." });
+    }
+    req.platformAdmin = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+// ── Existing helpers (unchanged) ──────────────────────────────────────────────
 function superAdmin(req, res, next) {
   if (req.user.role !== "super_admin")
     return res.status(403).json({ error: "Super admin only" });
   next();
 }
 
-// Inject branch filter based on role
 function branchFilter(req, res, next) {
   if (req.user.role === "super_admin") {
     req.branchId = req.query.branch_id ? parseInt(req.query.branch_id) : null;
@@ -65,7 +74,6 @@ function branchFilter(req, res, next) {
   next();
 }
 
-// Students can only access their own record
 function studentSelf(req, res, next) {
   if (req.user.role === "student") {
     const paramId = parseInt(req.params.id);
@@ -77,4 +85,7 @@ function studentSelf(req, res, next) {
   next();
 }
 
-module.exports = { auth, superAdmin, branchFilter, studentSelf, getJwtSecret };
+module.exports = {
+  auth, superAdmin, branchFilter, studentSelf, getJwtSecret,
+  authenticatePlatformOwner  // ← new export
+};
