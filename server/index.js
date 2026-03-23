@@ -13,8 +13,12 @@ initFCM();
 startAbsentCron();
 
 const allowedOrigins = [
+  // Existing academy portals
   "https://acadfee.onrender.com",
   "https://acadfee-app.onrender.com",
+  // Exponent Platform Control Panel (Netlify)
+  "https://expoent.netlify.app",
+  // Local development
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5000",
@@ -26,6 +30,8 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) return callback(null, true);
     // Allow any subdomain of onrender.com (for future subdomains)
     if (origin.endsWith(".onrender.com")) return callback(null, true);
+    // Allow any subdomain of netlify.app (for Netlify preview deploys)
+    if (origin.endsWith(".netlify.app")) return callback(null, true);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -57,10 +63,10 @@ app.use("/api/admission",    require("./routes/admission"));
 app.use("/api/upload",       require("./routes/upload"));
 app.use("/api/working-days", require("./routes/working-days"));
 
-// ── NEW: Exponent Platform routes ──────────────────────────────────────────────
-app.use("/platform/auth",    require("./routes/platform-auth"));  // POST /platform/auth/login
-app.use("/platform",         require("./routes/platform"));       // GET/POST /platform/academies
-app.use("/api/academy",      require("./routes/academy-config")); // GET /api/academy/config?slug=nishchay
+// ── Exponent Platform routes ───────────────────────────────────────────────────
+app.use("/platform/auth",    require("./routes/platform-auth"));
+app.use("/platform",         require("./routes/platform"));
+app.use("/api/academy",      require("./routes/academy-config"));
 
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get("/health", (_, res) => res.json({
