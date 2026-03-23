@@ -6,7 +6,6 @@ const crypto = require("crypto");
 const db = require("../db");
 const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
-// ── Init refresh_tokens table ────────────────────────────────────────────────────
 async function initTables() {
   try {
     await db.query(`
@@ -20,8 +19,9 @@ async function initTables() {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token   ON refresh_tokens(token)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at)`);
-    // Student session tracking: max 2 concurrent logins per student
     await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_device_limit INT DEFAULT 2`);
+    // Ensure users table has academy_id column
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id)`);
     console.log("✅ auth tables ready");
   } catch (e) {
     console.error("Failed to init auth tables:", e.message);
@@ -29,7 +29,6 @@ async function initTables() {
 }
 initTables();
 
-// ── Cleanup expired tokens every hour ────────────────────────────────────────────
 setInterval(async () => {
   try {
     const { rowCount } = await db.query("DELETE FROM refresh_tokens WHERE expires_at < NOW()");
@@ -59,7 +58,7 @@ async function issueTokenPair(payload) {
   return { accessToken, refreshToken };
 }
 
-// ── Admin Login ─────────────────────────────────────────────────────────────
+// ── Admin Login ───────────────────────────────────────────────────────────────
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
@@ -71,17 +70,31 @@ router.post("/login", loginLimiter, async (req, res) => {
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password)))
       return res.status(401).json({ error: "Invalid email or password" });
-    const payload = { id: user.id, role: user.role, branch_id: user.branch_id, name: user.name, branch_name: user.branch_name };
+
+    // ── UPDATED: include academy_id in JWT payload ──────────────────────────
+    const payload = {
+      id: user.id, role: user.role,
+      branch_id: user.branch_id, name: user.name,
+      branch_name: user.branch_name,
+      academy_id: user.academy_id || 1   // default to 1 (Nishchay) for old users
+    };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
-    res.json({ token: accessToken, refreshToken,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, branch_id: user.branch_id, branch_name: user.branch_name } });
+    res.json({
+      token: accessToken, refreshToken,
+      user: {
+        id: user.id, name: user.name, email: user.email,
+        role: user.role, branch_id: user.branch_id,
+        branch_name: user.branch_name,
+        academy_id: user.academy_id || 1
+      }
+    });
   } catch (e) {
     console.error("Login error:", e.message);
     res.status(500).json({ error: "Login failed" });
   }
 });
 
-// ── Student Login — enforces 2-device limit ───────────────────────────────────────
+// ── Student Login ─────────────────────────────────────────────────────────────
 router.post("/student-login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
@@ -99,7 +112,6 @@ router.post("/student-login", loginLimiter, async (req, res) => {
     if (!(await bcrypt.compare(password, student.login_password)))
       return res.status(401).json({ error: "Invalid email or password" });
 
-    // ── Device limit check: count active refresh tokens for this student ──
     const deviceLimit = student.login_device_limit ?? 2;
     const { rows: activeTokens } = await db.query(
       `SELECT COUNT(*) AS cnt FROM refresh_tokens
@@ -109,19 +121,26 @@ router.post("/student-login", loginLimiter, async (req, res) => {
     const activeCount = parseInt(activeTokens[0].cnt);
     if (activeCount >= deviceLimit) {
       return res.status(403).json({
-        error: `Maximum ${deviceLimit} device(s) already logged in. Ask your admin to remove a device or increase the limit.`,
+        error: `Maximum ${deviceLimit} device(s) already logged in.`,
         code: "DEVICE_LIMIT_REACHED",
         active_devices: activeCount,
         limit: deviceLimit,
       });
     }
 
-    const payload = { id: student.id, role: "student", branch_id: student.branch_id, name: student.name };
+    const payload = {
+      id: student.id, role: "student",
+      branch_id: student.branch_id, name: student.name,
+      academy_id: student.academy_id || 1
+    };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
     res.json({
       token: accessToken, refreshToken,
-      user: { id: student.id, name: student.name, email: student.email, role: "student",
-        branch_id: student.branch_id, branch_name: student.branch_name, batch_name: student.batch_name },
+      user: {
+        id: student.id, name: student.name, email: student.email, role: "student",
+        branch_id: student.branch_id, branch_name: student.branch_name,
+        batch_name: student.batch_name, academy_id: student.academy_id || 1
+      },
     });
   } catch (e) {
     console.error("Student login error:", e.message);
@@ -129,7 +148,7 @@ router.post("/student-login", loginLimiter, async (req, res) => {
   }
 });
 
-// ── Get active sessions for a student (admin only) ─────────────────────────────
+// ── Session management (unchanged) ───────────────────────────────────────────
 router.get("/student-sessions/:studentId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -150,7 +169,6 @@ router.get("/student-sessions/:studentId", auth, async (req, res) => {
   }
 });
 
-// ── Revoke a specific session (admin: remove device access) ─────────────────────
 router.delete("/student-sessions/:tokenId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -161,7 +179,6 @@ router.delete("/student-sessions/:tokenId", auth, async (req, res) => {
   }
 });
 
-// ── Revoke ALL sessions for a student (admin: full logout all devices) ──────────
 router.delete("/student-sessions-all/:studentId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -175,7 +192,6 @@ router.delete("/student-sessions-all/:studentId", auth, async (req, res) => {
   }
 });
 
-// ── Update student device limit (admin) ──────────────────────────────────────────
 router.patch("/student-device-limit/:studentId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { limit } = req.body;
@@ -188,7 +204,6 @@ router.patch("/student-device-limit/:studentId", auth, async (req, res) => {
   }
 });
 
-// ── Refresh token ───────────────────────────────────────────────────────────────
 router.post("/refresh", async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ error: "refreshToken required" });
@@ -196,7 +211,7 @@ router.post("/refresh", async (req, res) => {
     const { rows } = await db.query(
       `SELECT * FROM refresh_tokens WHERE token = $1 AND expires_at > NOW()`, [refreshToken]
     );
-    if (!rows[0]) return res.status(401).json({ error: "Invalid or expired refresh token — please log in again" });
+    if (!rows[0]) return res.status(401).json({ error: "Invalid or expired refresh token" });
     await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]);
     const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(rows[0].payload);
     res.json({ token: accessToken, refreshToken: newRefreshToken });
@@ -206,7 +221,6 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-// ── Logout ───────────────────────────────────────────────────────────────
 router.post("/logout", async (req, res) => {
   const { refreshToken } = req.body;
   if (refreshToken) await db.query("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]).catch(() => {});
@@ -228,15 +242,16 @@ router.post("/student-logout", auth, async (req, res) => {
   }
 });
 
-// ── User management ─────────────────────────────────────────────────────────────
+// ── User management ───────────────────────────────────────────────────────────
 router.post("/users", auth, superAdmin, async (req, res) => {
   const { name, email, password, role, branch_id } = req.body;
   if (!name || !email || !password || !role) return res.status(400).json({ error: "name, email, password and role are required" });
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO users (name, email, password, role, branch_id) VALUES ($1,$2,$3,$4,$5) RETURNING id, name, email, role, branch_id`,
-      [name, email, hash, role, branch_id || null]
+      `INSERT INTO users (name, email, password, role, branch_id, academy_id)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, branch_id, academy_id`,
+      [name, email, hash, role, branch_id || null, req.user.academy_id || 1]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -249,7 +264,10 @@ router.get("/users", auth, superAdmin, async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id, b.name AS branch_name
-       FROM users u LEFT JOIN branches b ON b.id = u.branch_id ORDER BY u.id`
+       FROM users u LEFT JOIN branches b ON b.id = u.branch_id
+       WHERE u.academy_id = $1 OR u.academy_id IS NULL
+       ORDER BY u.id`,
+      [req.user.academy_id || 1]
     );
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
