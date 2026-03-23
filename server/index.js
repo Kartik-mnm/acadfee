@@ -16,12 +16,16 @@ const allowedOrigins = [
   "https://acadfee.onrender.com",
   "https://acadfee-app.onrender.com",
   "http://localhost:3000",
+  "http://localhost:3001",
   "http://localhost:5000",
 ];
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any subdomain of onrender.com (for future subdomains)
+    if (origin.endsWith(".onrender.com")) return callback(null, true);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -37,6 +41,7 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
+// ── Existing acadfee routes (unchanged) ────────────────────────────────────────
 app.use("/api/auth",         require("./routes/auth"));
 app.use("/api/branches",     require("./routes/branches"));
 app.use("/api/batches",      require("./routes/batches"));
@@ -50,13 +55,24 @@ app.use("/api/expenses",     require("./routes/expenses"));
 app.use("/api/qrscan",       require("./routes/qrscan"));
 app.use("/api/admission",    require("./routes/admission"));
 app.use("/api/upload",       require("./routes/upload"));
-app.use("/api/working-days", require("./routes/working-days")); // #53
+app.use("/api/working-days", require("./routes/working-days"));
 
-app.get("/health", (_, res) => res.json({ status: "ok", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime()) }));
-app.get("/", (_, res) => res.json({ status: "Nishchay Academy Fee API running" }));
+// ── NEW: Exponent Platform routes ──────────────────────────────────────────────
+app.use("/platform/auth",    require("./routes/platform-auth"));  // POST /platform/auth/login
+app.use("/platform",         require("./routes/platform"));       // GET/POST /platform/academies
+app.use("/api/academy",      require("./routes/academy-config")); // GET /api/academy/config?slug=nishchay
+
+// ── Health check ───────────────────────────────────────────────────────────────
+app.get("/health", (_, res) => res.json({
+  status: "ok",
+  timestamp: new Date().toISOString(),
+  uptime: Math.floor(process.uptime())
+}));
+app.get("/", (_, res) => res.json({ status: "Exponent Platform API running" }));
 
 app.use((err, req, res, next) => {
-  if (err.message && err.message.startsWith("CORS blocked")) return res.status(403).json({ error: err.message });
+  if (err.message && err.message.startsWith("CORS blocked"))
+    return res.status(403).json({ error: err.message });
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
 });
