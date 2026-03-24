@@ -20,7 +20,6 @@ async function initTables() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token   ON refresh_tokens(token)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at)`);
     await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_device_limit INT DEFAULT 2`);
-    // Ensure users table has academy_id column
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id)`);
     console.log("✅ auth tables ready");
   } catch (e) {
@@ -71,12 +70,11 @@ router.post("/login", loginLimiter, async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password)))
       return res.status(401).json({ error: "Invalid email or password" });
 
-    // ── UPDATED: include academy_id in JWT payload ──────────────────────────
     const payload = {
       id: user.id, role: user.role,
       branch_id: user.branch_id, name: user.name,
       branch_name: user.branch_name,
-      academy_id: user.academy_id || 1   // default to 1 (Nishchay) for old users
+      academy_id: user.academy_id || 1
     };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
     res.json({
@@ -148,7 +146,7 @@ router.post("/student-login", loginLimiter, async (req, res) => {
   }
 });
 
-// ── Session management (unchanged) ───────────────────────────────────────────
+// ── Session management ────────────────────────────────────────────────────────
 router.get("/student-sessions/:studentId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -265,7 +263,7 @@ router.get("/users", auth, superAdmin, async (req, res) => {
     const { rows } = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id, b.name AS branch_name
        FROM users u LEFT JOIN branches b ON b.id = u.branch_id
-       WHERE u.academy_id = $1 OR u.academy_id IS NULL
+       WHERE u.academy_id = $1
        ORDER BY u.id`,
       [req.user.academy_id || 1]
     );
@@ -273,11 +271,17 @@ router.get("/users", auth, superAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── FIXED: DELETE scoped to caller's academy_id — cannot touch other academies
 router.delete("/users/:id", auth, superAdmin, async (req, res) => {
-  const { id } = req.params;
-  if (parseInt(id) === req.user.id) return res.status(400).json({ error: "Cannot delete your own account!" });
+  const targetId = parseInt(req.params.id);
+  if (targetId === req.user.id) return res.status(400).json({ error: "Cannot delete your own account!" });
   try {
-    await db.query("DELETE FROM users WHERE id=$1", [id]);
+    // Only delete if the user belongs to the same academy as the caller
+    const { rowCount } = await db.query(
+      "DELETE FROM users WHERE id=$1 AND academy_id=$2",
+      [targetId, req.user.academy_id || 1]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "User not found in your academy" });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -287,7 +291,12 @@ router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: "password is required" });
     const hash = await bcrypt.hash(password, 10);
-    await db.query("UPDATE users SET password=$1 WHERE id=$2", [hash, req.params.id]);
+    // Also scoped to caller's academy
+    const { rowCount } = await db.query(
+      "UPDATE users SET password=$1 WHERE id=$2 AND academy_id=$3",
+      [hash, req.params.id, req.user.academy_id || 1]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "User not found in your academy" });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

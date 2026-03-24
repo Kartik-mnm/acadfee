@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 import QRCode from "qrcode";
 
@@ -10,7 +11,22 @@ const fetchAllStudents = (query = "") =>
   });
 
 export default function IDCards() {
-  const { user } = useAuth();
+  const { user }    = useAuth();
+  const { academy } = useAcademy();
+
+  // Dynamic academy info — never hardcoded
+  const academyName  = academy?.name  || "Academy";
+  const academyPhone = academy?.phone  || "";
+  const academyPhone2= academy?.phone2 || "";
+  const academyEmail = academy?.email  || "";
+  const primaryColor = academy?.primary_color
+    ? (academy.primary_color.startsWith("#") ? academy.primary_color : `#${academy.primary_color}`)
+    : "#0a1628";
+  const accentColor  = academy?.accent_color
+    ? (academy.accent_color.startsWith("#") ? academy.accent_color : `#${academy.accent_color}`)
+    : "#1565c0";
+  const contactLine  = [academyPhone, academyPhone2].filter(Boolean).join(" / ");
+
   const [students, setStudents]         = useState([]);
   const [branches, setBranches]         = useState([]);
   const [batches,  setBatches]          = useState([]);
@@ -47,7 +63,7 @@ export default function IDCards() {
   }, [selected]);
 
   const backfillRollNumbers = async () => {
-    if (!window.confirm("Assign branch-based roll numbers (RN/DW/DB) to all students that don't have one yet?")) return;
+    if (!window.confirm("Assign branch-based roll numbers to all students that don't have one yet?")) return;
     setBackfilling(true);
     try {
       const { data } = await API.post("/students/backfill-roll-numbers");
@@ -81,6 +97,11 @@ export default function IDCards() {
 
   const printCard = () => {
     const ended = isBatchEnded(selected);
+    const topBg = ended ? "#888" : primaryColor;
+    const botBg = ended
+      ? "linear-gradient(135deg,#888,#aaa)"
+      : `linear-gradient(135deg,${primaryColor},${accentColor})`;
+
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html>
 <html>
@@ -92,7 +113,7 @@ export default function IDCards() {
     body { font-family: 'Inter', Arial, sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; background:#e8e8e8; }
     @media print { body { background:white; } .card { box-shadow:none !important; } }
     .card { width:54mm; background:white; border-radius:6mm; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,0.2); }
-    .card-top { background:${ended ? "#888" : "#0a1628"}; height:28mm; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:4mm; }
+    .card-top { background:${topBg}; height:28mm; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:4mm; }
     .wave { position:absolute; bottom:-1px; left:0; right:0; }
     .academy-name { color:white; font-size:7pt; font-weight:900; letter-spacing:0.5px; text-align:center; z-index:2; }
     .academy-sub  { color:rgba(255,255,255,0.6); font-size:5pt; letter-spacing:0.8px; text-align:center; z-index:2; margin-top:1mm; }
@@ -100,16 +121,15 @@ export default function IDCards() {
     .photo-circle { width:18mm; height:18mm; border-radius:50%; background:#e8edf5; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; font-size:22pt; overflow:hidden; }
     .card-body    { padding:3mm 4mm; text-align:center; }
     .student-name { font-size:10pt; font-weight:900; color:#0a1628; line-height:1.2; margin-top:2mm; text-transform:uppercase; }
-    .student-role { font-size:6.5pt; color:#1565c0; font-weight:700; margin-top:1mm; text-transform:uppercase; letter-spacing:0.5px; }
-    .divider      { height:0.5mm; background:linear-gradient(90deg,transparent,#1565c0,transparent); margin:2mm 4mm; }
+    .student-role { font-size:6.5pt; color:${accentColor}; font-weight:700; margin-top:1mm; text-transform:uppercase; letter-spacing:0.5px; }
+    .divider      { height:0.5mm; background:linear-gradient(90deg,transparent,${primaryColor},transparent); margin:2mm 4mm; }
     .info-row     { display:flex; justify-content:space-between; padding:0.8mm 0; font-size:5.5pt; }
     .info-label   { color:#888; font-weight:600; }
     .info-value   { color:#0a1628; font-weight:700; text-align:right; max-width:28mm; }
-    .student-id   { font-size:8pt; font-weight:800; color:#0a1628; letter-spacing:1px; margin:2mm 0 1mm; font-family:monospace; }
     .qr-section   { display:flex; flex-direction:column; align-items:center; padding:2mm 0 3mm; background:#f8faff; border-top:0.5mm solid #e0e8f5; }
     .qr-img       { width:22mm; height:22mm; border:1px solid #ddd; border-radius:1.5mm; padding:1mm; background:white; }
     .qr-label     { font-size:4.5pt; color:#888; margin-top:1mm; letter-spacing:0.5px; }
-    .card-bottom  { background:${ended ? "linear-gradient(135deg,#888,#aaa)" : "linear-gradient(135deg,#0a1628,#1565c0)"}; padding:2mm 4mm; display:flex; justify-content:center; align-items:center; }
+    .card-bottom  { background:${botBg}; padding:2mm 4mm; display:flex; justify-content:center; align-items:center; }
     .student-badge{ background:rgba(255,255,255,0.15); color:white; font-size:4.5pt; font-weight:800; padding:0.8mm 2mm; border-radius:1mm; text-transform:uppercase; letter-spacing:0.5px; }
     ${ended ? ".inactive-stamp{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:14pt;font-weight:900;color:rgba(200,0,0,0.25);border:3px solid rgba(200,0,0,0.2);padding:2mm 4mm;border-radius:2mm;white-space:nowrap;pointer-events:none;z-index:20;}" : ""}
   </style>
@@ -118,7 +138,7 @@ export default function IDCards() {
   <div class="card">
     ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
     <div class="card-top">
-      <div class="academy-name">NISHCHAY ACADEMY</div>
+      <div class="academy-name">${academyName.toUpperCase()}</div>
       <div class="academy-sub">STUDENT IDENTITY CARD</div>
       <svg class="wave" viewBox="0 0 216 30" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="height:12mm;">
         <path d="M0,20 C40,35 80,5 108,20 C136,35 176,5 216,20 L216,30 L0,30 Z" fill="white"/>
@@ -161,7 +181,7 @@ export default function IDCards() {
         </div>
         {user.role === "super_admin" && missingRollCount > 0 && (
           <button className="btn btn-secondary" onClick={backfillRollNumbers} disabled={backfilling}
-            title={`${missingRollCount} students missing branch roll number`}>
+            title={`${missingRollCount} students missing roll number`}>
             {backfilling ? "⏳ Assigning…" : `🎫 Fix Roll Numbers (${missingRollCount})`}
           </button>
         )}
@@ -234,8 +254,8 @@ export default function IDCards() {
                 {isBatchEnded(selected) && (
                   <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%) rotate(-30deg)", fontSize: 18, fontWeight: 900, color: "rgba(200,0,0,0.2)", border: "3px solid rgba(200,0,0,0.15)", padding: "4px 10px", borderRadius: 4, whiteSpace: "nowrap", zIndex: 20, pointerEvents: "none" }}>INACTIVE</div>
                 )}
-                <div style={{ background: isBatchEnded(selected) ? "#888" : "#0a1628", paddingTop: 16, position: "relative", textAlign: "center" }}>
-                  <div style={{ color: "white", fontSize: 11, fontWeight: 900 }}>NISHCHAY ACADEMY</div>
+                <div style={{ background: isBatchEnded(selected) ? "#888" : primaryColor, paddingTop: 16, position: "relative", textAlign: "center" }}>
+                  <div style={{ color: "white", fontSize: 11, fontWeight: 900 }}>{academyName.toUpperCase()}</div>
                   <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 8, marginTop: 2, marginBottom: 10 }}>STUDENT IDENTITY CARD</div>
                   <svg viewBox="0 0 220 30" xmlns="http://www.w3.org/2000/svg" style={{ display: "block", width: "100%" }}>
                     <path d="M0,20 C40,35 80,5 110,20 C140,35 180,5 220,20 L220,30 L0,30 Z" fill="white"/>
@@ -248,8 +268,8 @@ export default function IDCards() {
                 </div>
                 <div style={{ padding: "8px 14px 6px", textAlign: "center" }}>
                   <div style={{ fontSize: 13, fontWeight: 900, color: "#0a1628", textTransform: "uppercase" }}>{selected.name}</div>
-                  <div style={{ fontSize: 9, color: "#1565c0", fontWeight: 700, marginTop: 3, textTransform: "uppercase" }}>{selected.batch_name || "Student"}</div>
-                  <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#1565c0,transparent)", margin: "6px 10px" }} />
+                  <div style={{ fontSize: 9, color: accentColor, fontWeight: 700, marginTop: 3, textTransform: "uppercase" }}>{selected.batch_name || "Student"}</div>
+                  <div style={{ height: 1, background: `linear-gradient(90deg,transparent,${primaryColor},transparent)`, margin: "6px 10px" }} />
                   {[["Roll No", studentId], ["Branch", selected.branch_name || "—"], ["Phone", selected.phone || "—"], ["Admitted", selected.admission_date ? new Date(selected.admission_date).toLocaleDateString("en-IN") : "—"]].map(([l, v]) => (
                     <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: 8 }}>
                       <span style={{ color: "#888", fontWeight: 600 }}>{l}</span>
@@ -262,8 +282,7 @@ export default function IDCards() {
                     : qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 80, height: 80, border: "1px solid #ddd", borderRadius: 4, padding: 2, background: "white" }} /> : null}
                   <div style={{ fontSize: 7, color: "#888", marginTop: 4 }}>SCAN FOR ATTENDANCE</div>
                 </div>
-                {/* Fix #5: removed "Valid: 2025-26" section, only Student badge */}
-                <div style={{ background: isBatchEnded(selected) ? "linear-gradient(135deg,#888,#aaa)" : "linear-gradient(135deg,#0a1628,#1565c0)", padding: "6px 12px", display: "flex", justifyContent: "center" }}>
+                <div style={{ background: isBatchEnded(selected) ? "linear-gradient(135deg,#888,#aaa)" : `linear-gradient(135deg,${primaryColor},${accentColor})`, padding: "6px 12px", display: "flex", justifyContent: "center" }}>
                   <div style={{ background: "rgba(255,255,255,0.15)", color: "white", fontSize: 7, fontWeight: 800, padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>{isBatchEnded(selected) ? "Inactive" : "Student"}</div>
                 </div>
               </div>

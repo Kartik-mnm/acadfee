@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
-// Convert number to words (Indian style)
 function numberToWords(n) {
   const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
   const tens = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
@@ -17,12 +17,18 @@ function numberToWords(n) {
   return numberToWords(Math.floor(n/10000000)) + " Crore" + (n%10000000 ? " " + numberToWords(n%10000000) : "");
 }
 
-function Receipt({ payment, onClose }) {
+function Receipt({ payment, onClose, academy }) {
   const p = payment;
-  const balance = (p.amount_due || 0) - (p.amount_paid || 0);
+  // Dynamic academy info
+  const academyName  = academy?.name   || "Academy";
+  const academyPhone = academy?.phone  || "";
+  const academyPhone2= academy?.phone2 || "";
+  const contactLine  = [academyPhone, academyPhone2].filter(Boolean).join(" / ");
+
+  const balance     = (p.amount_due || 0) - (p.amount_paid || 0);
   const amountWords = numberToWords(Math.round(p.amount || 0)) + " Rupees Only";
-  const dueDate = p.due_date ? new Date(p.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
-  const paidDate = p.paid_on ? new Date(p.paid_on).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
+  const dueDate  = p.due_date  ? new Date(p.due_date).toLocaleDateString("en-IN",  { day: "numeric", month: "long", year: "numeric" }) : "—";
+  const paidDate = p.paid_on   ? new Date(p.paid_on).toLocaleDateString("en-IN",   { day: "numeric", month: "long", year: "numeric" }) : "—";
 
   const receiptHTML = `
 <!DOCTYPE html>
@@ -32,177 +38,96 @@ function Receipt({ payment, onClose }) {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; background: #fff; color: #000; }
-    .page { width: 750px; margin: 20px auto; padding: 0; }
-
-    /* Two copies side by side */
+    .page { width: 750px; margin: 20px auto; }
     .copies { display: flex; gap: 0; }
     .copy { width: 375px; border: 2px solid #000; padding: 0; }
     .copy + .copy { border-left: 1px dashed #999; }
-
     .copy-inner { padding: 12px 14px; }
-
-    /* Header */
     .hdr { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
     .academy-name { font-size: 17px; font-weight: 900; text-transform: uppercase; }
     .academy-addr { font-size: 10px; color: #333; line-height: 1.5; margin-top: 2px; }
-    .academy-phone { font-size: 10px; color: #333; }
-
-    /* Receipt Title */
     .receipt-title-box { border: 2px solid #000; text-align: center; padding: 5px; margin: 10px 0; }
     .receipt-title-box h2 { font-size: 16px; font-weight: 900; letter-spacing: .05em; }
-
-    /* Info rows */
     .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     .info-table td { padding: 4px 2px; font-size: 11px; vertical-align: top; }
     .info-table .lbl { font-weight: 700; width: 90px; color: #333; }
     .info-table .colon { width: 10px; }
     .info-table .val { font-weight: 600; }
-
-    /* Fee details table */
     .fee-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
     .fee-table th { background: #e0e0e0; border: 1px solid #999; padding: 5px 6px; font-size: 11px; text-align: left; }
     .fee-table td { border: 1px solid #ccc; padding: 5px 6px; font-size: 11px; }
     .fee-table .amount-col { text-align: right; font-weight: 700; }
-    .fee-table .total-row { background: #f0f0f0; font-weight: 900; }
     .fee-table .subtotal-row td { background: #e8e8e8; font-weight: 700; }
-
-    /* Summary rows */
     .summary-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
     .summary-table td { padding: 4px 6px; font-size: 11px; border: 1px solid #ccc; }
     .summary-table .lbl { font-weight: 700; background: #f5f5f5; }
     .summary-table .val { text-align: right; font-weight: 700; }
     .summary-table .balance-row td { background: #fff3cd; }
-
-    /* Amount in words */
     .words-box { border: 1px solid #ccc; padding: 5px 8px; margin-top: 8px; font-size: 10px; }
     .words-label { font-weight: 700; }
-
-    /* Footer */
     .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc; }
     .footer-note { font-size: 9px; color: #666; }
     .sign-box { text-align: center; font-size: 10px; }
     .sign-line { border-top: 1px solid #333; width: 100px; margin: 20px auto 4px; }
-
-    @media print {
-      body { margin: 0; }
-      .page { margin: 0; width: 100%; }
-      .no-print { display: none; }
-    }
+    @media print { body { margin: 0; } .page { margin: 0; width: 100%; } .no-print { display: none; } }
   </style>
 </head>
 <body>
 <div class="page">
   <div class="copies">
     ${[1,2].map(() => `
-    <div class="copy">
-      <div class="copy-inner">
-        <!-- Header -->
-        <div class="hdr">
-          <div class="academy-name">NISHCHAY ACADEMY</div>
-          <div class="academy-addr">${p.branch_name || ""}</div>
-          <div class="academy-phone">Contact: 8956419453</div>
-        </div>
-
-        <!-- Title -->
-        <div class="receipt-title-box">
-          <h2>FEES RECEIPT</h2>
-        </div>
-
-        <!-- Receipt & Date -->
-        <table class="info-table">
-          <tr>
-            <td class="lbl">Receipt No.</td><td class="colon">:</td>
-            <td class="val" style="font-family:monospace;">${p.receipt_no}</td>
-            <td class="lbl" style="text-align:right;">Date</td><td class="colon">:</td>
-            <td class="val">${paidDate}</td>
-          </tr>
-        </table>
-
-        <!-- Student Info -->
-        <table class="info-table" style="border-top:1px solid #ccc; padding-top:6px; margin-top:4px;">
-          <tr>
-            <td class="lbl">Student Name</td><td class="colon">:</td>
-            <td class="val" colspan="3">${p.student_name}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Father's Name</td><td class="colon">:</td>
-            <td class="val" colspan="3">${p.parent_name || "—"}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Batch / Course</td><td class="colon">:</td>
-            <td class="val">${p.batch_name || "—"}</td>
-            <td class="lbl" style="text-align:right;">Branch</td><td class="colon">:</td>
-            <td class="val">${p.branch_name || "—"}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Period</td><td class="colon">:</td>
-            <td class="val">${p.period_label || "—"}</td>
-            <td class="lbl" style="text-align:right;">Due Date</td><td class="colon">:</td>
-            <td class="val" style="color:#c00; font-weight:900;">${dueDate}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Payment Mode</td><td class="colon">:</td>
-            <td class="val" colspan="3">${(p.payment_mode || "").toUpperCase()}${p.transaction_ref ? " — " + p.transaction_ref : ""}</td>
-          </tr>
-        </table>
-
-        <!-- Fee Table -->
-        <table class="fee-table">
-          <thead>
-            <tr>
-              <th>Student's Fee Details</th>
-              <th class="amount-col">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>${p.period_label || "Tuition Fee"}</td>
-              <td class="amount-col">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td>
-            </tr>
-            <tr class="subtotal-row">
-              <td></td>
-              <td class="amount-col">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- Summary -->
-        <table class="summary-table">
-          <tr>
-            <td class="lbl" style="width:60%">Total Fee</td>
-            <td class="val">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Paid Fee</td>
-            <td class="val">₹${Number(p.amount_paid || 0).toLocaleString("en-IN")}</td>
-          </tr>
-          <tr class="balance-row">
-            <td class="lbl">Balance Fee</td>
-            <td class="val" style="color:${balance > 0 ? '#c00' : '#090'};">₹${Number(balance).toLocaleString("en-IN")}</td>
-          </tr>
-        </table>
-
-        <!-- Amount in Words -->
-        <div class="words-box">
-          <span class="words-label">Rupees </span>${amountWords}
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-          <div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
-          <div class="sign-box">
-            <div class="sign-line"></div>
-            Authorized Signatory
-          </div>
-        </div>
+    <div class="copy"><div class="copy-inner">
+      <div class="hdr">
+        <div class="academy-name">${academyName}</div>
+        <div class="academy-addr">${p.branch_name || ""}</div>
+        ${contactLine ? `<div class="academy-addr">Contact: ${contactLine}</div>` : ""}
       </div>
-    </div>
+      <div class="receipt-title-box"><h2>FEES RECEIPT</h2></div>
+      <table class="info-table">
+        <tr>
+          <td class="lbl">Receipt No.</td><td class="colon">:</td>
+          <td class="val" style="font-family:monospace;">${p.receipt_no}</td>
+          <td class="lbl" style="text-align:right;">Date</td><td class="colon">:</td>
+          <td class="val">${paidDate}</td>
+        </tr>
+      </table>
+      <table class="info-table" style="border-top:1px solid #ccc;padding-top:6px;margin-top:4px;">
+        <tr><td class="lbl">Student Name</td><td class="colon">:</td><td class="val" colspan="3">${p.student_name}</td></tr>
+        <tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name || "—"}</td></tr>
+        <tr>
+          <td class="lbl">Batch / Course</td><td class="colon">:</td><td class="val">${p.batch_name || "—"}</td>
+          <td class="lbl" style="text-align:right;">Branch</td><td class="colon">:</td><td class="val">${p.branch_name || "—"}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label || "—"}</td>
+          <td class="lbl" style="text-align:right;">Due Date</td><td class="colon">:</td>
+          <td class="val" style="color:#c00;font-weight:900;">${dueDate}</td>
+        </tr>
+        <tr><td class="lbl">Payment Mode</td><td class="colon">:</td><td class="val" colspan="3">${(p.payment_mode||"").toUpperCase()}${p.transaction_ref ? " — "+p.transaction_ref : ""}</td></tr>
+      </table>
+      <table class="fee-table">
+        <thead><tr><th>Fee Details</th><th class="amount-col">Amount</th></tr></thead>
+        <tbody>
+          <tr><td>${p.period_label || "Tuition Fee"}</td><td class="amount-col">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+          <tr class="subtotal-row"><td></td><td class="amount-col">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+        </tbody>
+      </table>
+      <table class="summary-table">
+        <tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+        <tr><td class="lbl">Paid Fee</td><td class="val">₹${Number(p.amount_paid||0).toLocaleString("en-IN")}</td></tr>
+        <tr class="balance-row"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance>0?"#c00":"#090"};">₹${Number(balance).toLocaleString("en-IN")}</td></tr>
+      </table>
+      <div class="words-box"><span class="words-label">Rupees </span>${amountWords}</div>
+      <div class="footer">
+        <div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
+        <div class="sign-box"><div class="sign-line"></div>Authorized Signatory</div>
+      </div>
+    </div></div>
     `).join("")}
   </div>
 </div>
 <script>window.onload = () => window.print();</script>
-</body>
-</html>`;
+</body></html>`;
 
   const print = () => {
     const w = window.open("", "_blank");
@@ -210,7 +135,6 @@ function Receipt({ payment, onClose }) {
     w.document.close();
   };
 
-  // Preview version
   const balance2 = (p.amount_due || 0) - (p.amount_paid || 0);
 
   return (
@@ -221,21 +145,18 @@ function Receipt({ payment, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          {/* Preview Card */}
           <div style={{ border: "2px solid var(--border)", borderRadius: 8, overflow: "hidden", fontSize: 13 }}>
-            {/* Header */}
             <div style={{ background: "var(--bg3)", textAlign: "center", padding: "12px 16px", borderBottom: "2px solid var(--border)" }}>
-              <div style={{ fontWeight: 900, fontSize: 16 }}>NISHCHAY ACADEMY</div>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>{academyName.toUpperCase()}</div>
               <div style={{ fontSize: 11, color: "var(--text2)" }}>{p.branch_name}</div>
+              {contactLine && <div style={{ fontSize: 11, color: "var(--text2)" }}>📞 {contactLine}</div>}
               <div style={{ fontWeight: 800, fontSize: 13, marginTop: 6, border: "1px solid var(--border)", padding: "3px 20px", display: "inline-block", borderRadius: 4 }}>FEES RECEIPT</div>
             </div>
             <div style={{ padding: "12px 16px" }}>
-              {/* Top row */}
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
                 <div><span style={{ color: "var(--text2)" }}>Receipt No. </span><strong className="mono">{p.receipt_no}</strong></div>
                 <div><span style={{ color: "var(--text2)" }}>Date: </span><strong>{paidDate}</strong></div>
               </div>
-              {/* Student info */}
               {[
                 ["Student Name", p.student_name],
                 ["Father's Name", p.parent_name || "—"],
@@ -250,7 +171,6 @@ function Receipt({ payment, onClose }) {
                   <strong>{v}</strong>
                 </div>
               ))}
-              {/* Fee table */}
               <div style={{ margin: "10px 0", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", background: "var(--bg3)", padding: "5px 10px", fontWeight: 700, fontSize: 11 }}>
                   <span>Fee Details</span><span>Amount</span>
@@ -261,7 +181,7 @@ function Receipt({ payment, onClose }) {
                 </div>
                 <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg3)", padding: "5px 10px" }}>
                   {[
-                    ["Total Fee", fmt(p.amount_due), "#000"],
+                    ["Total Fee", fmt(p.amount_due), "var(--text)"],
                     ["Paid Fee", fmt(p.amount), "var(--green)"],
                     ["Balance Fee", fmt(balance2), balance2 > 0 ? "var(--red)" : "var(--green)"],
                   ].map(([l, v, c]) => (
@@ -288,17 +208,18 @@ function Receipt({ payment, onClose }) {
 }
 
 export default function Payments() {
-  const { user } = useAuth();
-  const [payments, setPayments] = useState([]);
+  const { user }    = useAuth();
+  const { academy } = useAcademy();
+  const [payments, setPayments]     = useState([]);
   const [feeRecords, setFeeRecords] = useState([]);
-  const [branches, setBranches] = useState([]);
+  const [branches, setBranches]     = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
-  const [search, setSearch] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [receipt, setReceipt] = useState(null);
+  const [search, setSearch]         = useState("");
+  const [showModal, setShowModal]   = useState(false);
+  const [receipt, setReceipt]       = useState(null);
   const [form, setForm] = useState({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState("");
 
   const load = () => {
     const q = filterBranch ? `?branch_id=${filterBranch}` : "";
@@ -410,7 +331,6 @@ export default function Payments() {
         )}
       </div>
 
-      {/* Payment Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal">
@@ -469,7 +389,7 @@ export default function Payments() {
         </div>
       )}
 
-      {receipt && <Receipt payment={receipt} onClose={() => setReceipt(null)} />}
+      {receipt && <Receipt payment={receipt} onClose={() => setReceipt(null)} academy={academy} />}
     </div>
   );
 }
