@@ -1,14 +1,26 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 import logo from "../logo.png";
 
 export default function Login() {
   const { login } = useAuth();
-  const [panel, setPanel]   = useState(null); // "admin" | "student"
-  const [form, setForm]     = useState({ email: "", password: "" });
-  const [error, setError]   = useState("");
+  const { academy } = useAcademy();
+  const [panel, setPanel]     = useState(null); // "admin" | "student"
+  const [form, setForm]       = useState({ email: "", password: "" });
+  const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Dynamic values from academy config
+  const academyName  = academy?.name  || "Academy";
+  const primaryColor = academy?.primary_color
+    ? (academy.primary_color.startsWith("#") ? academy.primary_color : `#${academy.primary_color}`)
+    : "#2563eb";
+  const accentColor  = academy?.accent_color
+    ? (academy.accent_color.startsWith("#") ? academy.accent_color : `#${academy.accent_color}`)
+    : "#38bdf8";
+  const logoUrl      = academy?.logo_url || null;
 
   const handle = async (e) => {
     e.preventDefault();
@@ -30,26 +42,30 @@ export default function Login() {
     <div className="login-bg">
       <div className="login-card">
 
-        {/* Logo + Wordmark */}
+        {/* Logo + Academy Name */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{
             width: 64, height: 64,
-            background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(56,189,248,0.1))",
-            border: "1px solid rgba(56,189,248,0.2)",
+            background: `linear-gradient(135deg, ${primaryColor}26, ${accentColor}1a)`,
+            border: `1px solid ${accentColor}33`,
             borderRadius: 18,
             display: "flex", alignItems: "center", justifyContent: "center",
             margin: "0 auto 16px",
-            boxShadow: "0 0 32px rgba(37,99,235,0.15)",
+            boxShadow: `0 0 32px ${primaryColor}26`,
           }}>
-            <img src={logo} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} />
+            {logoUrl ? (
+              <img src={logoUrl} alt={academyName} style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 8 }} />
+            ) : (
+              <img src={logo} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} />
+            )}
           </div>
           <div style={{
             fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px",
-            background: "linear-gradient(135deg, #93c5fd, #38bdf8)",
+            background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
             backgroundClip: "text",
           }}>
-            Nishchay Academy
+            {academyName}
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4, fontWeight: 400 }}>
             Management Portal
@@ -67,36 +83,29 @@ export default function Login() {
             <button
               onClick={() => setPanel("admin")}
               style={{
-                background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(59,130,246,0.08))",
-                border: "1px solid rgba(59,130,246,0.2)",
-                borderRadius: 14,
-                padding: "16px 18px",
-                cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 14,
-                color: "var(--text)",
-                textAlign: "left",
-                transition: "all 0.2s",
-                width: "100%",
+                background: `linear-gradient(135deg, ${primaryColor}26, ${primaryColor}14)`,
+                border: `1px solid ${primaryColor}33`,
+                borderRadius: 14, padding: "16px 18px",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 14,
+                color: "var(--text)", textAlign: "left", transition: "all 0.2s", width: "100%",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "rgba(59,130,246,0.4)";
-                e.currentTarget.style.background = "linear-gradient(135deg, rgba(37,99,235,0.22), rgba(59,130,246,0.12))";
+                e.currentTarget.style.borderColor = `${primaryColor}66`;
                 e.currentTarget.style.transform = "translateY(-1px)";
-                e.currentTarget.style.boxShadow = "0 4px 20px rgba(37,99,235,0.15)";
+                e.currentTarget.style.boxShadow = `0 4px 20px ${primaryColor}26`;
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "rgba(59,130,246,0.2)";
-                e.currentTarget.style.background = "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(59,130,246,0.08))";
+                e.currentTarget.style.borderColor = `${primaryColor}33`;
                 e.currentTarget.style.transform = "translateY(0)";
                 e.currentTarget.style.boxShadow = "none";
               }}
             >
               <div style={{
                 width: 40, height: 40, borderRadius: 12,
-                background: "linear-gradient(135deg, #2563eb, #3b82f6)",
+                background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 18, flexShrink: 0,
-                boxShadow: "0 2px 8px rgba(37,99,235,0.3)",
+                boxShadow: `0 2px 8px ${primaryColor}4d`,
               }}>🔑</div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>Admin Panel</div>
@@ -111,14 +120,9 @@ export default function Login() {
               style={{
                 background: "linear-gradient(135deg, rgba(16,217,160,0.08), rgba(10,200,150,0.05))",
                 border: "1px solid rgba(16,217,160,0.15)",
-                borderRadius: 14,
-                padding: "16px 18px",
-                cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 14,
-                color: "var(--text)",
-                textAlign: "left",
-                transition: "all 0.2s",
-                width: "100%",
+                borderRadius: 14, padding: "16px 18px",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 14,
+                color: "var(--text)", textAlign: "left", transition: "all 0.2s", width: "100%",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = "rgba(16,217,160,0.3)";
@@ -150,15 +154,11 @@ export default function Login() {
         {/* Login form */}
         {panel && (
           <div>
-            {/* Panel pill */}
             <div style={{
               display: "flex", alignItems: "center", gap: 10, marginBottom: 20,
-              padding: "10px 14px",
-              borderRadius: 10,
-              background: panel === "admin"
-                ? "rgba(37,99,235,0.08)"
-                : "rgba(16,217,160,0.08)",
-              border: `1px solid ${ panel === "admin" ? "rgba(59,130,246,0.2)" : "rgba(16,217,160,0.2)" }`,
+              padding: "10px 14px", borderRadius: 10,
+              background: panel === "admin" ? `${primaryColor}14` : "rgba(16,217,160,0.08)",
+              border: `1px solid ${panel === "admin" ? `${primaryColor}33` : "rgba(16,217,160,0.2)"}`,
             }}>
               <span style={{ fontSize: 18 }}>{panel === "admin" ? "🔑" : "🎓"}</span>
               <div style={{ flex: 1 }}>
@@ -191,8 +191,7 @@ export default function Login() {
                   placeholder={panel === "admin" ? "admin@academy.com" : "student@example.com"}
                   value={form.email}
                   onChange={(e) => f("email", e.target.value)}
-                  required
-                  autoFocus
+                  required autoFocus
                 />
               </div>
 
@@ -212,9 +211,7 @@ export default function Login() {
                   padding: "10px 14px",
                   background: "rgba(248,113,113,0.08)",
                   border: "1px solid rgba(248,113,113,0.2)",
-                  borderRadius: 8,
-                  color: "var(--red)",
-                  fontSize: 12.5,
+                  borderRadius: 8, color: "var(--red)", fontSize: 12.5,
                 }}>⚠ {error}</div>
               )}
 
@@ -223,17 +220,14 @@ export default function Login() {
                 className="btn btn-primary"
                 disabled={loading}
                 style={{
-                  width: "100%",
-                  justifyContent: "center",
-                  padding: "11px",
-                  fontSize: 13.5,
-                  marginTop: 4,
+                  width: "100%", justifyContent: "center",
+                  padding: "11px", fontSize: 13.5, marginTop: 4,
                   background: panel === "student"
                     ? "linear-gradient(135deg, #059669, #10d9a0)"
-                    : "linear-gradient(135deg, #2563eb, #3b82f6)",
+                    : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
                   borderColor: panel === "student"
                     ? "rgba(16,217,160,0.3)"
-                    : "rgba(59,130,246,0.3)",
+                    : `${primaryColor}4d`,
                 }}
               >
                 {loading
@@ -244,9 +238,8 @@ export default function Login() {
           </div>
         )}
 
-        {/* Footer note */}
         <div style={{ textAlign: "center", marginTop: 24, fontSize: 11, color: "var(--text3)" }}>
-          Nishchay Academy Management System
+          {academyName} Management System
         </div>
       </div>
     </div>
