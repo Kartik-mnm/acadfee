@@ -5,15 +5,26 @@ const db      = require("../db");
 const bcrypt  = require("bcryptjs");
 const { authenticatePlatformOwner } = require("../middleware");
 
+// Auto-add favicon_url column if missing
+db.query(`ALTER TABLE academies ADD COLUMN IF NOT EXISTS favicon_url TEXT`).catch(() => {});
+
+const DEFAULT_FEATURES = {
+  attendance: true, tests: true, expenses: true, admissions: true,
+  notifications: true, id_cards: true, qr_scanner: true, reports: true
+};
+
 // GET /platform/academies
 router.get("/academies", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT
-        a.id, a.name, a.slug, a.logo_url, a.city, a.plan,
-        a.is_active, a.max_students, a.max_branches, a.primary_color, a.created_at,
-        COUNT(DISTINCT s.id) AS student_count,
-        COUNT(DISTINCT b.id) AS branch_count
+        a.id, a.name, a.slug, a.logo_url, a.favicon_url, a.tagline,
+        a.city, a.state, a.plan, a.is_active,
+        a.max_students, a.max_branches, a.primary_color, a.accent_color,
+        a.phone, a.phone2, a.email, a.website, a.address,
+        a.features, a.trial_ends_at, a.created_at, a.updated_at,
+        COUNT(DISTINCT s.id)::int AS student_count,
+        COUNT(DISTINCT b.id)::int AS branch_count
       FROM academies a
       LEFT JOIN students s ON s.academy_id = a.id
       LEFT JOIN branches b ON b.academy_id = a.id
@@ -30,7 +41,14 @@ router.get("/academies", authenticatePlatformOwner, async (req, res) => {
 // GET /platform/academies/:id
 router.get("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   try {
-    const { rows } = await db.query("SELECT * FROM academies WHERE id=$1", [req.params.id]);
+    const { rows } = await db.query(
+      `SELECT a.*, COUNT(DISTINCT s.id)::int AS student_count, COUNT(DISTINCT b.id)::int AS branch_count
+       FROM academies a
+       LEFT JOIN students s ON s.academy_id = a.id
+       LEFT JOIN branches b ON b.academy_id = a.id
+       WHERE a.id = $1 GROUP BY a.id`,
+      [req.params.id]
+    );
     if (!rows[0]) return res.status(404).json({ error: "Academy not found" });
     res.json(rows[0]);
   } catch (err) {
@@ -43,28 +61,27 @@ router.post("/academies", authenticatePlatformOwner, async (req, res) => {
   const {
     name, slug, tagline, city, state, pincode,
     phone, phone2, email, website, address,
+    logo_url, favicon_url,
     primary_color = "2563EB", accent_color = "38BDF8",
     plan = "basic", max_students = 200, max_branches = 3, features
   } = req.body;
   if (!name || !slug) return res.status(400).json({ error: "name and slug are required" });
 
-  const defaultFeatures = {
-    attendance: true, tests: true, expenses: true, admissions: true,
-    notifications: true, id_cards: true, qr_scanner: true, reports: true
-  };
   try {
     const { rows } = await db.query(`
       INSERT INTO academies (
         name, slug, tagline, city, state, pincode,
         phone, phone2, email, website, address,
+        logo_url, favicon_url,
         primary_color, accent_color, plan, max_students, max_branches, features
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
       RETURNING *
     `, [
       name, slug.toLowerCase().replace(/\s+/g, "-"),
       tagline, city, state, pincode, phone, phone2, email, website, address,
+      logo_url || null, favicon_url || null,
       primary_color, accent_color, plan, max_students, max_branches,
-      JSON.stringify(features || defaultFeatures)
+      JSON.stringify(features || DEFAULT_FEATURES)
     ]);
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -74,84 +91,82 @@ router.post("/academies", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// PUT /platform/academies/:id
+// PUT /platform/academies/:id — FIXED: explicit column updates, correct is_active + features handling
 router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
-  const {
-    name, tagline, city, state, pincode, phone, phone2, email, website, address,
-    primary_color, accent_color, logo_url, plan, max_students, max_branches, features, is_active
-  } = req.body;
   try {
+    const { rows: cur } = await db.query("SELECT * FROM academies WHERE id=$1", [req.params.id]);
+    if (!cur[0]) return res.status(404).json({ error: "Academy not found" });
+    const c   = cur[0];
+    const b   = req.body;
+
+    // Merge features: start from defaults, apply DB values, then apply request overrides
+    // All values MUST be explicit booleans — never undefined
+    const mergedFeatures = { ...DEFAULT_FEATURES };
+    if (c.features) Object.keys(c.features).forEach(k => { mergedFeatures[k] = c.features[k] !== false; });
+    if (b.features) Object.keys(b.features).forEach(k => { mergedFeatures[k] = Boolean(b.features[k]); });
+
     const { rows } = await db.query(`
       UPDATE academies SET
-        name          = COALESCE($1,  name),
-        tagline       = COALESCE($2,  tagline),
-        city          = COALESCE($3,  city),
-        state         = COALESCE($4,  state),
-        pincode       = COALESCE($5,  pincode),
-        phone         = COALESCE($6,  phone),
-        phone2        = COALESCE($7,  phone2),
-        email         = COALESCE($8,  email),
-        website       = COALESCE($9,  website),
-        address       = COALESCE($10, address),
-        primary_color = COALESCE($11, primary_color),
-        accent_color  = COALESCE($12, accent_color),
-        logo_url      = COALESCE($13, logo_url),
-        plan          = COALESCE($14, plan),
-        max_students  = COALESCE($15, max_students),
-        max_branches  = COALESCE($16, max_branches),
-        features      = COALESCE($17::jsonb, features),
-        is_active     = COALESCE($18, is_active),
-        updated_at    = NOW()
-      WHERE id = $19 RETURNING *
+        name          = $1,  tagline       = $2,  city          = $3,
+        state         = $4,  pincode       = $5,  phone         = $6,
+        phone2        = $7,  email         = $8,  website       = $9,
+        address       = $10, primary_color = $11, accent_color  = $12,
+        logo_url      = $13, favicon_url   = $14, plan          = $15,
+        max_students  = $16, max_branches  = $17, features      = $18::jsonb,
+        is_active     = $19, trial_ends_at = $20, updated_at    = NOW()
+      WHERE id = $21 RETURNING *
     `, [
-      name, tagline, city, state, pincode, phone, phone2, email, website, address,
-      primary_color, accent_color, logo_url, plan, max_students, max_branches,
-      features ? JSON.stringify(features) : null,
-      is_active, req.params.id
+      b.name          ?? c.name,
+      b.tagline       ?? c.tagline,
+      b.city          ?? c.city,
+      b.state         ?? c.state,
+      b.pincode       ?? c.pincode,
+      b.phone         ?? c.phone,
+      b.phone2        ?? c.phone2,
+      b.email         ?? c.email,
+      b.website       ?? c.website,
+      b.address       ?? c.address,
+      b.primary_color ?? c.primary_color,
+      b.accent_color  ?? c.accent_color,
+      b.logo_url      !== undefined ? (b.logo_url || null) : c.logo_url,
+      b.favicon_url   !== undefined ? (b.favicon_url || null) : c.favicon_url,
+      b.plan          ?? c.plan,
+      b.max_students  ?? c.max_students,
+      b.max_branches  ?? c.max_branches,
+      JSON.stringify(mergedFeatures),
+      b.is_active     !== undefined ? Boolean(b.is_active) : c.is_active,
+      b.trial_ends_at !== undefined ? (b.trial_ends_at || null) : c.trial_ends_at,
+      req.params.id,
     ]);
-    if (!rows[0]) return res.status(404).json({ error: "Academy not found" });
     res.json(rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("PUT academy error:", err.message);
     res.status(500).json({ error: "Failed to update academy" });
   }
 });
 
-// DELETE /platform/academies/:id (soft deactivate)
+// DELETE /platform/academies/:id (soft suspend)
 router.delete("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   try {
-    await db.query(
-      "UPDATE academies SET is_active=false, updated_at=NOW() WHERE id=$1",
-      [req.params.id]
-    );
-    res.json({ message: "Academy deactivated successfully" });
+    await db.query("UPDATE academies SET is_active=false, updated_at=NOW() WHERE id=$1", [req.params.id]);
+    res.json({ message: "Academy suspended successfully" });
   } catch (err) {
-    res.status(500).json({ error: "Failed to deactivate academy" });
+    res.status(500).json({ error: "Failed to suspend academy" });
   }
 });
 
-// ── NEW: POST /platform/academies/:id/admin ────────────────────────────────────
-// Creates the first super_admin user for an academy
-// Body: { name, email, password }
+// POST /platform/academies/:id/admin
 router.post("/academies/:id/admin", authenticatePlatformOwner, async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password)
     return res.status(400).json({ error: "name, email and password are required" });
-
   try {
-    // Verify academy exists
-    const { rows: acadRows } = await db.query(
-      "SELECT id, name FROM academies WHERE id=$1", [req.params.id]
-    );
+    const { rows: acadRows } = await db.query("SELECT id, name FROM academies WHERE id=$1", [req.params.id]);
     if (!acadRows[0]) return res.status(404).json({ error: "Academy not found" });
 
-    // Check if email already exists in users
-    const { rows: existing } = await db.query(
-      "SELECT id FROM users WHERE email=$1", [email]
-    );
+    const { rows: existing } = await db.query("SELECT id FROM users WHERE email=$1", [email]);
     if (existing[0]) return res.status(409).json({ error: "A user with this email already exists" });
 
-    // Hash password and create user with super_admin role + academy_id
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
       `INSERT INTO users (name, email, password, role, academy_id)
@@ -159,24 +174,19 @@ router.post("/academies/:id/admin", authenticatePlatformOwner, async (req, res) 
        RETURNING id, name, email, role, academy_id`,
       [name, email, hash, req.params.id]
     );
-
-    res.status(201).json({
-      message: `Admin created for ${acadRows[0].name}`,
-      admin: rows[0]
-    });
+    res.status(201).json({ message: `Admin created for ${acadRows[0].name}`, admin: rows[0] });
   } catch (err) {
     console.error("Create academy admin error:", err.message);
     res.status(500).json({ error: "Failed to create admin" });
   }
 });
 
-// GET /platform/academies/:id/admins — list all admins for an academy
+// GET /platform/academies/:id/admins
 router.get("/academies/:id/admins", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, name, email, role, created_at
-       FROM users WHERE academy_id=$1 AND role='super_admin'
-       ORDER BY created_at ASC`,
+      `SELECT id, name, email, role, created_at FROM users
+       WHERE academy_id=$1 AND role='super_admin' ORDER BY created_at ASC`,
       [req.params.id]
     );
     res.json(rows);
@@ -207,14 +217,14 @@ router.get("/academies/:id/stats", authenticatePlatformOwner, async (req, res) =
 // GET /platform/stats
 router.get("/stats", authenticatePlatformOwner, async (req, res) => {
   try {
-    const [academies, students, fees] = await Promise.all([
-      db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE is_active=true) AS active, COUNT(*) FILTER (WHERE is_active=false) AS inactive FROM academies`),
-      db.query("SELECT COUNT(*) FROM students"),
+    const [acad, students, fees] = await Promise.all([
+      db.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active=true)::int AS active, COUNT(*) FILTER (WHERE is_active=false)::int AS inactive FROM academies`),
+      db.query("SELECT COUNT(*)::int FROM students"),
       db.query(`SELECT COALESCE(SUM(amount_paid),0) AS total FROM payments WHERE created_at >= date_trunc('month', NOW())`),
     ]);
     res.json({
-      academies:       academies.rows[0],
-      total_students:  parseInt(students.rows[0].count),
+      academies:       acad.rows[0],
+      total_students:  students.rows[0].count,
       fees_this_month: parseFloat(fees.rows[0].total),
     });
   } catch (err) {
