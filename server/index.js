@@ -8,6 +8,10 @@ app.set("trust proxy", 1);
 
 const { initFCM }         = require("./fcm");
 const { startAbsentCron } = require("./cron");
+const runMigration        = require("./migrate");
+
+// Run DB migration on every startup (safe — uses IF NOT EXISTS throughout)
+runMigration();
 
 initFCM();
 startAbsentCron();
