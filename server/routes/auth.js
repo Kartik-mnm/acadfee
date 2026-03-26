@@ -6,28 +6,7 @@ const crypto = require("crypto");
 const db = require("../db");
 const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
-async function initTables() {
-  try {
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS refresh_tokens (
-        id         SERIAL PRIMARY KEY,
-        token      TEXT NOT NULL UNIQUE,
-        payload    JSONB NOT NULL,
-        expires_at TIMESTAMPTZ NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token   ON refresh_tokens(token)`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at)`);
-    await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_device_limit INT DEFAULT 2`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id)`);
-    console.log("✅ auth tables ready");
-  } catch (e) {
-    console.error("Failed to init auth tables:", e.message);
-  }
-}
-initTables();
-
+// Cleanup expired refresh tokens every hour
 setInterval(async () => {
   try {
     const { rowCount } = await db.query("DELETE FROM refresh_tokens WHERE expires_at < NOW()");
@@ -193,7 +172,7 @@ router.delete("/student-sessions-all/:studentId", auth, async (req, res) => {
 router.patch("/student-device-limit/:studentId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { limit } = req.body;
-  if (!limit || limit < 1 || limit > 10) return res.status(400).json({ error: "limit must be 1–10" });
+  if (!limit || limit < 1 || limit > 10) return res.status(400).json({ error: "limit must be 1-10" });
   try {
     await db.query("UPDATE students SET login_device_limit=$1 WHERE id=$2", [limit, req.params.studentId]);
     res.json({ success: true, limit });
@@ -271,12 +250,10 @@ router.get("/users", auth, superAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── FIXED: DELETE scoped to caller's academy_id — cannot touch other academies
 router.delete("/users/:id", auth, superAdmin, async (req, res) => {
   const targetId = parseInt(req.params.id);
   if (targetId === req.user.id) return res.status(400).json({ error: "Cannot delete your own account!" });
   try {
-    // Only delete if the user belongs to the same academy as the caller
     const { rowCount } = await db.query(
       "DELETE FROM users WHERE id=$1 AND academy_id=$2",
       [targetId, req.user.academy_id || 1]
@@ -291,7 +268,6 @@ router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: "password is required" });
     const hash = await bcrypt.hash(password, 10);
-    // Also scoped to caller's academy
     const { rowCount } = await db.query(
       "UPDATE users SET password=$1 WHERE id=$2 AND academy_id=$3",
       [hash, req.params.id, req.user.academy_id || 1]

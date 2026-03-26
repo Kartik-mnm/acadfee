@@ -2,15 +2,7 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
-// Auto-add start_date/end_date columns if they don't exist (migration)
-async function initBatchDateColumns() {
-  try {
-    await db.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS start_date DATE`);
-    await db.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS end_date DATE`);
-    console.log("✅ batches start_date/end_date columns ready");
-  } catch (e) { console.error("Batch migration error:", e.message); }
-}
-initBatchDateColumns();
+// Note: start_date/end_date columns are handled by migrate.js on startup
 
 // List batches
 router.get("/", auth, branchFilter, async (req, res) => {
