@@ -68,6 +68,9 @@ app.use("/platform/auth",    require("./routes/platform-auth"));
 app.use("/platform",         require("./routes/platform"));
 app.use("/api/academy",      require("./routes/academy-config"));
 
+// ── Self-service onboarding (public, no auth required) ────────────────────────
+app.use("/api/onboarding",   require("./routes/onboarding"));
+
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get("/health", (_, res) => res.json({
   status: "ok",
