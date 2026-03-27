@@ -22,6 +22,8 @@ const allowedOrigins = [
   "https://acadfee-app.onrender.com",
   // Exponent Platform Control Panel (Netlify)
   "https://expoent.netlify.app",
+  // Exponent Platform Control Panel (Vercel)
+  "https://exponent-platform.vercel.app",
   // Local development
   "http://localhost:3000",
   "http://localhost:3001",
@@ -32,10 +34,12 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow any subdomain of onrender.com (for future subdomains)
+    // Allow any subdomain of onrender.com
     if (origin.endsWith(".onrender.com")) return callback(null, true);
-    // Allow any subdomain of netlify.app (for Netlify preview deploys)
+    // Allow any subdomain of netlify.app
     if (origin.endsWith(".netlify.app")) return callback(null, true);
+    // Allow any subdomain of vercel.app
+    if (origin.endsWith(".vercel.app")) return callback(null, true);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
   credentials: true,
