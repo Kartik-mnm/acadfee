@@ -4,24 +4,24 @@
 // Uses its own Pool with a long timeout so cold-start DB connections don't fail.
 // ─────────────────────────────────────────────────────────────────────────────
 const { Pool } = require("pg");
+const bcrypt   = require("bcryptjs");
 
 async function runMigration() {
   console.log("[migrate] Starting migration...");
 
-  // Dedicated pool just for migration — longer timeout than the main pool
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // always use SSL on Render
+    ssl: { rejectUnauthorized: false },
     max: 1,
-    connectionTimeoutMillis: 30000,     // 30s — enough for cold DB start
+    connectionTimeoutMillis: 30000,
     idleTimeoutMillis: 10000,
     statement_timeout: 30000,
   });
 
-  const run = (sql) => pool.query(sql);
+  const run = (sql, params) => pool.query(sql, params);
 
   try {
-    // ── 1. academies table (create if missing entirely) ──────────────────────
+    // ── 1. academies table ───────────────────────────────────────────────────
     await run(`
       CREATE TABLE IF NOT EXISTS academies (
         id            SERIAL PRIMARY KEY,
@@ -53,6 +53,17 @@ async function runMigration() {
       `ALTER TABLE academies ADD COLUMN IF NOT EXISTS max_branches  INT          DEFAULT 3`,
       `ALTER TABLE academies ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ  DEFAULT NOW()`,
       `ALTER TABLE academies ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ  DEFAULT NOW()`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS logo_url      TEXT`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS favicon_url   TEXT`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS tagline       TEXT`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS city          VARCHAR(100)`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS state         VARCHAR(100)`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS pincode       VARCHAR(20)`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS website       TEXT`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS address       TEXT`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS primary_color VARCHAR(20) DEFAULT '2563EB'`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS accent_color  VARCHAR(20) DEFAULT '38BDF8'`,
+      `ALTER TABLE academies ADD COLUMN IF NOT EXISTS phone2        VARCHAR(30)`,
     ];
     for (const sql of academyColumns) await run(sql);
     console.log("[migrate] ✓ academies columns ready");
@@ -65,7 +76,7 @@ async function runMigration() {
     await run(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE CASCADE`);
     console.log("[migrate] ✓ branches.academy_id ready");
 
-    // ── 5. refresh_tokens table (for auth) ───────────────────────────────────
+    // ── 5. refresh_tokens table ───────────────────────────────────────────────
     await run(`
       CREATE TABLE IF NOT EXISTS refresh_tokens (
         id         SERIAL PRIMARY KEY,
@@ -79,33 +90,62 @@ async function runMigration() {
     await run(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at)`);
     console.log("[migrate] ✓ refresh_tokens table ready");
 
-    // ── 6. students: extra columns ───────────────────────────────────────────
+    // ── 6. students: extra columns ────────────────────────────────────────────
     await run(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_device_limit INT DEFAULT 2`);
     await run(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_enabled BOOLEAN DEFAULT false`);
     await run(`ALTER TABLE students ADD COLUMN IF NOT EXISTS login_password TEXT`);
     await run(`ALTER TABLE students ADD COLUMN IF NOT EXISTS roll_no VARCHAR(30)`);
     console.log("[migrate] ✓ students extra columns ready");
 
-    // ── 7. batches: start/end date columns ───────────────────────────────────
+    // ── 7. batches: start/end date columns ────────────────────────────────────
     await run(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS start_date DATE`);
     await run(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS end_date DATE`);
     console.log("[migrate] ✓ batches date columns ready");
 
-    // ── 8. admission_enquiries: photo_url ────────────────────────────────────
-    await run(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url TEXT`).catch(() => {
-      // Table may not exist on all installs — skip silently
-    });
+    // ── 8. admission_enquiries: photo_url ─────────────────────────────────────
+    await run(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url TEXT`).catch(() => {});
 
-    // ── 9. Indexes ────────────────────────────────────────────────────────────
-    await run(`CREATE INDEX IF NOT EXISTS idx_users_academy_id    ON users(academy_id)`);
-    await run(`CREATE INDEX IF NOT EXISTS idx_branches_academy_id ON branches(academy_id)`);
-    await run(`CREATE INDEX IF NOT EXISTS idx_academies_slug      ON academies(slug)`);
-    await run(`CREATE INDEX IF NOT EXISTS idx_academies_plan      ON academies(plan)`);
+    // ── 9. platform_admins table ─────────────────────────────────────────────
+    // This is the table used by the Exponent Platform control panel login.
+    await run(`
+      CREATE TABLE IF NOT EXISTS platform_admins (
+        id              SERIAL PRIMARY KEY,
+        name            VARCHAR(120) NOT NULL,
+        email           VARCHAR(120) UNIQUE NOT NULL,
+        password_hash   TEXT NOT NULL,
+        is_active       BOOLEAN DEFAULT true,
+        last_login_at   TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    console.log("[migrate] ✓ platform_admins table ready");
+
+    // ── 10. Seed default platform admin (only if none exist) ─────────────────
+    // Default credentials: kartik@exponent.app / Admin@1234
+    // Change your password immediately after first login via Settings page.
+    const { rows: existingAdmins } = await run(`SELECT id FROM platform_admins LIMIT 1`);
+    if (existingAdmins.length === 0) {
+      const defaultHash = await bcrypt.hash("Admin@1234", 10);
+      await run(
+        `INSERT INTO platform_admins (name, email, password_hash) VALUES ($1, $2, $3)`,
+        ["Kartik Ninawe", "kartik@exponent.app", defaultHash]
+      );
+      console.log("[migrate] ✓ Default platform admin seeded → kartik@exponent.app / Admin@1234");
+      console.log("[migrate]   ⚠️  CHANGE YOUR PASSWORD after first login!");
+    } else {
+      console.log("[migrate] ✓ platform_admins already has users — skipping seed");
+    }
+
+    // ── 11. Indexes ───────────────────────────────────────────────────────────
+    await run(`CREATE INDEX IF NOT EXISTS idx_users_academy_id       ON users(academy_id)`);
+    await run(`CREATE INDEX IF NOT EXISTS idx_branches_academy_id    ON branches(academy_id)`);
+    await run(`CREATE INDEX IF NOT EXISTS idx_academies_slug         ON academies(slug)`);
+    await run(`CREATE INDEX IF NOT EXISTS idx_academies_plan         ON academies(plan)`);
+    await run(`CREATE INDEX IF NOT EXISTS idx_platform_admins_email  ON platform_admins(email)`);
     console.log("[migrate] ✓ indexes ready");
 
     console.log("[migrate] ✅ All migrations complete — database is up to date.");
   } catch (err) {
-    // Log but DON'T crash the server
     console.error("[migrate] ❌ Migration error:", err.message);
     console.error("[migrate]    The server will still start. Fix the error and redeploy.");
   } finally {
