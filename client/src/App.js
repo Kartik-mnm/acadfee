@@ -17,6 +17,7 @@ import QRScanner from "./pages/QRScanner";
 import Admissions from "./pages/Admissions";
 import AdmissionForm from "./pages/AdmissionForm";
 import StudentDashboard from "./pages/StudentDashboard";
+import AcademySignup from "./pages/AcademySignup";
 import "./App.css";
 
 const NAV_ICONS = {
@@ -206,7 +207,11 @@ function Layout() {
 }
 
 export default function App() {
+  // /apply  → public admission form
   if (window.location.pathname === "/apply") return <AdmissionForm />;
+  // /signup → self-service academy signup (for new academy owners coming from landing page)
+  if (window.location.pathname === "/signup") return <AcademySignup />;
+
   return (
     <AcademyProvider>
       <AuthProvider>
