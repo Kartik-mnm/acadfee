@@ -91,16 +91,14 @@ router.post("/academies", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// PUT /platform/academies/:id — FIXED: explicit column updates, correct is_active + features handling
+// PUT /platform/academies/:id
 router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows: cur } = await db.query("SELECT * FROM academies WHERE id=$1", [req.params.id]);
     if (!cur[0]) return res.status(404).json({ error: "Academy not found" });
-    const c   = cur[0];
-    const b   = req.body;
+    const c = cur[0];
+    const b = req.body;
 
-    // Merge features: start from defaults, apply DB values, then apply request overrides
-    // All values MUST be explicit booleans — never undefined
     const mergedFeatures = { ...DEFAULT_FEATURES };
     if (c.features) Object.keys(c.features).forEach(k => { mergedFeatures[k] = c.features[k] !== false; });
     if (b.features) Object.keys(b.features).forEach(k => { mergedFeatures[k] = Boolean(b.features[k]); });
@@ -145,7 +143,21 @@ router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// DELETE /platform/academies/:id (soft suspend)
+// DELETE /platform/academies/:id/hard — PERMANENT delete (cascades to users, branches, students)
+router.delete("/academies/:id/hard", authenticatePlatformOwner, async (req, res) => {
+  try {
+    const { rows } = await db.query("SELECT name FROM academies WHERE id=$1", [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Academy not found" });
+    // Cascade: users, branches, students, fees etc. all have ON DELETE CASCADE
+    await db.query("DELETE FROM academies WHERE id=$1", [req.params.id]);
+    res.json({ message: `Academy "${rows[0].name}" permanently deleted.` });
+  } catch (err) {
+    console.error("Hard delete error:", err.message);
+    res.status(500).json({ error: "Failed to delete academy: " + err.message });
+  }
+});
+
+// DELETE /platform/academies/:id — soft suspend
 router.delete("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   try {
     await db.query("UPDATE academies SET is_active=false, updated_at=NOW() WHERE id=$1", [req.params.id]);
@@ -202,7 +214,7 @@ router.get("/academies/:id/stats", authenticatePlatformOwner, async (req, res) =
     const [students, branches, fees] = await Promise.all([
       db.query("SELECT COUNT(*) FROM students WHERE academy_id=$1", [aid]),
       db.query("SELECT COUNT(*) FROM branches WHERE academy_id=$1", [aid]),
-      db.query(`SELECT COALESCE(SUM(amount_paid),0) AS total FROM payments WHERE academy_id=$1 AND created_at >= date_trunc('month', NOW())`, [aid]),
+      db.query(`SELECT COALESCE(SUM(amount_paid),0) AS total FROM payments p JOIN students s ON s.id=p.student_id WHERE s.academy_id=$1 AND p.created_at >= date_trunc('month', NOW())`, [aid]),
     ]);
     res.json({
       student_count:   parseInt(students.rows[0].count),
