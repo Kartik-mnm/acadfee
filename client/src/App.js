@@ -18,6 +18,7 @@ import Admissions from "./pages/Admissions";
 import AdmissionForm from "./pages/AdmissionForm";
 import StudentDashboard from "./pages/StudentDashboard";
 import AcademySignup from "./pages/AcademySignup";
+import AcademySettings from "./pages/AcademySettings";
 import "./App.css";
 
 const NAV_ICONS = {
@@ -34,7 +35,46 @@ const NAV_ICONS = {
   idcards:     "◻",
   qrscanner:   "⊞",
   users:       "◬",
+  settings:    "⚙",
 };
+
+// ── Trial expiry banner ────────────────────────────────────────────────────────
+function TrialBanner({ academy, onSettings }) {
+  if (!academy?.trial_ends_at || academy?.plan !== "trial") return null;
+  const msLeft = new Date(academy.trial_ends_at) - Date.now();
+  const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+  if (daysLeft > 7 || daysLeft < 0) return null;
+
+  const urgent = daysLeft <= 2;
+  return (
+    <div style={{
+      background: urgent ? "rgba(239,68,68,0.12)" : "rgba(251,191,36,0.10)",
+      border: `1px solid ${urgent ? "rgba(239,68,68,0.35)" : "rgba(251,191,36,0.3)"}`,
+      borderRadius: 10, padding: "10px 16px",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      margin: "0 0 16px", flexWrap: "wrap", gap: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 16 }}>{urgent ? "🚨" : "⏳"}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: urgent ? "var(--red)" : "var(--yellow)" }}>
+          {daysLeft <= 0
+            ? "Your free trial has expired!"
+            : `Your free trial expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}!`}
+        </span>
+        <span style={{ fontSize: 12, color: "var(--text3)" }}>
+          Ends on {new Date(academy.trial_ends_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+        </span>
+      </div>
+      <button
+        className="btn btn-sm"
+        style={{ background: urgent ? "rgba(239,68,68,0.2)" : "rgba(251,191,36,0.15)", color: urgent ? "var(--red)" : "var(--yellow)", border: "none" }}
+        onClick={() => onSettings?.()}
+      >
+        Contact Us to Upgrade →
+      </button>
+    </div>
+  );
+}
 
 function Layout() {
   const { user, logout }     = useAuth();
@@ -71,7 +111,6 @@ function Layout() {
   if (!user) return <Login />;
   if (user.role === "student") return <StudentDashboard />;
 
-  // Feature-flag driven nav
   const f = academy?.features || {};
   const nav = [
     { id: "dashboard",   label: "Dashboard",   group: "overview", show: true },
@@ -86,14 +125,18 @@ function Layout() {
     { id: "reports",     label: "Reports",     group: "finance",  show: f.reports !== false },
     { id: "idcards",     label: "ID Cards",    group: "tools",    show: f.id_cards !== false },
     { id: "qrscanner",   label: "QR Scanner",  group: "tools",    show: f.qr_scanner !== false },
-    ...(user.role === "super_admin" ? [{ id: "users", label: "Users", group: "tools", show: true }] : []),
+    ...(user.role === "super_admin" ? [
+      { id: "users",    label: "Users",    group: "tools", show: true },
+      { id: "settings", label: "Settings", group: "tools", show: true },
+    ] : []),
   ].filter((n) => n.show);
 
   const pages = {
     dashboard: Dashboard, students: Students, admissions: Admissions,
     batches: Batches, attendance: Attendance, performance: Performance,
     fees: Fees, payments: Payments, expenses: Expenses,
-    reports: Reports, idcards: IDCards, qrscanner: QRScanner, users: Users,
+    reports: Reports, idcards: IDCards, qrscanner: QRScanner,
+    users: Users, settings: AcademySettings,
   };
   const Page = pages[page] || Dashboard;
   const goTo = (id) => { setPage(id); setSidebarOpen(false); };
@@ -105,7 +148,6 @@ function Layout() {
     { key: "tools",    label: "Tools" },
   ];
 
-  // Dynamic brand from academy config
   const academyWords = (academy?.name || "Academy").split(" ");
   const brandTitle   = academyWords[0].toUpperCase();
   const brandSub     = academyWords.slice(1).join(" ") || "Portal";
@@ -116,24 +158,16 @@ function Layout() {
         {sidebarOpen ? "✕" : "☰"}
       </button>
 
-      <div
-        className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`}
-        onClick={() => setSidebarOpen(false)}
-      />
+      <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
 
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        {/* Dynamic brand */}
         <div className="sidebar-brand">
           {academy?.logo_url ? (
-            <img
-              src={academy.logo_url}
-              alt={academy.name}
-              style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 8 }}
-            />
+            <img src={academy.logo_url} alt={academy.name}
+              style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 8 }} />
           ) : (
             <div style={{
-              width: 36, height: 36, borderRadius: 8,
-              background: "var(--blue-600)", color: "#fff",
+              width: 36, height: 36, borderRadius: 8, background: "var(--blue-600)", color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontWeight: 700, fontSize: 18, flexShrink: 0
             }}>
@@ -163,14 +197,8 @@ function Layout() {
                   {group.label}
                 </div>
                 {items.map((n) => (
-                  <button
-                    key={n.id}
-                    className={`nav-item ${page === n.id ? "active" : ""}`}
-                    onClick={() => goTo(n.id)}
-                  >
-                    <span className="nav-icon" style={{ fontFamily: "monospace" }}>
-                      {NAV_ICONS[n.id] || "▸"}
-                    </span>
+                  <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => goTo(n.id)}>
+                    <span className="nav-icon" style={{ fontFamily: "monospace" }}>{NAV_ICONS[n.id] || "▸"}</span>
                     <span>{n.label}</span>
                   </button>
                 ))}
@@ -181,25 +209,19 @@ function Layout() {
 
         <div className="sidebar-footer">
           <div className="user-pill">
-            <div className="user-avatar">
-              {user.name?.[0]?.toUpperCase() || "U"}
-            </div>
+            <div className="user-avatar">{user.name?.[0]?.toUpperCase() || "U"}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="user-name" style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
-                {user.name}
-              </div>
-              <div className="user-role">
-                {user.role === "super_admin" ? "Super Admin" : user.branch_name || "Manager"}
-              </div>
+              <div className="user-name" style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{user.name}</div>
+              <div className="user-role">{user.role === "super_admin" ? "Super Admin" : user.branch_name || "Manager"}</div>
             </div>
           </div>
-          <button className="logout-btn" onClick={logout}>
-            ← Logout
-          </button>
+          <button className="logout-btn" onClick={logout}>← Logout</button>
         </div>
       </aside>
 
       <main className="main-content" ref={mainRef}>
+        {/* Trial expiry banner — shown at the top of every page */}
+        <TrialBanner academy={academy} onSettings={() => goTo("settings")} />
         <Page onNavigate={goTo} />
       </main>
     </div>
@@ -207,11 +229,8 @@ function Layout() {
 }
 
 export default function App() {
-  // /apply  → public admission form
-  if (window.location.pathname === "/apply") return <AdmissionForm />;
-  // /signup → self-service academy signup (for new academy owners coming from landing page)
+  if (window.location.pathname === "/apply")  return <AdmissionForm />;
   if (window.location.pathname === "/signup") return <AcademySignup />;
-
   return (
     <AcademyProvider>
       <AuthProvider>
