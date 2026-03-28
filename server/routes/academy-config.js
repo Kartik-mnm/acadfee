@@ -1,10 +1,10 @@
-// Academy config endpoints — public, called on every page load
-
+// Academy config endpoints — public + authenticated
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db");
+const { auth } = require("../middleware");
 
-// GET /api/academy/config?slug=xyz
+// GET /api/academy/config?slug=xyz  (public)
 router.get("/config", async (req, res) => {
   const { slug } = req.query;
   if (!slug) return res.status(400).json({ error: "slug is required" });
@@ -25,8 +25,7 @@ router.get("/config", async (req, res) => {
   }
 });
 
-// GET /api/academy/config-by-id?id=3
-// Used when user is logged in and we know their academy_id from JWT
+// GET /api/academy/config-by-id?id=3  (public)
 router.get("/config-by-id", async (req, res) => {
   const { id } = req.query;
   if (!id) return res.status(400).json({ error: "id is required" });
@@ -44,6 +43,55 @@ router.get("/config-by-id", async (req, res) => {
   } catch (err) {
     console.error("Academy config-by-id error:", err.message);
     res.status(500).json({ error: "Failed to fetch academy config" });
+  }
+});
+
+// PUT /api/academy/settings  (authenticated — super_admin only)
+// Lets the academy owner update their own academy branding/contact info
+router.put("/settings", auth, async (req, res) => {
+  if (req.user.role !== "super_admin")
+    return res.status(403).json({ error: "Only super admins can update academy settings." });
+  const aid = req.academyId;
+  if (!aid) return res.status(400).json({ error: "No academy linked to your account." });
+
+  const {
+    name, tagline, email, phone, website, address, city, state,
+    primary_color, accent_color, logo_url, favicon_url
+  } = req.body;
+
+  if (!name?.trim()) return res.status(400).json({ error: "Academy name is required." });
+
+  try {
+    const { rows } = await db.query(`
+      UPDATE academies SET
+        name          = $1,
+        tagline       = $2,
+        email         = $3,
+        phone         = $4,
+        website       = $5,
+        address       = $6,
+        city          = $7,
+        state         = $8,
+        primary_color = $9,
+        accent_color  = $10,
+        logo_url      = $11,
+        favicon_url   = $12,
+        updated_at    = NOW()
+      WHERE id = $13
+      RETURNING id, name, slug, logo_url, favicon_url, tagline,
+                primary_color, accent_color, city, plan, trial_ends_at
+    `, [
+      name.trim(), tagline || null, email || null, phone || null,
+      website || null, address || null, city || null, state || null,
+      primary_color || "2563EB", accent_color || "38BDF8",
+      logo_url || null, favicon_url || null,
+      aid
+    ]);
+    if (!rows[0]) return res.status(404).json({ error: "Academy not found." });
+    res.json({ message: "Settings saved successfully!", academy: rows[0] });
+  } catch (err) {
+    console.error("Academy settings update error:", err.message);
+    res.status(500).json({ error: "Failed to save settings." });
   }
 });
 
