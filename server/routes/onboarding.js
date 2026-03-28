@@ -2,7 +2,6 @@
 const express    = require("express");
 const router     = express.Router();
 const bcrypt     = require("bcryptjs");
-const https      = require("https");
 const db         = require("../db");
 const { Resend } = require("resend");
 
@@ -17,31 +16,6 @@ function makeSlug(name) {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .substring(0, 40);
-}
-
-// ── Helper: make an HTTPS POST request using Node built-ins ──────────────────
-function httpsPost(url, body) {
-  return new Promise((resolve, reject) => {
-    const parsed  = new URL(url);
-    const payload = JSON.stringify(body);
-    const options = {
-      hostname: parsed.hostname,
-      path:     parsed.pathname + parsed.search,
-      method:   "POST",
-      headers:  {
-        "Content-Type":   "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-      },
-    };
-    const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => resolve(data));
-    });
-    req.on("error", reject);
-    req.write(payload);
-    req.end();
-  });
 }
 
 // ── Welcome email → new academy owner ────────────────────────────────────────
@@ -142,51 +116,6 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   }
 }
 
-// ── Telegram alert → uses Node https module (works on ALL Node versions) ──────
-async function sendTelegramAlert({ type, ownerName, academyName, phone, email }) {
-  const token  = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) {
-    console.log("[onboarding] Telegram skipped — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set");
-    return;
-  }
-  const isLead = type === "lead";
-  const text   = [
-    isLead ? "📋 New Lead!" : "🎉 New Academy Signup!",
-    "",
-    `Academy: ${academyName}`,
-    `Owner: ${ownerName}`,
-    `Phone: ${phone || "—"}`,
-    `Email: ${email || "—"}`,
-    "",
-    isLead ? "⚡ Follow up within 24 hours!" : "✅ Academy is live and ready.",
-  ].join("\n");
-
-  try {
-    const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    const result = await httpsPost(url, {
-      chat_id: chatId,
-      text,
-    });
-    console.log("[onboarding] Telegram alert sent:", result);
-  } catch (err) {
-    console.error("[onboarding] Telegram alert error:", err.message);
-  }
-}
-
-// ── Notify owner via all channels (non-blocking) ─────────────────────────────
-function notifyOwner(payload) {
-  Promise.allSettled([
-    sendOwnerAlert(payload),
-    sendTelegramAlert(payload),
-  ]).then(results => {
-    results.forEach((r, i) => {
-      if (r.status === "rejected")
-        console.error(`[onboarding] Notification channel ${i} failed:`, r.reason);
-    });
-  });
-}
-
 // ── POST /api/onboarding/signup ───────────────────────────────────────────────
 router.post("/signup", async (req, res) => {
   const { owner_name, email, phone, academy_name, password } = req.body;
@@ -239,8 +168,9 @@ router.post("/signup", async (req, res) => {
 
     await client.query("COMMIT");
 
+    // Non-blocking notifications — email only
     sendWelcomeEmail({ ownerName: owner_name.trim(), email: email.toLowerCase().trim(), academyName: academy_name.trim(), trialEndsAt });
-    notifyOwner({ type: "signup", ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
+    sendOwnerAlert({ type: "signup", ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
 
     res.status(201).json({
       message:       "Academy created successfully!",
@@ -269,7 +199,7 @@ router.post("/lead", async (req, res) => {
       VALUES ($1,$2,$3,'lead',false,$4) ON CONFLICT DO NOTHING
     `, [`[LEAD] ${academy_name.trim()}`, slug, phone.trim(), JSON.stringify(DEFAULT_FEATURES)]);
 
-    notifyOwner({ type: "lead", ownerName: name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: "" });
+    sendOwnerAlert({ type: "lead", ownerName: name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: "" });
     res.json({ message: "Lead captured. We'll contact you within 24 hours!" });
   } catch (err) {
     console.error("Lead capture error:", err.message);
