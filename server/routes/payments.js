@@ -1,41 +1,28 @@
 const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
-const { sendReceiptEmail } = require("../email");
 
-// Receipt number — collision-safe: timestamp (ms) + 4-digit counter using DB sequence (#11)
-// Falls back to crypto.randomBytes if sequence not available
-const crypto = require("crypto");
-function receiptNo() {
-  const d = new Date();
-  const datePart = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
-  const randomPart = crypto.randomBytes(3).toString("hex").toUpperCase(); // 6 hex chars = 16M combinations
-  return `RCP-${datePart}-${randomPart}`;
-}
-
-// List payments
+// List payments — scoped to academy
 router.get("/", auth, branchFilter, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { student_id } = req.query;
-    let cond = []; let params = []; let i = 1;
-
-    if (req.user.role === "student") {
-      cond.push(`p.student_id=$${i++}`);
-      params.push(req.user.id);
-    } else {
-      if (req.branchId) { cond.push(`p.branch_id=$${i++}`); params.push(req.branchId); }
-      if (student_id)   { cond.push(`p.student_id=$${i++}`); params.push(student_id); }
-    }
-
-    const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
+    const { student_id, from, to } = req.query;
+    const aid = req.academyId;
+    let conditions = []; let params = []; let idx = 1;
+    if (aid)          { conditions.push(`s.academy_id=$${idx++}`);  params.push(aid); }
+    if (req.branchId) { conditions.push(`p.branch_id=$${idx++}`);   params.push(req.branchId); }
+    if (student_id)   { conditions.push(`p.student_id=$${idx++}`);  params.push(student_id); }
+    if (from)         { conditions.push(`p.paid_on>=$${idx++}`);     params.push(from); }
+    if (to)           { conditions.push(`p.paid_on<=$${idx++}`);     params.push(to); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
     const { rows } = await db.query(
-      `SELECT p.*, s.name AS student_name, s.phone, fr.period_label, fr.amount_due,
-              br.name AS branch_name, u.name AS collected_by_name
+      `SELECT p.*, s.name AS student_name, s.phone, fr.period_label,
+              b.name AS batch_name, br.name AS branch_name
        FROM payments p
-       JOIN students s ON s.id = p.student_id
-       JOIN fee_records fr ON fr.id = p.fee_record_id
-       JOIN branches br ON br.id = p.branch_id
-       LEFT JOIN users u ON u.id = p.collected_by
+       JOIN students s ON s.id=p.student_id
+       LEFT JOIN fee_records fr ON fr.id=p.fee_record_id
+       LEFT JOIN batches b ON b.id=s.batch_id
+       JOIN branches br ON br.id=p.branch_id
        ${where} ORDER BY p.paid_on DESC, p.id DESC`,
       params
     );
@@ -46,82 +33,72 @@ router.get("/", auth, branchFilter, async (req, res) => {
   }
 });
 
-// Record payment — students cannot record payments
+// Record payment
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { fee_record_id, amount, payment_mode, transaction_ref, paid_on, notes } = req.body;
-    if (!fee_record_id || !amount || !payment_mode)
-      return res.status(400).json({ error: "fee_record_id, amount and payment_mode are required" });
-    const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0)
-      return res.status(400).json({ error: "amount must be a positive number" });
+    const { fee_record_id, student_id, amount, payment_mode, transaction_ref, paid_on, notes } = req.body;
+    if (!fee_record_id || !student_id || !amount || !payment_mode)
+      return res.status(400).json({ error: "fee_record_id, student_id, amount and payment_mode are required" });
+    const { rows: sRows } = await db.query("SELECT branch_id FROM students WHERE id=$1", [student_id]);
+    if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
+    const branch_id = sRows[0].branch_id;
 
-    const { rows: frRows } = await db.query("SELECT * FROM fee_records WHERE id=$1", [fee_record_id]);
-    if (!frRows[0]) return res.status(404).json({ error: "Fee record not found" });
-    const fr = frRows[0];
-
-    const receipt = receiptNo();
-    const { rows } = await db.query(
-      `INSERT INTO payments (fee_record_id, student_id, branch_id, amount, payment_mode, transaction_ref, paid_on, collected_by, notes, receipt_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [fee_record_id, fr.student_id, fr.branch_id, parsedAmount, payment_mode, transaction_ref, paid_on || new Date(), req.user.id, notes, receipt]
+    // Generate receipt number
+    const { rows: lastReceipt } = await db.query(
+      `SELECT receipt_no FROM payments ORDER BY id DESC LIMIT 1`
     );
-
-    const newPaid   = parseFloat(fr.amount_paid) + parsedAmount;
-    const newStatus = newPaid >= parseFloat(fr.amount_due) ? "paid" : "partial";
-    await db.query(
-      "UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3",
-      [newPaid, newStatus, fee_record_id]
-    );
-
-    try {
-      const { rows: fullRows } = await db.query(
-        `SELECT p.*, s.name AS student_name, s.email, s.parent_phone AS parent_name,
-                fr.period_label, fr.amount_due, fr.amount_paid, fr.due_date,
-                b.name AS batch_name, br.name AS branch_name
-         FROM payments p
-         JOIN students s ON s.id = p.student_id
-         JOIN fee_records fr ON fr.id = p.fee_record_id
-         LEFT JOIN batches b ON b.id = s.batch_id
-         JOIN branches br ON br.id = p.branch_id
-         WHERE p.id=$1`, [rows[0].id]
-      );
-      if (fullRows[0]) await sendReceiptEmail(fullRows[0]);
-    } catch (emailErr) {
-      console.error("Receipt email error:", emailErr.message);
+    let receiptNum = 1001;
+    if (lastReceipt[0]?.receipt_no) {
+      const num = parseInt(lastReceipt[0].receipt_no.replace(/[^0-9]/g, ""));
+      if (!isNaN(num)) receiptNum = num + 1;
     }
+    const receipt_no = `RCP${String(receiptNum).padStart(5, "0")}`;
 
-    res.json({ ...rows[0], receipt_no: receipt });
+    const { rows } = await db.query(
+      `INSERT INTO payments (fee_record_id, student_id, branch_id, amount, payment_mode,
+        transaction_ref, paid_on, collected_by, notes, receipt_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [fee_record_id, student_id, branch_id, amount, payment_mode,
+       transaction_ref, paid_on || new Date(), req.user.id, notes, receipt_no]
+    );
+
+    // Update fee record status
+    const { rows: frRows } = await db.query("SELECT * FROM fee_records WHERE id=$1", [fee_record_id]);
+    if (frRows[0]) {
+      const totalPaid = parseFloat(frRows[0].amount_paid) + parseFloat(amount);
+      const status = totalPaid >= frRows[0].amount_due ? "paid" : "partial";
+      await db.query(
+        "UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3",
+        [totalPaid, status, fee_record_id]
+      );
+    }
+    res.json(rows[0]);
   } catch (e) {
-    console.error("Record payment error:", e.message);
+    console.error("Create payment error:", e.message);
     res.status(500).json({ error: "Failed to record payment" });
   }
 });
 
-// Get single payment — students can only see their own
-router.get("/:id", auth, async (req, res) => {
+// Delete payment
+router.delete("/:id", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { rows } = await db.query(
-      `SELECT p.*, s.name AS student_name, s.phone, s.parent_phone AS parent_name, s.email,
-              fr.period_label, fr.amount_due, fr.amount_paid, fr.due_date,
-              b.name AS batch_name, br.name AS branch_name, br.address AS branch_address, br.phone AS branch_phone,
-              u.name AS collected_by_name
-       FROM payments p
-       JOIN students s ON s.id = p.student_id
-       JOIN fee_records fr ON fr.id = p.fee_record_id
-       LEFT JOIN batches b ON b.id = s.batch_id
-       JOIN branches br ON br.id = p.branch_id
-       LEFT JOIN users u ON u.id = p.collected_by
-       WHERE p.id=$1`, [req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: "Not found" });
-    if (req.user.role === "student" && rows[0].student_id !== req.user.id)
-      return res.status(403).json({ error: "Access denied" });
-    res.json(rows[0]);
+    const { rows } = await db.query("SELECT * FROM payments WHERE id=$1", [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
+    const p = rows[0];
+    await db.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
+    // Reverse the fee record update
+    const { rows: frRows } = await db.query("SELECT * FROM fee_records WHERE id=$1", [p.fee_record_id]);
+    if (frRows[0]) {
+      const newPaid = Math.max(0, parseFloat(frRows[0].amount_paid) - parseFloat(p.amount));
+      const status = newPaid <= 0 ? "pending" : newPaid >= frRows[0].amount_due ? "paid" : "partial";
+      await db.query("UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3", [newPaid, status, p.fee_record_id]);
+    }
+    res.json({ success: true });
   } catch (e) {
-    console.error("Get payment error:", e.message);
-    res.status(500).json({ error: "Failed to fetch payment" });
+    console.error("Delete payment error:", e.message);
+    res.status(500).json({ error: "Failed to delete payment" });
   }
 });
 
