@@ -1,8 +1,8 @@
-// ── Self-Service Onboarding Route ────────────────────────────────────────────────────────
-const express   = require("express");
-const router    = express.Router();
-const bcrypt    = require("bcryptjs");
-const db        = require("../db");
+// ── Self-Service Onboarding Route ────────────────────────────────────────────
+const express    = require("express");
+const router     = express.Router();
+const bcrypt     = require("bcryptjs");
+const db         = require("../db");
 const { Resend } = require("resend");
 
 const DEFAULT_FEATURES = {
@@ -18,11 +18,13 @@ function makeSlug(name) {
     .substring(0, 40);
 }
 
-// ── Welcome email ───────────────────────────────────────────────────────────────
+// ── Welcome email → sent to the new academy owner ────────────────────────────
 async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) {
   if (!process.env.RESEND_API_KEY || !email) return;
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  const trialDate = new Date(trialEndsAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+  const resend    = new Resend(process.env.RESEND_API_KEY);
+  const trialDate = new Date(trialEndsAt).toLocaleDateString("en-IN", {
+    day: "numeric", month: "long", year: "numeric"
+  });
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#07090f;font-family:Arial,sans-serif;">
 <div style="max-width:540px;margin:30px auto;background:#0d1117;border-radius:14px;overflow:hidden;border:1px solid #1e2535;">
@@ -34,7 +36,7 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
     <h2 style="font-size:20px;font-weight:800;color:#eef1fb;margin:0 0 12px;">Welcome, ${ownerName}! 🎉</h2>
     <p style="font-size:15px;color:#8892b5;line-height:1.7;margin:0 0 20px;">
       Your academy <strong style="color:#eef1fb;">${academyName}</strong> is live and ready.
-      You're on a <strong style="color:#6366f1;">7-day free trial</strong> — no credit card needed.
+      You are on a <strong style="color:#6366f1;">7-day free trial</strong> — no credit card needed.
     </p>
     <div style="background:#131720;border-radius:10px;padding:16px 20px;margin-bottom:24px;border:1px solid #1e2535;">
       <div style="font-size:12px;color:#454f72;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Trial ends on</div>
@@ -42,17 +44,17 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
     </div>
     <p style="font-size:14px;color:#8892b5;line-height:1.7;margin:0 0 24px;">
       Start by adding students, setting up batches, and configuring your fee structure.
-      Need help? Just reply to this email.
+      Need help? Reply to this email and we will help you.
     </p>
     <div style="text-align:center;padding-top:20px;border-top:1px solid #1e2535;">
-      <div style="font-size:12px;color:#454f72;">Exponent Platform · Made with ❤️ in India</div>
+      <div style="font-size:12px;color:#454f72;">Exponent Platform · Made with love in India</div>
     </div>
   </div>
 </div></body></html>`;
   try {
     await resend.emails.send({
-      from: "Exponent Platform <onboarding@resend.dev>",
-      to: email,
+      from:    "Exponent Platform <onboarding@resend.dev>",
+      to:      email,
       subject: `Your academy "${academyName}" is ready — Exponent`,
       html,
     });
@@ -62,24 +64,98 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
   }
 }
 
-// ── WhatsApp notification to platform owner ───────────────────────────────────────
-// Uses CallMeBot API (free, no account needed — just needs one-time WhatsApp opt-in)
-async function sendWhatsAppAlert({ ownerName, academyName, phone, email }) {
-  const waPhone  = process.env.OWNER_WHATSAPP_NUMBER; // e.g. "919876543210"
-  const apiKey   = process.env.CALLMEBOT_API_KEY;     // from callmebot.com
-  if (!waPhone || !apiKey) return;
-  const message = encodeURIComponent(
-    `🎉 New Academy Signup!\n\nAcademy: ${academyName}\nOwner: ${ownerName}\nPhone: ${phone}\nEmail: ${email}\n\nLogin to your platform panel to view.`
-  );
+// ── Owner alert email → sent to YOU (platform owner) on every signup/lead ────
+// Requires: RESEND_API_KEY + OWNER_EMAIL env vars on Render
+async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
+  const resendKey   = process.env.RESEND_API_KEY;
+  const ownerEmail  = process.env.OWNER_EMAIL; // your email e.g. kartik@exponent.app
+  if (!resendKey || !ownerEmail) {
+    console.log("[onboarding] Owner alert skipped — RESEND_API_KEY or OWNER_EMAIL not set");
+    return;
+  }
+  const resend  = new Resend(resendKey);
+  const isLead  = type === "lead";
+  const emoji   = isLead ? "📋" : "🎉";
+  const label   = isLead ? "New Lead (Quick Setup)" : "New Academy Created";
+  const color   = isLead ? "#f59e0b" : "#10b981";
+  const now     = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+<div style="max-width:480px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+  <div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:24px 28px;">
+    <div style="font-size:22px;font-weight:900;color:#fff;">${emoji} ${label}</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:4px;">${now} IST</div>
+  </div>
+  <div style="padding:24px 28px;">
+    <table style="width:100%;border-collapse:collapse;">
+      ${[
+        ["Academy", academyName],
+        ["Owner", ownerName],
+        ["Phone", phone || "—"],
+        ["Email", email || "—"],
+        ["Type", isLead ? "Lead — needs manual follow-up" : "Self-signup — academy is live"],
+      ].map(([k, v]) => `
+        <tr>
+          <td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;width:80px;">${k}</td>
+          <td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${v}</td>
+        </tr>
+      `).join("")}
+    </table>
+    <div style="margin-top:20px;padding:12px 16px;background:${color}18;border-radius:8px;border-left:3px solid ${color};">
+      <div style="font-size:13px;color:#333;font-weight:600;">
+        ${isLead
+          ? "Contact this person within 24 hours to set up their academy."
+          : "Academy created automatically. You can view it in your platform panel."}
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>`;
+
   try {
-    await fetch(`https://api.callmebot.com/whatsapp.php?phone=${waPhone}&text=${message}&apikey=${apiKey}`);
-    console.log("[onboarding] WhatsApp alert sent");
+    await resend.emails.send({
+      from:    "Exponent Alerts <onboarding@resend.dev>",
+      to:      ownerEmail,
+      subject: `${emoji} ${label}: ${academyName}`,
+      html,
+    });
+    console.log(`[onboarding] Owner alert sent to ${ownerEmail}`);
   } catch (err) {
-    console.error("WhatsApp alert error:", err.message);
+    console.error("Owner alert email error:", err.message);
   }
 }
 
-// POST /api/onboarding/signup
+// ── Telegram alert (optional bonus) ──────────────────────────────────────────
+// Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on Render for instant Telegram pings
+async function sendTelegramAlert({ type, ownerName, academyName, phone, email }) {
+  const token  = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  const isLead = type === "lead";
+  const text   = `${isLead ? "📋 New Lead" : "🎉 New Signup"}!\n\nAcademy: ${academyName}\nOwner: ${ownerName}\nPhone: ${phone || "—"}\nEmail: ${email || "—"}\n\n${isLead ? "Follow up within 24h!" : "Academy is live ✅"}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    console.log("[onboarding] Telegram alert sent");
+  } catch (err) {
+    console.error("Telegram alert error:", err.message);
+  }
+}
+
+// ── Notify platform owner via all configured channels ────────────────────────
+function notifyOwner(payload) {
+  // Fire all notifications in parallel, non-blocking
+  Promise.all([
+    sendOwnerAlert(payload),
+    sendTelegramAlert(payload),
+  ]).catch(() => {});
+}
+
+// ── POST /api/onboarding/signup ───────────────────────────────────────────────
 router.post("/signup", async (req, res) => {
   const { owner_name, email, phone, academy_name, password } = req.body;
 
@@ -94,7 +170,7 @@ router.post("/signup", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Check duplicate email
+    // Duplicate email check
     const { rows: existing } = await client.query(
       "SELECT id FROM users WHERE email = $1", [email.toLowerCase().trim()]
     );
@@ -103,7 +179,7 @@ router.post("/signup", async (req, res) => {
       return res.status(409).json({ error: "An account with this email already exists. Please sign in." });
     }
 
-    // Generate unique slug
+    // Unique slug
     let slug = makeSlug(academy_name), suffix = 1;
     while (true) {
       const { rows } = await client.query("SELECT id FROM academies WHERE slug=$1", [slug]);
@@ -120,13 +196,13 @@ router.post("/signup", async (req, res) => {
     `, [academy_name.trim(), slug, phone.trim(), email.toLowerCase().trim(), trialEndsAt, JSON.stringify(DEFAULT_FEATURES)]);
     const academy = acadRows[0];
 
-    // Create default branch
+    // Default branch
     const { rows: branchRows } = await client.query(
       `INSERT INTO branches (name, academy_id) VALUES ($1,$2) RETURNING id`,
       [`${academy_name.trim()} – Main Branch`, academy.id]
     );
 
-    // Create super_admin user
+    // Super admin user
     const hash = await bcrypt.hash(password, 10);
     const { rows: userRows } = await client.query(`
       INSERT INTO users (name, email, password, role, academy_id, branch_id)
@@ -138,12 +214,12 @@ router.post("/signup", async (req, res) => {
 
     // Non-blocking notifications
     sendWelcomeEmail({ ownerName: owner_name.trim(), email: email.toLowerCase().trim(), academyName: academy_name.trim(), trialEndsAt });
-    sendWhatsAppAlert({ ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
+    notifyOwner({ type: "signup", ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
 
     res.status(201).json({
-      message: "Academy created successfully!",
-      academy: { id: academy.id, name: academy.name, slug: academy.slug },
-      user:    { id: userRows[0].id, name: userRows[0].name, email: userRows[0].email, role: userRows[0].role },
+      message:      "Academy created successfully!",
+      academy:      { id: academy.id, name: academy.name, slug: academy.slug },
+      user:         { id: userRows[0].id, name: userRows[0].name, email: userRows[0].email, role: userRows[0].role },
       trial_ends_at: trialEndsAt,
     });
   } catch (err) {
@@ -155,7 +231,7 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-// POST /api/onboarding/lead
+// ── POST /api/onboarding/lead ─────────────────────────────────────────────────
 router.post("/lead", async (req, res) => {
   const { name, phone, academy_name } = req.body;
   if (!phone || !name || !academy_name)
@@ -166,8 +242,8 @@ router.post("/lead", async (req, res) => {
       INSERT INTO academies (name, slug, phone, plan, is_active, features)
       VALUES ($1,$2,$3,'lead',false,$4) ON CONFLICT DO NOTHING
     `, [`[LEAD] ${academy_name.trim()}`, slug, phone.trim(), JSON.stringify(DEFAULT_FEATURES)]);
-    // Also notify platform owner on WhatsApp for leads
-    sendWhatsAppAlert({ ownerName: name.trim(), academyName: `[LEAD] ${academy_name.trim()}`, phone: phone.trim(), email: "" });
+
+    notifyOwner({ type: "lead", ownerName: name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: "" });
     res.json({ message: "Lead captured. We'll contact you within 24 hours!" });
   } catch (err) {
     console.error("Lead capture error:", err.message);
