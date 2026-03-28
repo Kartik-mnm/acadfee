@@ -2,6 +2,7 @@
 const express    = require("express");
 const router     = express.Router();
 const bcrypt     = require("bcryptjs");
+const https      = require("https");
 const db         = require("../db");
 const { Resend } = require("resend");
 
@@ -18,7 +19,32 @@ function makeSlug(name) {
     .substring(0, 40);
 }
 
-// ── Welcome email → sent to the new academy owner ────────────────────────────
+// ── Helper: make an HTTPS POST request using Node built-ins ──────────────────
+function httpsPost(url, body) {
+  return new Promise((resolve, reject) => {
+    const parsed  = new URL(url);
+    const payload = JSON.stringify(body);
+    const options = {
+      hostname: parsed.hostname,
+      path:     parsed.pathname + parsed.search,
+      method:   "POST",
+      headers:  {
+        "Content-Type":   "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => resolve(data));
+    });
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── Welcome email → new academy owner ────────────────────────────────────────
 async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) {
   if (!process.env.RESEND_API_KEY || !email) return;
   const resend    = new Resend(process.env.RESEND_API_KEY);
@@ -64,21 +90,20 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
   }
 }
 
-// ── Owner alert email → sent to YOU (platform owner) on every signup/lead ────
-// Requires: RESEND_API_KEY + OWNER_EMAIL env vars on Render
+// ── Owner alert email → sent to YOU on every signup/lead ─────────────────────
 async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
-  const resendKey   = process.env.RESEND_API_KEY;
-  const ownerEmail  = process.env.OWNER_EMAIL; // your email e.g. kartik@exponent.app
+  const resendKey  = process.env.RESEND_API_KEY;
+  const ownerEmail = process.env.OWNER_EMAIL;
   if (!resendKey || !ownerEmail) {
     console.log("[onboarding] Owner alert skipped — RESEND_API_KEY or OWNER_EMAIL not set");
     return;
   }
-  const resend  = new Resend(resendKey);
-  const isLead  = type === "lead";
-  const emoji   = isLead ? "📋" : "🎉";
-  const label   = isLead ? "New Lead (Quick Setup)" : "New Academy Created";
-  const color   = isLead ? "#f59e0b" : "#10b981";
-  const now     = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const resend = new Resend(resendKey);
+  const isLead = type === "lead";
+  const emoji  = isLead ? "📋" : "🎉";
+  const label  = isLead ? "New Lead (Quick Setup)" : "New Academy Created";
+  const color  = isLead ? "#f59e0b" : "#10b981";
+  const now    = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
@@ -89,24 +114,15 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   </div>
   <div style="padding:24px 28px;">
     <table style="width:100%;border-collapse:collapse;">
-      ${[
-        ["Academy", academyName],
-        ["Owner", ownerName],
-        ["Phone", phone || "—"],
-        ["Email", email || "—"],
-        ["Type", isLead ? "Lead — needs manual follow-up" : "Self-signup — academy is live"],
-      ].map(([k, v]) => `
-        <tr>
-          <td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;width:80px;">${k}</td>
-          <td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${v}</td>
-        </tr>
-      `).join("")}
+      <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;width:80px;">Academy</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${academyName}</td></tr>
+      <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Owner</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${ownerName}</td></tr>
+      <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Phone</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${phone || "—"}</td></tr>
+      <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Email</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${email || "—"}</td></tr>
+      <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Type</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${isLead ? "Lead — needs manual follow-up" : "Self-signup — academy is live"}</td></tr>
     </table>
     <div style="margin-top:20px;padding:12px 16px;background:${color}18;border-radius:8px;border-left:3px solid ${color};">
       <div style="font-size:13px;color:#333;font-weight:600;">
-        ${isLead
-          ? "Contact this person within 24 hours to set up their academy."
-          : "Academy created automatically. You can view it in your platform panel."}
+        ${isLead ? "Contact this person within 24 hours." : "Academy created. View it in your platform panel."}
       </div>
     </div>
   </div>
@@ -126,33 +142,49 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   }
 }
 
-// ── Telegram alert (optional bonus) ──────────────────────────────────────────
-// Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on Render for instant Telegram pings
+// ── Telegram alert → uses Node https module (works on ALL Node versions) ──────
 async function sendTelegramAlert({ type, ownerName, academyName, phone, email }) {
   const token  = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
+  if (!token || !chatId) {
+    console.log("[onboarding] Telegram skipped — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set");
+    return;
+  }
   const isLead = type === "lead";
-  const text   = `${isLead ? "📋 New Lead" : "🎉 New Signup"}!\n\nAcademy: ${academyName}\nOwner: ${ownerName}\nPhone: ${phone || "—"}\nEmail: ${email || "—"}\n\n${isLead ? "Follow up within 24h!" : "Academy is live ✅"}`;
+  const text   = [
+    isLead ? "📋 New Lead!" : "🎉 New Academy Signup!",
+    "",
+    `Academy: ${academyName}`,
+    `Owner: ${ownerName}`,
+    `Phone: ${phone || "—"}`,
+    `Email: ${email || "—"}`,
+    "",
+    isLead ? "⚡ Follow up within 24 hours!" : "✅ Academy is live and ready.",
+  ].join("\n");
+
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    const result = await httpsPost(url, {
+      chat_id: chatId,
+      text,
     });
-    console.log("[onboarding] Telegram alert sent");
+    console.log("[onboarding] Telegram alert sent:", result);
   } catch (err) {
-    console.error("Telegram alert error:", err.message);
+    console.error("[onboarding] Telegram alert error:", err.message);
   }
 }
 
-// ── Notify platform owner via all configured channels ────────────────────────
+// ── Notify owner via all channels (non-blocking) ─────────────────────────────
 function notifyOwner(payload) {
-  // Fire all notifications in parallel, non-blocking
-  Promise.all([
+  Promise.allSettled([
     sendOwnerAlert(payload),
     sendTelegramAlert(payload),
-  ]).catch(() => {});
+  ]).then(results => {
+    results.forEach((r, i) => {
+      if (r.status === "rejected")
+        console.error(`[onboarding] Notification channel ${i} failed:`, r.reason);
+    });
+  });
 }
 
 // ── POST /api/onboarding/signup ───────────────────────────────────────────────
@@ -170,7 +202,6 @@ router.post("/signup", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Duplicate email check
     const { rows: existing } = await client.query(
       "SELECT id FROM users WHERE email = $1", [email.toLowerCase().trim()]
     );
@@ -179,7 +210,6 @@ router.post("/signup", async (req, res) => {
       return res.status(409).json({ error: "An account with this email already exists. Please sign in." });
     }
 
-    // Unique slug
     let slug = makeSlug(academy_name), suffix = 1;
     while (true) {
       const { rows } = await client.query("SELECT id FROM academies WHERE slug=$1", [slug]);
@@ -187,7 +217,6 @@ router.post("/signup", async (req, res) => {
       slug = `${makeSlug(academy_name)}-${suffix++}`;
     }
 
-    // Create academy
     const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { rows: acadRows } = await client.query(`
       INSERT INTO academies (name, slug, phone, email, plan, is_active, trial_ends_at, max_students, max_branches, features)
@@ -196,13 +225,11 @@ router.post("/signup", async (req, res) => {
     `, [academy_name.trim(), slug, phone.trim(), email.toLowerCase().trim(), trialEndsAt, JSON.stringify(DEFAULT_FEATURES)]);
     const academy = acadRows[0];
 
-    // Default branch
     const { rows: branchRows } = await client.query(
       `INSERT INTO branches (name, academy_id) VALUES ($1,$2) RETURNING id`,
       [`${academy_name.trim()} – Main Branch`, academy.id]
     );
 
-    // Super admin user
     const hash = await bcrypt.hash(password, 10);
     const { rows: userRows } = await client.query(`
       INSERT INTO users (name, email, password, role, academy_id, branch_id)
@@ -212,14 +239,13 @@ router.post("/signup", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // Non-blocking notifications
     sendWelcomeEmail({ ownerName: owner_name.trim(), email: email.toLowerCase().trim(), academyName: academy_name.trim(), trialEndsAt });
     notifyOwner({ type: "signup", ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
 
     res.status(201).json({
-      message:      "Academy created successfully!",
-      academy:      { id: academy.id, name: academy.name, slug: academy.slug },
-      user:         { id: userRows[0].id, name: userRows[0].name, email: userRows[0].email, role: userRows[0].role },
+      message:       "Academy created successfully!",
+      academy:       { id: academy.id, name: academy.name, slug: academy.slug },
+      user:          { id: userRows[0].id, name: userRows[0].name, email: userRows[0].email, role: userRows[0].role },
       trial_ends_at: trialEndsAt,
     });
   } catch (err) {
