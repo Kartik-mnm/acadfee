@@ -10,9 +10,11 @@ const DEFAULT_FEATURES = {
   notifications: true, id_cards: true, qr_scanner: true, reports: true
 };
 
-// Resend's verified sandbox sender — works without domain verification
-// Switch to your own domain (e.g. no-reply@exponent.app) once you verify it on resend.com
-const FROM_ADDRESS = "Exponent Platform <onboarding@resend.dev>";
+// ── Owner contact details (platform owner = Kartik) ────────────────────────
+const OWNER_PHONE     = "8956419453";
+const OWNER_WHATSAPP  = "918956419453";   // with country code for wa.me links
+const OWNER_EMAIL_CC  = "aspirantth@gmail.com";
+const FROM_ADDRESS    = "Exponent Platform <onboarding@resend.dev>";
 
 function makeSlug(name) {
   return name.toLowerCase().trim()
@@ -22,13 +24,15 @@ function makeSlug(name) {
     .substring(0, 40);
 }
 
-// ── Welcome email → new academy owner ────────────────────────────────────
+// ── Welcome email → new academy owner ──────────────────────────────────
 async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) {
   if (!process.env.RESEND_API_KEY || !email) return;
   const resend    = new Resend(process.env.RESEND_API_KEY);
   const trialDate = new Date(trialEndsAt).toLocaleDateString("en-IN", {
     day: "numeric", month: "long", year: "numeric"
   });
+  const waLink = `https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(`Hi! I just signed up on Exponent. My academy is ${academyName}. I need help getting started.`)}`;
+
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#07090f;font-family:Arial,sans-serif;">
 <div style="max-width:540px;margin:30px auto;background:#0d1117;border-radius:14px;overflow:hidden;border:1px solid #1e2535;">
@@ -37,7 +41,7 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
     <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">Academy OS</div>
   </div>
   <div style="padding:32px;">
-    <h2 style="font-size:20px;font-weight:800;color:#eef1fb;margin:0 0 12px;">Welcome, ${ownerName}!</h2>
+    <h2 style="font-size:20px;font-weight:800;color:#eef1fb;margin:0 0 12px;">Welcome, ${ownerName}! 🎉</h2>
     <p style="font-size:15px;color:#8892b5;line-height:1.7;margin:0 0 20px;">
       Your academy <strong style="color:#eef1fb;">${academyName}</strong> is live and ready.
       You are on a <strong style="color:#6366f1;">7-day free trial</strong> — no credit card needed.
@@ -47,12 +51,16 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
       <div style="font-size:18px;font-weight:800;color:#6366f1;">${trialDate}</div>
     </div>
     <a href="https://acadfee-app.onrender.com" style="display:block;text-align:center;padding:14px 28px;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;margin-bottom:24px;">Go to My Dashboard →</a>
-    <p style="font-size:14px;color:#8892b5;line-height:1.7;margin:0 0 24px;">
+    <p style="font-size:14px;color:#8892b5;line-height:1.7;margin:0 0 20px;">
       Start by adding students, setting up batches, and configuring your fee structure.
-      Need help? Reply to this email and we will be happy to assist.
+      Need help? Reach us anytime:
     </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+      <a href="mailto:${OWNER_EMAIL_CC}" style="flex:1;min-width:140px;text-align:center;padding:10px 16px;background:#1e2535;color:#8892b5;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📧 ${OWNER_EMAIL_CC}</a>
+      <a href="${waLink}" style="flex:1;min-width:140px;text-align:center;padding:10px 16px;background:#1e2535;color:#10b981;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">💬 WhatsApp: ${OWNER_PHONE}</a>
+    </div>
     <div style="text-align:center;padding-top:20px;border-top:1px solid #1e2535;">
-      <div style="font-size:12px;color:#454f72;">Exponent Platform · Made with love in India</div>
+      <div style="font-size:12px;color:#454f72;">Exponent Platform · Made with ❤️ in India</div>
     </div>
   </div>
 </div></body></html>`;
@@ -69,10 +77,10 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
   }
 }
 
-// ── Owner alert email → sent to YOU on every signup/lead ────────────────────
+// ── Owner alert email → sent to YOU on every signup/lead ──────────────────
 async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   const resendKey  = process.env.RESEND_API_KEY;
-  const ownerEmail = process.env.OWNER_EMAIL;
+  const ownerEmail = process.env.OWNER_EMAIL || OWNER_EMAIL_CC;
   if (!resendKey || !ownerEmail) {
     console.log("[onboarding] Owner alert skipped — RESEND_API_KEY or OWNER_EMAIL not set");
     return;
@@ -83,6 +91,11 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   const label  = isLead ? "New Lead (Quick Setup)" : "New Academy Created";
   const color  = isLead ? "#f59e0b" : "#10b981";
   const now    = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+  // WhatsApp quick-reply link to follow up with the lead/customer
+  const waReply = phone
+    ? `https://wa.me/91${phone.replace(/\D/g,"")}?text=${encodeURIComponent(`Hi ${ownerName}, I'm Kartik from Exponent. I saw your enquiry for ${academyName}. How can I help?`)}`
+    : null;
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
@@ -101,6 +114,7 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
     <div style="margin-top:20px;padding:12px 16px;background:${color}18;border-radius:8px;border-left:3px solid ${color};font-size:13px;color:#333;font-weight:600;">
       ${isLead ? "Contact this person within 24 hours." : "Academy created. View it in your platform panel."}
     </div>
+    ${waReply ? `<a href="${waReply}" style="display:block;text-align:center;margin-top:16px;padding:12px;background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">💬 Reply on WhatsApp</a>` : ""}
   </div>
 </div></body></html>`;
 
@@ -117,7 +131,7 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   }
 }
 
-// ── POST /api/onboarding/signup ────────────────────────────────────────────────
+// ── POST /api/onboarding/signup ─────────────────────────────────────────────────
 router.post("/signup", async (req, res) => {
   const { owner_name, email, phone, academy_name, password } = req.body;
 
@@ -169,7 +183,6 @@ router.post("/signup", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // Non-blocking — don't await, don't fail the request if email fails
     sendWelcomeEmail({ ownerName: owner_name.trim(), email: email.toLowerCase().trim(), academyName: academy_name.trim(), trialEndsAt });
     sendOwnerAlert({ type: "signup", ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
 
@@ -188,7 +201,7 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-// ── POST /api/onboarding/lead ──────────────────────────────────────────────────
+// ── POST /api/onboarding/lead ───────────────────────────────────────────────────
 router.post("/lead", async (req, res) => {
   const { name, phone, academy_name } = req.body;
   if (!phone || !name || !academy_name)
