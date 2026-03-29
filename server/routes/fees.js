@@ -41,8 +41,12 @@ router.post("/", auth, async (req, res) => {
     const { student_id, amount_due, due_date, period_label } = req.body;
     if (!student_id || !amount_due || !due_date || !period_label)
       return res.status(400).json({ error: "student_id, amount_due, due_date and period_label are required" });
-    const { rows: sRows } = await db.query("SELECT branch_id FROM students WHERE id=$1", [student_id]);
-    if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
+    const aid = req.academyId;
+    // Verify student belongs to this academy
+    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const sParams = aid ? [student_id, aid] : [student_id];
+    const { rows: sRows } = await db.query(`SELECT branch_id FROM students ${whereClause}`, sParams);
+    if (!sRows[0]) return res.status(404).json({ error: "Student not found in your academy" });
     const { rows } = await db.query(
       `INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [student_id, sRows[0].branch_id, amount_due, due_date, period_label]
@@ -60,14 +64,18 @@ router.post("/generate", auth, async (req, res) => {
   const { branch_id, month, year } = req.body;
   if (!month || !year) return res.status(400).json({ error: "month and year are required" });
   const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
+  const aid = req.academyId;
   const label = new Date(year, month - 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    // BUG FIX: scope by academy_id so fee generation only affects this academy's students
     const { rows: students } = await client.query(
       `SELECT s.*, bt.fee_monthly, bt.fee_quarterly, bt.fee_yearly, bt.fee_course
        FROM students s LEFT JOIN batches bt ON bt.id=s.batch_id
-       WHERE s.branch_id=$1 AND s.status='active'`, [bid]
+       WHERE s.branch_id=$1 AND s.status='active'
+       ${aid ? "AND s.academy_id=$2" : ""}`,
+      aid ? [bid, aid] : [bid]
     );
     let created = 0;
     for (const s of students) {
@@ -99,14 +107,27 @@ router.post("/generate", auth, async (req, res) => {
   } finally { client.release(); }
 });
 
-// Mark overdue
+// Mark overdue — scoped to academy only
 router.patch("/mark-overdue", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const today = new Date().toISOString().split("T")[0];
-    const { rowCount } = await db.query(
-      `UPDATE fee_records SET status='overdue' WHERE status='pending' AND due_date < $1`, [today]
-    );
+    const aid = req.academyId;
+    // BUG FIX: was marking ALL academies' records as overdue — now scoped to this academy only
+    let query, params;
+    if (aid) {
+      query = `UPDATE fee_records fr SET status='overdue'
+               FROM students s
+               WHERE fr.student_id = s.id
+                 AND s.academy_id = $1
+                 AND fr.status = 'pending'
+                 AND fr.due_date < $2`;
+      params = [aid, today];
+    } else {
+      query = `UPDATE fee_records SET status='overdue' WHERE status='pending' AND due_date < $1`;
+      params = [today];
+    }
+    const { rowCount } = await db.query(query, params);
     res.json({ updated: rowCount });
   } catch (e) { res.status(500).json({ error: "Failed to mark overdue records" }); }
 });

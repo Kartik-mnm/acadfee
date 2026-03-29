@@ -74,7 +74,6 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
     const offset = (page - 1) * limit;
     const search = (req.query.search || "").trim();
     let conditions = []; let params = []; let idx = 1;
-    // Always scope by academy first
     if (aid) { conditions.push(`s.academy_id=$${idx++}`); params.push(aid); }
     if (req.branchId)       { conditions.push(`s.branch_id=$${idx++}`); params.push(req.branchId); }
     if (req.query.batch_id) { conditions.push(`s.batch_id=$${idx++}`);  params.push(req.query.batch_id); }
@@ -101,12 +100,21 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
   }
 });
 
+// GET single student — scoped to academy
 router.get("/:id", auth, studentSelf, async (req, res) => {
   try {
+    const aid = req.academyId;
+    // BUG FIX: scope by academy_id so academy A cannot read academy B's students
+    const conditions = ["s.id=$1"];
+    const params = [req.params.id];
+    if (req.user.role !== "student" && aid) {
+      conditions.push(`s.academy_id=$2`);
+      params.push(aid);
+    }
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
        FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
-       WHERE s.id=$1`, [req.params.id]
+       WHERE ${conditions.join(" AND ")}`, params
     );
     if (!rows[0]) return res.status(404).json({ error: "Not found" });
     res.json(rows[0]);
@@ -145,30 +153,44 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
+// PUT update student — scoped to academy to prevent cross-academy tampering
 router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
+    const aid = req.academyId;
     const { batch_id, name, phone, parent_phone, email, address, dob, gender,
             fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url } = req.body;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
+    // BUG FIX: require academy_id match so academy A cannot overwrite academy B's student
+    const whereClause = aid ? "WHERE id=$16 AND academy_id=$17" : "WHERE id=$16";
+    const params = [
+      batch_id, name, phone, parent_phone, email, address, dob, gender, fee_type,
+      admission_fee, discount, discount_reason, status, dueDaySafe, photo_url || null,
+      req.params.id,
+    ];
+    if (aid) params.push(aid);
     const { rows } = await db.query(
       `UPDATE students SET batch_id=$1, name=$2, phone=$3, parent_phone=$4, email=$5, address=$6,
         dob=$7, gender=$8, fee_type=$9, admission_fee=$10, discount=$11, discount_reason=$12,
-        status=$13, due_day=$14, photo_url=$15 WHERE id=$16 RETURNING *`,
-      [batch_id, name, phone, parent_phone, email, address, dob, gender, fee_type,
-       admission_fee, discount, discount_reason, status, dueDaySafe, photo_url || null, req.params.id]
+        status=$13, due_day=$14, photo_url=$15 ${whereClause} RETURNING *`,
+      params
     );
-    if (!rows[0]) return res.status(404).json({ error: "Student not found" });
+    if (!rows[0]) return res.status(404).json({ error: "Student not found in your academy" });
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: "Failed to update student" }); }
 });
 
+// DELETE student — scoped to academy
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { rowCount } = await db.query("DELETE FROM students WHERE id=$1", [req.params.id]);
-    if (rowCount === 0) return res.status(404).json({ error: "Student not found" });
+    const aid = req.academyId;
+    // BUG FIX: require academy_id match so academy A cannot delete academy B's student
+    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const params = aid ? [req.params.id, aid] : [req.params.id];
+    const { rowCount } = await db.query(`DELETE FROM students ${whereClause}`, params);
+    if (rowCount === 0) return res.status(404).json({ error: "Student not found in your academy" });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: "Failed to delete student" }); }
 });

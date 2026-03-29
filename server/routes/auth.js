@@ -224,7 +224,8 @@ router.post("/users", auth, superAdmin, async (req, res) => {
   const { name, email, password, role, branch_id } = req.body;
   if (!name || !email || !password || !role) return res.status(400).json({ error: "name, email, password and role are required" });
   try {
-    const hash = await bcrypt.hash(password, 10);
+    // BUG FIX: use bcrypt rounds 12 as intended (was 10)
+    const hash = await bcrypt.hash(password, 12);
     const { rows } = await db.query(
       `INSERT INTO users (name, email, password, role, branch_id, academy_id)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, branch_id, academy_id`,
@@ -267,7 +268,8 @@ router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
   try {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: "password is required" });
-    const hash = await bcrypt.hash(password, 10);
+    // BUG FIX: use bcrypt rounds 12 for consistency
+    const hash = await bcrypt.hash(password, 12);
     const { rowCount } = await db.query(
       "UPDATE users SET password=$1 WHERE id=$2 AND academy_id=$3",
       [hash, req.params.id, req.user.academy_id || 1]
@@ -277,11 +279,20 @@ router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// BUG FIX: set-student-password now requires super_admin or branch_manager role
+// Previously any logged-in user including students could call this
 router.post("/set-student-password", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { student_id, password, enabled } = req.body;
   if (!student_id || !password) return res.status(400).json({ error: "student_id and password are required" });
+  // Ensure the student belongs to this admin's academy
+  const aid = req.academyId;
   try {
-    const hash = await bcrypt.hash(password, 10);
+    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const checkParams = aid ? [student_id, aid] : [student_id];
+    const { rows } = await db.query(`SELECT id FROM students ${whereClause}`, checkParams);
+    if (!rows[0]) return res.status(404).json({ error: "Student not found in your academy" });
+    const hash = await bcrypt.hash(password, 12);
     await db.query(`UPDATE students SET login_password=$1, login_enabled=$2 WHERE id=$3`, [hash, enabled !== false, student_id]);
     res.json({ success: true });
   } catch (e) {
