@@ -18,6 +18,27 @@ function applyTheme(primary_color, accent_color) {
   root.style.setProperty("--accent-dim", accent);
 }
 
+// Dynamically update the browser tab title
+function applyTitle(name) {
+  document.title = name && name.trim() ? name.trim() : "Exponent App";
+}
+
+// Dynamically update the browser tab favicon
+// If faviconUrl is falsy — remove all favicon links (no icon shown)
+function applyFavicon(faviconUrl) {
+  // Remove any existing favicon link tags
+  const existing = document.querySelectorAll("link[rel~='icon'], link[rel='shortcut icon']");
+  existing.forEach(el => el.parentNode.removeChild(el));
+
+  if (!faviconUrl) return; // No favicon set — leave the tab without an icon
+
+  const link = document.createElement("link");
+  link.rel  = "icon";
+  link.type = faviconUrl.endsWith(".ico") ? "image/x-icon" : "image/png";
+  link.href = faviconUrl + "?v=" + Date.now(); // cache-bust so new uploads apply immediately
+  document.head.appendChild(link);
+}
+
 export function AcademyProvider({ children }) {
   const [academy, setAcademy] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,14 +78,18 @@ export function AcademyProvider({ children }) {
     const applyAndStore = (data) => {
       setAcademy(data);
       applyTheme(data.primary_color, data.accent_color);
+      applyTitle(data.name);
+      applyFavicon(data.favicon_url || null);
       if (data.slug) localStorage.setItem("academy_slug", data.slug);
     };
 
     const onError = () => {
       // Generic blank fallback — no hardcoded academy names
+      applyTitle("Exponent App");
+      applyFavicon(null); // no favicon on fallback
       setAcademy({
         id: null, name: "My Academy", slug: null,
-        logo_url: null, tagline: "",
+        logo_url: null, favicon_url: null, tagline: "",
         primary_color: "2563EB", accent_color: "38BDF8",
         city: "", phone: "", email: "", address: "",
         features: {
