@@ -27,18 +27,35 @@ function ImageUploader({ label, currentUrl, onUploaded }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setError("");
+
+    // Validate file type client-side before uploading
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"];
+    if (!allowedTypes.includes(file.type)) {
+      setError("Invalid file type. Please upload JPEG, PNG, WebP, GIF, SVG, or ICO.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("File too large. Maximum size is 5MB.");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const base64 = ev.target.result;
       setPreview(base64);
       setUploading(true);
       try {
-        const res = await API.post("/upload/photo", { image: base64 });
+        // Use /upload/platform so the image goes to the academy_branding folder
+        // This avoids the "Display name cannot contain slashes" Cloudinary error
+        const res = await API.post("/upload/platform", { image: base64 });
         onUploaded(res.data.url);
       } catch (err) {
-        setError(err.response?.data?.error || "Upload failed");
+        const msg = err.response?.data?.error || "Upload failed. Please try again.";
+        setError(msg);
+        setPreview(currentUrl || null); // revert preview on error
       } finally { setUploading(false); }
     };
+    reader.onerror = () => setError("Could not read file. Please try again.");
     reader.readAsDataURL(file);
   };
 
@@ -58,7 +75,7 @@ function ImageUploader({ label, currentUrl, onUploaded }) {
         <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
           {uploading ? "Uploading…" : `Upload ${label}`}
         </button>
-        <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,image/x-icon" style={{ display: "none" }} onChange={handleFile} />
         {error && <div style={{ fontSize: 11, color: "var(--red)", marginTop: 4 }}>{error}</div>}
       </div>
     </div>
