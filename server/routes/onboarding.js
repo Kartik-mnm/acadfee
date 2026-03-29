@@ -1,4 +1,4 @@
-// ── Self-Service Onboarding Route ────────────────────────────────────────────
+// ── Self-Service Onboarding Route ──────────────────────────────────────────────
 const express    = require("express");
 const router     = express.Router();
 const bcrypt     = require("bcryptjs");
@@ -10,6 +10,10 @@ const DEFAULT_FEATURES = {
   notifications: true, id_cards: true, qr_scanner: true, reports: true
 };
 
+// Resend's verified sandbox sender — works without domain verification
+// Switch to your own domain (e.g. no-reply@exponent.app) once you verify it on resend.com
+const FROM_ADDRESS = "Exponent Platform <onboarding@resend.dev>";
+
 function makeSlug(name) {
   return name.toLowerCase().trim()
     .replace(/[^a-z0-9\s-]/g, "")
@@ -18,7 +22,7 @@ function makeSlug(name) {
     .substring(0, 40);
 }
 
-// ── Welcome email → new academy owner ────────────────────────────────────────
+// ── Welcome email → new academy owner ────────────────────────────────────
 async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) {
   if (!process.env.RESEND_API_KEY || !email) return;
   const resend    = new Resend(process.env.RESEND_API_KEY);
@@ -33,7 +37,7 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
     <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">Academy OS</div>
   </div>
   <div style="padding:32px;">
-    <h2 style="font-size:20px;font-weight:800;color:#eef1fb;margin:0 0 12px;">Welcome, ${ownerName}! 🎉</h2>
+    <h2 style="font-size:20px;font-weight:800;color:#eef1fb;margin:0 0 12px;">Welcome, ${ownerName}!</h2>
     <p style="font-size:15px;color:#8892b5;line-height:1.7;margin:0 0 20px;">
       Your academy <strong style="color:#eef1fb;">${academyName}</strong> is live and ready.
       You are on a <strong style="color:#6366f1;">7-day free trial</strong> — no credit card needed.
@@ -42,9 +46,10 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
       <div style="font-size:12px;color:#454f72;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Trial ends on</div>
       <div style="font-size:18px;font-weight:800;color:#6366f1;">${trialDate}</div>
     </div>
+    <a href="https://acadfee-app.onrender.com" style="display:block;text-align:center;padding:14px 28px;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;margin-bottom:24px;">Go to My Dashboard →</a>
     <p style="font-size:14px;color:#8892b5;line-height:1.7;margin:0 0 24px;">
       Start by adding students, setting up batches, and configuring your fee structure.
-      Need help? Reply to this email and we will help you.
+      Need help? Reply to this email and we will be happy to assist.
     </p>
     <div style="text-align:center;padding-top:20px;border-top:1px solid #1e2535;">
       <div style="font-size:12px;color:#454f72;">Exponent Platform · Made with love in India</div>
@@ -53,7 +58,7 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
 </div></body></html>`;
   try {
     await resend.emails.send({
-      from:    "Exponent Platform <onboarding@resend.dev>",
+      from:    FROM_ADDRESS,
       to:      email,
       subject: `Your academy "${academyName}" is ready — Exponent`,
       html,
@@ -64,7 +69,7 @@ async function sendWelcomeEmail({ ownerName, email, academyName, trialEndsAt }) 
   }
 }
 
-// ── Owner alert email → sent to YOU on every signup/lead ─────────────────────
+// ── Owner alert email → sent to YOU on every signup/lead ────────────────────
 async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   const resendKey  = process.env.RESEND_API_KEY;
   const ownerEmail = process.env.OWNER_EMAIL;
@@ -92,20 +97,16 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
       <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Owner</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${ownerName}</td></tr>
       <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Phone</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${phone || "—"}</td></tr>
       <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Email</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${email || "—"}</td></tr>
-      <tr><td style="padding:8px 0;font-size:12px;color:#888;font-weight:700;">Type</td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#333;">${isLead ? "Lead — needs manual follow-up" : "Self-signup — academy is live"}</td></tr>
     </table>
-    <div style="margin-top:20px;padding:12px 16px;background:${color}18;border-radius:8px;border-left:3px solid ${color};">
-      <div style="font-size:13px;color:#333;font-weight:600;">
-        ${isLead ? "Contact this person within 24 hours." : "Academy created. View it in your platform panel."}
-      </div>
+    <div style="margin-top:20px;padding:12px 16px;background:${color}18;border-radius:8px;border-left:3px solid ${color};font-size:13px;color:#333;font-weight:600;">
+      ${isLead ? "Contact this person within 24 hours." : "Academy created. View it in your platform panel."}
     </div>
   </div>
-</div>
-</body></html>`;
+</div></body></html>`;
 
   try {
     await resend.emails.send({
-      from:    "Exponent Alerts <onboarding@resend.dev>",
+      from:    FROM_ADDRESS,
       to:      ownerEmail,
       subject: `${emoji} ${label}: ${academyName}`,
       html,
@@ -116,7 +117,7 @@ async function sendOwnerAlert({ type, ownerName, academyName, phone, email }) {
   }
 }
 
-// ── POST /api/onboarding/signup ───────────────────────────────────────────────
+// ── POST /api/onboarding/signup ────────────────────────────────────────────────
 router.post("/signup", async (req, res) => {
   const { owner_name, email, phone, academy_name, password } = req.body;
 
@@ -168,7 +169,7 @@ router.post("/signup", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // Non-blocking notifications — email only
+    // Non-blocking — don't await, don't fail the request if email fails
     sendWelcomeEmail({ ownerName: owner_name.trim(), email: email.toLowerCase().trim(), academyName: academy_name.trim(), trialEndsAt });
     sendOwnerAlert({ type: "signup", ownerName: owner_name.trim(), academyName: academy_name.trim(), phone: phone.trim(), email: email.toLowerCase().trim() });
 
@@ -187,7 +188,7 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-// ── POST /api/onboarding/lead ─────────────────────────────────────────────────
+// ── POST /api/onboarding/lead ──────────────────────────────────────────────────
 router.post("/lead", async (req, res) => {
   const { name, phone, academy_name } = req.body;
   if (!phone || !name || !academy_name)
