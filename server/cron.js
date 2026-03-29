@@ -1,7 +1,8 @@
-// Nishchay Academy — nightly cron at 10:00 PM IST
-// Does two things:
-//   1. Auto-marks attendance for ALL branches for today's month (so admin never has to)
-//   2. Notifies absent students & parents via FCM
+// ── Nightly cron + Keep-alive ping ────────────────────────────────────────────
+// 1. Keep-alive: pings both Render services every 10 min so they never cold-start
+// 2. Nightly job at 10:00 PM IST: auto-attendance + absent alerts
+// 3. Trial enforcement: suspends academies whose trial expired > 1 day ago
+// 4. Backfill: any students with null academy_id get fixed automatically
 
 const db                   = require("./db");
 const { sendNotification } = require("./fcm");
@@ -9,17 +10,79 @@ const { generateMonthForBranch } = require("./routes/attendance");
 
 let lastFiredDate = "";
 
-// ── Step 1: Auto-generate attendance for all branches ──────────────────────
+// ── Keep-alive ─────────────────────────────────────────────────────────────────
+// Pings both services every 10 minutes so Render free tier never spins down
+function startKeepAlive() {
+  const targets = [
+    "https://acadfee.onrender.com/health",
+    "https://acadfee-app.onrender.com/health",
+  ].filter(Boolean);
+
+  const ping = async () => {
+    for (const url of targets) {
+      try {
+        await fetch(url, { signal: AbortSignal.timeout(8000) });
+        console.log(`[keep-alive] ✓ pinged ${url}`);
+      } catch (e) {
+        console.warn(`[keep-alive] ✗ ${url}: ${e.message}`);
+      }
+    }
+  };
+
+  // Ping once at startup, then every 10 minutes
+  ping();
+  setInterval(ping, 10 * 60 * 1000);
+  console.log("✅ Keep-alive started — pinging every 10 min");
+}
+
+// ── Backfill: fix any students with null academy_id ────────────────────────────
+async function backfillStudentAcademyIds() {
+  try {
+    // Students whose branch has an academy_id but the student doesn't
+    const { rowCount } = await db.query(`
+      UPDATE students s
+      SET academy_id = b.academy_id
+      FROM branches b
+      WHERE s.branch_id = b.id
+        AND s.academy_id IS NULL
+        AND b.academy_id IS NOT NULL
+    `);
+    if (rowCount > 0)
+      console.log(`[backfill] Fixed academy_id for ${rowCount} student(s)`);
+  } catch (e) {
+    console.error("[backfill] Error:", e.message);
+  }
+}
+
+// ── Trial enforcement ──────────────────────────────────────────────────────────
+// Suspends academies whose trial ended more than 1 day ago and are still active
+async function enforceTrialExpiry() {
+  try {
+    const { rows } = await db.query(`
+      UPDATE academies
+      SET is_active = false, updated_at = NOW()
+      WHERE plan = 'trial'
+        AND is_active = true
+        AND trial_ends_at < NOW() - INTERVAL '1 day'
+      RETURNING id, name
+    `);
+    if (rows.length > 0)
+      console.log(`[trial] Suspended ${rows.length} expired trial(s):`, rows.map(r => r.name).join(", "));
+  } catch (e) {
+    console.error("[trial] Enforcement error:", e.message);
+  }
+}
+
+// ── Auto-generate attendance ────────────────────────────────────────────────────
 async function autoGenerateAttendance(month, year) {
   try {
     const { rows: branches } = await db.query(`SELECT id, name FROM branches`);
-    console.log(`[Cron] Auto-generating attendance for ${branches.length} branch(es) — ${month}/${year}`);
     for (const branch of branches) {
       try {
         const result = await generateMonthForBranch(branch.id, month, year);
-        console.log(`[Cron] ${branch.name}: ${result.created} created, ${result.updated} updated, ${result.total_working_days} working days`);
+        console.log(`[Cron] ${branch.name}: ${result.created} created, ${result.updated} updated`);
       } catch (e) {
-        console.error(`[Cron] Error generating attendance for branch ${branch.name}:`, e.message);
+        console.error(`[Cron] Error for branch ${branch.name}:`, e.message);
       }
     }
   } catch (e) {
@@ -27,14 +90,15 @@ async function autoGenerateAttendance(month, year) {
   }
 }
 
-// ── Step 2: Notify absent students & parents ──────────────────────────────
+// ── Absent notifications ────────────────────────────────────────────────────────
 async function sendAbsentNotifications(todayIST) {
   try {
-    // Find all active students who have not completed a scan today (no exit_time)
     const { rows: absentStudents } = await db.query(
-      `SELECT s.id, s.name, s.branch_id, s.parent_fcm_token, s.fcm_token, br.name AS branch_name
+      `SELECT s.id, s.name, s.branch_id, s.parent_fcm_token, s.fcm_token,
+              br.name AS branch_name, a.name AS academy_name
        FROM students s
        JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN academies a ON a.id = s.academy_id
        WHERE s.status = 'active'
          AND (s.parent_fcm_token IS NOT NULL OR s.fcm_token IS NOT NULL)
          AND s.id NOT IN (
@@ -44,39 +108,36 @@ async function sendAbsentNotifications(todayIST) {
       [todayIST]
     );
 
-    // Also check: is today actually a working day for this student's branch?
-    // We don't want to send "absent" notifications on holidays.
     const notifyList = [];
     for (const s of absentStudents) {
       const { rows: wd } = await db.query(
         `SELECT is_working FROM working_days WHERE branch_id=$1 AND date=$2`,
         [s.branch_id, todayIST]
       );
-      const isWorkingDay = wd.length === 0 ? true : wd[0].is_working;
-      if (isWorkingDay) notifyList.push(s);
+      if (wd.length === 0 || wd[0].is_working) notifyList.push(s);
     }
 
-    console.log(`[Cron] ${notifyList.length} absent student(s) on working day ${todayIST}`);
+    console.log(`[Cron] ${notifyList.length} absent student(s) on ${todayIST}`);
 
     for (const student of notifyList) {
+      const academyName = student.academy_name || "your academy";
       if (student.parent_fcm_token) {
         await sendNotification(
           student.parent_fcm_token,
-          `\u26a0\ufe0f Absent Today — ${student.name}`,
-          `${student.name} was not present at Nishchay Academy today (${todayIST}). Please check in with your child.`,
+          `⚠️ Absent Today — ${student.name}`,
+          `${student.name} was not present at ${academyName} today (${todayIST}).`,
           { type: "absent_alert", student_id: String(student.id), date: todayIST }
         );
       }
       if (student.fcm_token) {
         await sendNotification(
           student.fcm_token,
-          `\u26a0\ufe0f You were absent today`,
-          `You did not attend Nishchay Academy today (${todayIST}). Contact your branch if this is incorrect.`,
+          `⚠️ You were absent today`,
+          `You did not attend ${academyName} today (${todayIST}). Contact your branch if incorrect.`,
           { type: "absent_alert", date: todayIST }
         );
       }
     }
-    console.log("[Cron] Absent notifications sent");
   } catch (e) {
     console.error("[Cron] Absent notification error:", e.message);
   }
@@ -85,33 +146,31 @@ async function sendAbsentNotifications(todayIST) {
 // ── Main nightly job ────────────────────────────────────────────────────────────
 async function runNightlyJob() {
   const nowIST   = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" });
-  const todayIST = nowIST.split(",")[0].trim();  // "2026-03-20"
+  const todayIST = nowIST.split(",")[0].trim();
 
-  if (lastFiredDate === todayIST) return; // already ran today
+  if (lastFiredDate === todayIST) return;
   lastFiredDate = todayIST;
 
   const [y, m] = todayIST.split("-").map(Number);
   console.log(`\n[Cron] ⏰ Nightly job starting for ${todayIST}`);
 
-  // Step 1: Auto-generate / sync attendance from QR scans for this month
   await autoGenerateAttendance(m, y);
-
-  // Step 2: Notify absent students & parents
   await sendAbsentNotifications(todayIST);
+  await enforceTrialExpiry();
+  await backfillStudentAcademyIds();
 
   console.log(`[Cron] ✅ Nightly job complete for ${todayIST}`);
 }
 
-// ── Start the scheduler ────────────────────────────────────────────────────────────
+// ── Start scheduler ─────────────────────────────────────────────────────────────
 function startAbsentCron() {
-  console.log("✅ Nightly cron started — fires at 10:00 PM IST (auto-attendance + absent alerts)");
+  console.log("✅ Nightly cron started — fires at 10:00 PM IST");
   setInterval(() => {
     const nowIST = new Date().toLocaleString("en-US", {
       timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
     });
-    // Fire at exactly 22:00 IST
     if (nowIST === "22:00") runNightlyJob();
-  }, 60 * 1000); // check every minute
+  }, 60 * 1000);
 }
 
-module.exports = { startAbsentCron, runNightlyJob };
+module.exports = { startAbsentCron, runNightlyJob, startKeepAlive, backfillStudentAcademyIds };

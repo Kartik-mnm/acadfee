@@ -6,25 +6,24 @@ const rateLimit    = require("express-rate-limit");
 const app          = express();
 app.set("trust proxy", 1);
 
-const { initFCM }         = require("./fcm");
-const { startAbsentCron } = require("./cron");
-const runMigration        = require("./migrate");
+const { initFCM }                = require("./fcm");
+const { startAbsentCron, startKeepAlive, backfillStudentAcademyIds } = require("./cron");
+const runMigration               = require("./migrate");
 
-// Run DB migration on every startup (safe — uses IF NOT EXISTS throughout)
-runMigration();
+// Run DB migration, then backfill, then start services
+runMigration().then(() => {
+  backfillStudentAcademyIds(); // fix any students with null academy_id
+});
 
 initFCM();
 startAbsentCron();
+startKeepAlive(); // keep Render free tier awake
 
 const allowedOrigins = [
-  // Existing academy portals
   "https://acadfee.onrender.com",
   "https://acadfee-app.onrender.com",
-  // Exponent Platform Control Panel (Netlify)
   "https://expoent.netlify.app",
-  // Exponent Platform Control Panel (Vercel)
   "https://exponent-platform.vercel.app",
-  // Local development
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5000",
@@ -34,12 +33,9 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow any subdomain of onrender.com
     if (origin.endsWith(".onrender.com")) return callback(null, true);
-    // Allow any subdomain of netlify.app
-    if (origin.endsWith(".netlify.app")) return callback(null, true);
-    // Allow any subdomain of vercel.app
-    if (origin.endsWith(".vercel.app")) return callback(null, true);
+    if (origin.endsWith(".netlify.app"))  return callback(null, true);
+    if (origin.endsWith(".vercel.app"))   return callback(null, true);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -48,14 +44,21 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 
-const globalLimiter = rateLimit({
+// Global rate limit
+app.use(rateLimit({
   windowMs: 15 * 60 * 1000, max: 300,
   standardHeaders: true, legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
-});
-app.use(globalLimiter);
+}));
 
-// ── Existing acadfee routes (unchanged) ────────────────────────────────────────
+// Signup-specific rate limit — max 5 per IP per 15 min
+const signupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 5,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "Too many signup attempts. Please try again in 15 minutes." },
+});
+
+// ── Routes ─────────────────────────────────────────────────────────────────────
 app.use("/api/auth",         require("./routes/auth"));
 app.use("/api/branches",     require("./routes/branches"));
 app.use("/api/batches",      require("./routes/batches"));
@@ -70,25 +73,20 @@ app.use("/api/qrscan",       require("./routes/qrscan"));
 app.use("/api/admission",    require("./routes/admission"));
 app.use("/api/upload",       require("./routes/upload"));
 app.use("/api/working-days", require("./routes/working-days"));
-
-// ── Exponent Platform routes ───────────────────────────────────────────────────
 app.use("/platform/auth",    require("./routes/platform-auth"));
 app.use("/platform",         require("./routes/platform"));
 app.use("/api/academy",      require("./routes/academy-config"));
 
-// ── Self-service onboarding (public, no auth required) ────────────────────────
-app.use("/api/onboarding",   require("./routes/onboarding"));
+// Signup route gets its own strict rate limiter
+app.use("/api/onboarding", signupLimiter, require("./routes/onboarding"));
 
-// ── Health check ───────────────────────────────────────────────────────────────
 app.get("/health", (_, res) => res.json({
-  status: "ok",
-  timestamp: new Date().toISOString(),
-  uptime: Math.floor(process.uptime())
+  status: "ok", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime())
 }));
 app.get("/", (_, res) => res.json({ status: "Exponent Platform API running" }));
 
 app.use((err, req, res, next) => {
-  if (err.message && err.message.startsWith("CORS blocked"))
+  if (err.message?.startsWith("CORS blocked"))
     return res.status(403).json({ error: err.message });
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
