@@ -8,7 +8,11 @@ async function initAdmissionColumns() {
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url   TEXT`);
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS academy_id  INT REFERENCES academies(id) ON DELETE CASCADE`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_admission_enquiries_academy ON admission_enquiries(academy_id)`);
-    console.log("\u2705 admission_enquiries columns ready");
+    // Ensure students table has all columns the approve route needs
+    await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS roll_no VARCHAR(30)`);
+    await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS due_day  INT DEFAULT 1`);
+    await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+    console.log("\u2705 admission columns ready");
   } catch (e) { console.error("Admission migration error:", e.message); }
 }
 initAdmissionColumns();
@@ -115,20 +119,18 @@ router.get("/enquiries", auth, async (req, res) => {
   }
 });
 
-// ── Admin: approve enquiry — BUG FIX: handle null branch_id gracefully ─────────────
+// ── Admin: approve enquiry ─────────────────────────────────────────────────────────
 router.post("/enquiries/:id/approve", auth, async (req, res) => {
   try {
     const academyId = req.academyId;
 
-    // Fetch the enquiry — scoped to this academy
     const whereClause = academyId
       ? "WHERE ae.id=$1 AND (ae.academy_id=$2 OR ae.academy_id IS NULL)"
       : "WHERE ae.id=$1";
     const params = academyId ? [req.params.id, academyId] : [req.params.id];
 
     const { rows } = await db.query(
-      `SELECT ae.*,
-              br.academy_id AS branch_academy_id
+      `SELECT ae.*, br.academy_id AS branch_academy_id
        FROM admission_enquiries ae
        LEFT JOIN branches br ON br.id = ae.branch_id
        ${whereClause}`,
@@ -137,12 +139,10 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: "Enquiry not found or does not belong to your academy" });
     const e = rows[0];
 
-    // Resolve the correct academy_id:
-    // Priority: enquiry.academy_id → branch.academy_id → logged-in admin's academy_id
+    // Resolve academy_id: enquiry → branch → logged-in user
     const resolvedAcademyId = e.academy_id || e.branch_academy_id || academyId;
 
-    // branch_id is required for creating a student
-    // If the student didn’t select a branch, fall back to the first branch of this academy
+    // Resolve branch_id — fall back to first branch of academy if not set
     let resolvedBranchId = e.branch_id;
     if (!resolvedBranchId && resolvedAcademyId) {
       const { rows: branchRows } = await db.query(
@@ -151,10 +151,9 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
       );
       if (branchRows[0]) resolvedBranchId = branchRows[0].id;
     }
-
     if (!resolvedBranchId) {
       return res.status(400).json({
-        error: "Cannot approve: no branch is set for this enquiry and no branches exist for this academy. Please add a branch first."
+        error: "Cannot approve: no branch found for this academy. Please add a branch first."
       });
     }
 
@@ -167,27 +166,34 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
       } catch {}
     }
 
-    // Create the student
+    // Auto-generate roll_no: count existing students in this academy + 1
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*) AS cnt FROM students WHERE academy_id = $1`,
+      [resolvedAcademyId]
+    );
+    const rollNo = String(parseInt(countRows[0]?.cnt || 0) + 1).padStart(4, "0");
+
+    // Create student — using only columns guaranteed to exist
     const { rows: stuRows } = await db.query(
       `INSERT INTO students
-       (branch_id, batch_id, name, phone, parent_phone, email, address,
-        admission_date, status, photo_url, academy_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9)
+         (branch_id, batch_id, name, phone, parent_phone, email, address,
+          admission_date, status, photo_url, academy_id, roll_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9, $10)
        RETURNING *`,
       [
         resolvedBranchId,
-        e.batch_id || null,
+        e.batch_id   || null,
         e.name,
         e.phone,
         e.parent_phone || null,
-        e.email || null,
-        e.address || null,
+        e.email        || null,
+        e.address      || null,
         photoUrl,
         resolvedAcademyId,
+        rollNo,
       ]
     );
 
-    // Mark enquiry approved
     await db.query(
       "UPDATE admission_enquiries SET status='approved', student_id=$1, academy_id=$2 WHERE id=$3",
       [stuRows[0].id, resolvedAcademyId, req.params.id]
@@ -195,12 +201,12 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
 
     res.json({ success: true, student: stuRows[0] });
   } catch (e) {
-    console.error("Approve error:", e.message);
-    res.status(500).json({ error: "Failed to approve enquiry: " + e.message });
+    console.error("Approve error:", e.message, e.stack);
+    res.status(500).json({ error: "Failed to approve: " + e.message });
   }
 });
 
-// ── Admin: reject enquiry scoped to academy ───────────────────────────────────────
+// ── Admin: reject enquiry ─────────────────────────────────────────────────────────
 router.patch("/enquiries/:id/reject", auth, async (req, res) => {
   try {
     const academyId = req.academyId;

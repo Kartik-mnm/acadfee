@@ -1,42 +1,65 @@
 const router = require("express").Router();
-const db = require("../db");
-const { auth } = require("../middleware");
+const db     = require("../db");
+const { auth, superAdmin } = require("../middleware");
 
-// GET /api/branches — only return branches belonging to the logged-in user's academy
+// GET /api/branches — list branches for this academy
 router.get("/", auth, async (req, res) => {
   try {
-    const aid = req.academyId;
+    const academyId = req.academyId;
     let rows;
-    if (aid) {
-      // Multi-tenant: filter by academy_id
+    if (req.user.role === "branch_manager") {
       ({ rows } = await db.query(
-        "SELECT * FROM branches WHERE academy_id = $1 ORDER BY id",
-        [aid]
+        `SELECT b.*, COUNT(DISTINCT s.id)::int AS student_count
+         FROM branches b LEFT JOIN students s ON s.branch_id = b.id
+         WHERE b.id = $1 GROUP BY b.id`, [req.user.branch_id]
+      ));
+    } else if (academyId) {
+      ({ rows } = await db.query(
+        `SELECT b.*, COUNT(DISTINCT s.id)::int AS student_count
+         FROM branches b LEFT JOIN students s ON s.branch_id = b.id
+         WHERE b.academy_id = $1 GROUP BY b.id ORDER BY b.id`, [academyId]
       ));
     } else {
-      // Legacy single-tenant fallback (academy_id IS NULL = old data)
       ({ rows } = await db.query(
-        "SELECT * FROM branches WHERE academy_id IS NULL ORDER BY id"
+        `SELECT b.*, COUNT(DISTINCT s.id)::int AS student_count
+         FROM branches b LEFT JOIN students s ON s.branch_id = b.id
+         GROUP BY b.id ORDER BY b.id`
       ));
     }
     res.json(rows);
-  } catch (e) {
-    console.error("List branches error:", e.message);
-    res.status(500).json({ error: "Failed to fetch branches" });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/branches — link new branch to the academy
-router.post("/", auth, async (req, res) => {
+// POST /api/branches — create a new branch
+// Checks max_branches limit from the academy's plan
+router.post("/", auth, superAdmin, async (req, res) => {
+  const { name, address, phone, email } = req.body;
+  if (!name) return res.status(400).json({ error: "Branch name is required" });
+
+  const academyId = req.academyId;
   try {
-    const { name, address, phone } = req.body;
-    if (!name) return res.status(400).json({ error: "name is required" });
-    const aid = req.academyId;
+    // Enforce max_branches limit
+    if (academyId) {
+      const { rows: acadRows } = await db.query(
+        `SELECT max_branches FROM academies WHERE id = $1`, [academyId]
+      );
+      const maxBranches = acadRows[0]?.max_branches ?? 999;
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*)::int AS cnt FROM branches WHERE academy_id = $1`, [academyId]
+      );
+      if (countRows[0].cnt >= maxBranches) {
+        return res.status(403).json({
+          error: `Your plan allows a maximum of ${maxBranches} branch${maxBranches === 1 ? "" : "es"}. Please contact support to upgrade.`
+        });
+      }
+    }
+
     const { rows } = await db.query(
-      "INSERT INTO branches (name, address, phone, academy_id) VALUES ($1,$2,$3,$4) RETURNING *",
-      [name, address, phone, aid]
+      `INSERT INTO branches (name, address, phone, email, academy_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [name, address || null, phone || null, email || null, academyId || null]
     );
-    res.json(rows[0]);
+    res.status(201).json(rows[0]);
   } catch (e) {
     console.error("Create branch error:", e.message);
     res.status(500).json({ error: "Failed to create branch" });
@@ -44,33 +67,38 @@ router.post("/", auth, async (req, res) => {
 });
 
 // PUT /api/branches/:id
-router.put("/:id", auth, async (req, res) => {
+router.put("/:id", auth, superAdmin, async (req, res) => {
+  const { name, address, phone, email } = req.body;
+  if (!name) return res.status(400).json({ error: "Branch name is required" });
   try {
-    const { name, address, phone } = req.body;
-    const aid = req.academyId;
-    const check = aid
-      ? await db.query("SELECT id FROM branches WHERE id=$1 AND academy_id=$2", [req.params.id, aid])
-      : await db.query("SELECT id FROM branches WHERE id=$1", [req.params.id]);
-    if (!check.rows[0]) return res.status(404).json({ error: "Branch not found" });
-    const { rows } = await db.query(
-      "UPDATE branches SET name=$1, address=$2, phone=$3 WHERE id=$4 RETURNING *",
-      [name, address, phone, req.params.id]
+    const academyId = req.academyId;
+    // Ensure branch belongs to this academy
+    const whereExtra = academyId ? "AND academy_id = $6" : "";
+    const params = [name, address || null, phone || null, email || null, req.params.id];
+    if (academyId) params.push(academyId);
+    const { rows, rowCount } = await db.query(
+      `UPDATE branches SET name=$1, address=$2, phone=$3, email=$4 WHERE id=$5 ${whereExtra} RETURNING *`,
+      params
     );
+    if (rowCount === 0) return res.status(404).json({ error: "Branch not found or access denied" });
     res.json(rows[0]);
   } catch (e) {
+    console.error("Update branch error:", e.message);
     res.status(500).json({ error: "Failed to update branch" });
   }
 });
 
 // DELETE /api/branches/:id
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, superAdmin, async (req, res) => {
   try {
-    const aid = req.academyId;
-    const check = aid
-      ? await db.query("SELECT id FROM branches WHERE id=$1 AND academy_id=$2", [req.params.id, aid])
-      : await db.query("SELECT id FROM branches WHERE id=$1", [req.params.id]);
-    if (!check.rows[0]) return res.status(404).json({ error: "Branch not found" });
-    await db.query("DELETE FROM branches WHERE id=$1", [req.params.id]);
+    const academyId = req.academyId;
+    const whereExtra = academyId ? "AND academy_id = $2" : "";
+    const params = [req.params.id];
+    if (academyId) params.push(academyId);
+    const { rowCount } = await db.query(
+      `DELETE FROM branches WHERE id=$1 ${whereExtra}`, params
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "Branch not found or access denied" });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: "Failed to delete branch" });
