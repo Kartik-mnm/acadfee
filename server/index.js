@@ -6,18 +6,14 @@ const rateLimit    = require("express-rate-limit");
 const app          = express();
 app.set("trust proxy", 1);
 
-const { initFCM }                = require("./fcm");
-const { startAbsentCron, startKeepAlive, backfillStudentAcademyIds } = require("./cron");
-const runMigration               = require("./migrate");
+const { initFCM }         = require("./fcm");
+const { startAbsentCron, startKeepAlive } = require("./cron");
+const runMigration        = require("./migrate");
 
-// Run DB migration, then backfill, then start services
-runMigration().then(() => {
-  backfillStudentAcademyIds(); // fix any students with null academy_id
-});
-
+runMigration();
 initFCM();
 startAbsentCron();
-startKeepAlive(); // keep Render free tier awake
+startKeepAlive();
 
 const allowedOrigins = [
   "https://acadfee.onrender.com",
@@ -44,21 +40,14 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 
-// Global rate limit
-app.use(rateLimit({
+const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, max: 300,
   standardHeaders: true, legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
-}));
-
-// Signup-specific rate limit — max 5 per IP per 15 min
-const signupLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 5,
-  standardHeaders: true, legacyHeaders: false,
-  message: { error: "Too many signup attempts. Please try again in 15 minutes." },
 });
+app.use(globalLimiter);
 
-// ── Routes ─────────────────────────────────────────────────────────────────────
+// ── Academy routes ───────────────────────────────────────────────────────────────────
 app.use("/api/auth",         require("./routes/auth"));
 app.use("/api/branches",     require("./routes/branches"));
 app.use("/api/batches",      require("./routes/batches"));
@@ -73,21 +62,20 @@ app.use("/api/qrscan",       require("./routes/qrscan"));
 app.use("/api/admission",    require("./routes/admission"));
 app.use("/api/upload",       require("./routes/upload"));
 app.use("/api/working-days", require("./routes/working-days"));
+app.use("/api/daily-report", require("./routes/daily-report").router);
+
+// ── Platform routes ───────────────────────────────────────────────────────────────────
 app.use("/platform/auth",    require("./routes/platform-auth"));
 app.use("/platform",         require("./routes/platform"));
 app.use("/api/academy",      require("./routes/academy-config"));
+app.use("/api/onboarding",   require("./routes/onboarding"));
 
-// Signup route gets its own strict rate limiter
-app.use("/api/onboarding", signupLimiter, require("./routes/onboarding"));
-
-app.get("/health", (_, res) => res.json({
-  status: "ok", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime())
-}));
+// ── Health check ───────────────────────────────────────────────────────────────────
+app.get("/health", (_, res) => res.json({ status:"ok", timestamp:new Date().toISOString(), uptime:Math.floor(process.uptime()) }));
 app.get("/", (_, res) => res.json({ status: "Exponent Platform API running" }));
 
 app.use((err, req, res, next) => {
-  if (err.message?.startsWith("CORS blocked"))
-    return res.status(403).json({ error: err.message });
+  if (err.message?.startsWith("CORS blocked")) return res.status(403).json({ error: err.message });
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
 });

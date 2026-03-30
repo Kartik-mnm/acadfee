@@ -1,79 +1,62 @@
-// ── Nightly cron + Keep-alive ping ────────────────────────────────────────────
-// 1. Keep-alive: pings both Render services every 10 min so they never cold-start
-// 2. Nightly job at 10:00 PM IST: auto-attendance + absent alerts
-// 3. Trial enforcement: suspends academies whose trial expired > 1 day ago
-// 4. Backfill: any students with null academy_id get fixed automatically
-
-const db                   = require("./db");
-const { sendNotification } = require("./fcm");
+// ── Nightly cron + Keep-alive ping ──────────────────────────────────────────────────
+const db                     = require("./db");
+const { sendNotification }   = require("./fcm");
 const { generateMonthForBranch } = require("./routes/attendance");
+const { fetchDayData }       = require("./routes/daily-report");
+const { Resend }             = require("resend");
 
 let lastFiredDate = "";
 
-// ── Keep-alive ─────────────────────────────────────────────────────────────────
-// Pings both services every 10 minutes so Render free tier never spins down
+// ── Keep-alive ───────────────────────────────────────────────────────────────────
 function startKeepAlive() {
   const targets = [
     "https://acadfee.onrender.com/health",
     "https://acadfee-app.onrender.com/health",
-  ].filter(Boolean);
-
+  ];
   const ping = async () => {
     for (const url of targets) {
       try {
         await fetch(url, { signal: AbortSignal.timeout(8000) });
-        console.log(`[keep-alive] ✓ pinged ${url}`);
+        console.log(`[keep-alive] \u2713 pinged ${url}`);
       } catch (e) {
-        console.warn(`[keep-alive] ✗ ${url}: ${e.message}`);
+        console.warn(`[keep-alive] \u2717 ${url}: ${e.message}`);
       }
     }
   };
-
-  // Ping once at startup, then every 10 minutes
   ping();
   setInterval(ping, 10 * 60 * 1000);
-  console.log("✅ Keep-alive started — pinging every 10 min");
+  console.log("\u2705 Keep-alive started — pinging every 10 min");
 }
 
-// ── Backfill: fix any students with null academy_id ────────────────────────────
+// ── Backfill: fix students with null academy_id ─────────────────────────────────
 async function backfillStudentAcademyIds() {
   try {
-    // Students whose branch has an academy_id but the student doesn't
     const { rowCount } = await db.query(`
-      UPDATE students s
-      SET academy_id = b.academy_id
+      UPDATE students s SET academy_id = b.academy_id
       FROM branches b
-      WHERE s.branch_id = b.id
-        AND s.academy_id IS NULL
-        AND b.academy_id IS NOT NULL
+      WHERE s.branch_id = b.id AND s.academy_id IS NULL AND b.academy_id IS NOT NULL
     `);
-    if (rowCount > 0)
-      console.log(`[backfill] Fixed academy_id for ${rowCount} student(s)`);
+    if (rowCount > 0) console.log(`[backfill] Fixed academy_id for ${rowCount} student(s)`);
   } catch (e) {
     console.error("[backfill] Error:", e.message);
   }
 }
 
-// ── Trial enforcement ──────────────────────────────────────────────────────────
-// Suspends academies whose trial ended more than 1 day ago and are still active
+// ── Trial enforcement ───────────────────────────────────────────────────────────────
 async function enforceTrialExpiry() {
   try {
     const { rows } = await db.query(`
-      UPDATE academies
-      SET is_active = false, updated_at = NOW()
-      WHERE plan = 'trial'
-        AND is_active = true
-        AND trial_ends_at < NOW() - INTERVAL '1 day'
+      UPDATE academies SET is_active=false, updated_at=NOW()
+      WHERE plan='trial' AND is_active=true AND trial_ends_at < NOW() - INTERVAL '1 day'
       RETURNING id, name
     `);
-    if (rows.length > 0)
-      console.log(`[trial] Suspended ${rows.length} expired trial(s):`, rows.map(r => r.name).join(", "));
+    if (rows.length > 0) console.log(`[trial] Suspended ${rows.length} expired trial(s):`, rows.map(r=>r.name).join(", "));
   } catch (e) {
     console.error("[trial] Enforcement error:", e.message);
   }
 }
 
-// ── Auto-generate attendance ────────────────────────────────────────────────────
+// ── Auto-generate attendance ──────────────────────────────────────────────────────
 async function autoGenerateAttendance(month, year) {
   try {
     const { rows: branches } = await db.query(`SELECT id, name FROM branches`);
@@ -90,7 +73,7 @@ async function autoGenerateAttendance(month, year) {
   }
 }
 
-// ── Absent notifications ────────────────────────────────────────────────────────
+// ── Absent notifications ─────────────────────────────────────────────────────────────
 async function sendAbsentNotifications(todayIST) {
   try {
     const { rows: absentStudents } = await db.query(
@@ -107,7 +90,6 @@ async function sendAbsentNotifications(todayIST) {
          )`,
       [todayIST]
     );
-
     const notifyList = [];
     for (const s of absentStudents) {
       const { rows: wd } = await db.query(
@@ -116,34 +98,99 @@ async function sendAbsentNotifications(todayIST) {
       );
       if (wd.length === 0 || wd[0].is_working) notifyList.push(s);
     }
-
     console.log(`[Cron] ${notifyList.length} absent student(s) on ${todayIST}`);
-
     for (const student of notifyList) {
       const academyName = student.academy_name || "your academy";
-      if (student.parent_fcm_token) {
-        await sendNotification(
-          student.parent_fcm_token,
-          `⚠️ Absent Today — ${student.name}`,
-          `${student.name} was not present at ${academyName} today (${todayIST}).`,
-          { type: "absent_alert", student_id: String(student.id), date: todayIST }
-        );
-      }
-      if (student.fcm_token) {
-        await sendNotification(
-          student.fcm_token,
-          `⚠️ You were absent today`,
-          `You did not attend ${academyName} today (${todayIST}). Contact your branch if incorrect.`,
-          { type: "absent_alert", date: todayIST }
-        );
-      }
+      if (student.parent_fcm_token)
+        await sendNotification(student.parent_fcm_token, `\u26a0\ufe0f Absent Today \u2014 ${student.name}`, `${student.name} was not present at ${academyName} today (${todayIST}).`, { type:"absent_alert", student_id:String(student.id), date:todayIST });
+      if (student.fcm_token)
+        await sendNotification(student.fcm_token, `\u26a0\ufe0f You were absent today`, `You did not attend ${academyName} today (${todayIST}).`, { type:"absent_alert", date:todayIST });
     }
   } catch (e) {
     console.error("[Cron] Absent notification error:", e.message);
   }
 }
 
-// ── Main nightly job ────────────────────────────────────────────────────────────
+// ── Email daily reports to all active academies ──────────────────────────────────
+async function emailDailyReports(todayIST) {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[daily-report] RESEND_API_KEY not set, skipping nightly email reports");
+    return;
+  }
+  try {
+    // Get all active academies that have an email address
+    const { rows: academies } = await db.query(`
+      SELECT id, name, email FROM academies
+      WHERE is_active = true AND plan != 'lead' AND email IS NOT NULL AND email != ''
+    `);
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    console.log(`[daily-report] Emailing reports to ${academies.length} academy/academies...`);
+
+    for (const acad of academies) {
+      try {
+        const data = await fetchDayData(acad.id, todayIST);
+        const s    = data.summary;
+        const fmt  = (n) => `\u20b9${parseFloat(n||0).toLocaleString("en-IN", { minimumFractionDigits:2 })}`;
+
+        // Only email if there was any activity today
+        const hasActivity = s.payments_count > 0 || s.new_students > 0 || s.total_attendance > 0 || s.total_expenses > 0;
+        if (!hasActivity) {
+          console.log(`[daily-report] No activity for ${acad.name} — skipping email`);
+          continue;
+        }
+
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+<div style="max-width:560px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+  <div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:24px 28px;">
+    <div style="font-size:18px;font-weight:900;color:#fff;">📊 Daily Report — ${todayIST}</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:4px;">${acad.name}</div>
+  </div>
+  <div style="padding:24px 28px;">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+      ${[
+        ["Collected",fmt(s.total_collected)],
+        ["Expenses",fmt(s.total_expenses)],
+        ["Net Cash",fmt(s.net_cash_flow)],
+        ["Payments",s.payments_count],
+        ["New Students",s.new_students],
+        ["Present/Total",`${s.present_count}/${s.total_attendance}`],
+      ].map(([l,v])=>`<div style="border:1px solid #eee;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:16px;font-weight:900;color:#6366f1;">${v}</div><div style="font-size:10px;color:#888;text-transform:uppercase;margin-top:3px;">${l}</div></div>`).join("")}
+    </div>
+    ${data.payments.length > 0 ? `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;border-bottom:2px solid #6366f1;padding-bottom:4px;">💰 Payments Today (${data.payments.length})</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <tr style="background:#6366f1;color:#fff;"><th style="padding:5px 8px;text-align:left;">Student</th><th style="padding:5px 8px;text-align:left;">Branch</th><th style="padding:5px 8px;text-align:right;">Amount</th><th style="padding:5px 8px;text-align:left;">Mode</th></tr>
+          ${data.payments.map((p,i)=>`<tr style="${i%2===1?"background:#f5f5ff":""}"><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.student_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.branch_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#6366f1;">${fmt(p.amount)}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.payment_mode}</td></tr>`).join("")}
+        </table>
+      </div>` : ""}
+    ${data.new_students.length > 0 ? `<div style="margin-bottom:16px;font-size:12px;"><span style="font-weight:700;color:#333;">🎓 New students:</span> ${data.new_students.map(st=>st.name).join(", ")}</div>` : ""}
+    ${data.expenses.length > 0 ? `<div style="margin-bottom:16px;font-size:12px;"><span style="font-weight:700;color:#333;">💸 Expenses:</span> ${fmt(s.total_expenses)} across ${data.expenses.length} item(s)</div>` : ""}
+    <div style="margin-top:16px;padding:10px 14px;background:#f5f5ff;border-radius:8px;font-size:11px;color:#555;">
+      📎 Log in to your dashboard to download the full Excel report.
+    </div>
+  </div>
+  <div style="background:#1a1f35;padding:12px 28px;text-align:center;font-size:10px;color:rgba(255,255,255,0.4);">Exponent Platform · Daily Report · ${todayIST}</div>
+</div></body></html>`;
+
+        await resend.emails.send({
+          from:    "Exponent Reports <onboarding@resend.dev>",
+          to:      acad.email,
+          subject: `\uD83D\uDCCA Daily Report ${todayIST} — ${acad.name}`,
+          html,
+        });
+        console.log(`[daily-report] Sent to ${acad.email} (${acad.name})`);
+      } catch (e) {
+        console.error(`[daily-report] Failed for ${acad.name}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error("[daily-report] Nightly email error:", e.message);
+  }
+}
+
+// ── Main nightly job ──────────────────────────────────────────────────────────────────
 async function runNightlyJob() {
   const nowIST   = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" });
   const todayIST = nowIST.split(",")[0].trim();
@@ -152,22 +199,23 @@ async function runNightlyJob() {
   lastFiredDate = todayIST;
 
   const [y, m] = todayIST.split("-").map(Number);
-  console.log(`\n[Cron] ⏰ Nightly job starting for ${todayIST}`);
+  console.log(`\n[Cron] \u23f0 Nightly job starting for ${todayIST}`);
 
   await autoGenerateAttendance(m, y);
   await sendAbsentNotifications(todayIST);
   await enforceTrialExpiry();
   await backfillStudentAcademyIds();
+  await emailDailyReports(todayIST);   // ← NEW: emails daily report to all academies
 
-  console.log(`[Cron] ✅ Nightly job complete for ${todayIST}`);
+  console.log(`[Cron] \u2705 Nightly job complete for ${todayIST}`);
 }
 
-// ── Start scheduler ─────────────────────────────────────────────────────────────
+// ── Start scheduler ───────────────────────────────────────────────────────────────────
 function startAbsentCron() {
-  console.log("✅ Nightly cron started — fires at 10:00 PM IST");
+  console.log("\u2705 Nightly cron started — fires at 10:00 PM IST");
   setInterval(() => {
     const nowIST = new Date().toLocaleString("en-US", {
-      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
+      timeZone:"Asia/Kolkata", hour:"2-digit", minute:"2-digit", hour12:false,
     });
     if (nowIST === "22:00") runNightlyJob();
   }, 60 * 1000);
