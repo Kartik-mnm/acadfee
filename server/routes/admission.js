@@ -3,7 +3,6 @@ const db        = require("../db");
 const { auth }  = require("../middleware");
 const rateLimit = require("express-rate-limit");
 
-// Ensure columns exist
 async function initAdmissionColumns() {
   try {
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url   TEXT`);
@@ -14,15 +13,14 @@ async function initAdmissionColumns() {
 }
 initAdmissionColumns();
 
-// BUG FIX: lowered from 5 to 3 submissions per 15 min per IP
 const enquiryLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 3,
+  windowMs: 15 * 60 * 1000, max: 5,
   standardHeaders: true, legacyHeaders: false,
   keyGenerator: (req) => req.ip,
   message: { error: "Too many enquiries submitted. Please try again after 15 minutes." },
 });
 
-// ── Public: Get form data scoped to academy slug ───────────────────────────────
+// ── Public: form-data scoped by slug ───────────────────────────────────────────────
 router.get("/form-data", async (req, res) => {
   const { slug } = req.query;
   try {
@@ -51,7 +49,7 @@ router.get("/form-data", async (req, res) => {
   }
 });
 
-// ── Public: Submit admission enquiry ─────────────────────────────────────────
+// ── Public: submit enquiry ─────────────────────────────────────────────────────────
 router.post("/enquiry", enquiryLimiter, async (req, res) => {
   const { name, phone, parent_phone, email, batch_id, address, branch_id, extra, academy_id, slug } = req.body;
   if (!name || !phone) return res.status(400).json({ error: "Name and phone are required" });
@@ -86,7 +84,7 @@ router.post("/enquiry", enquiryLimiter, async (req, res) => {
   }
 });
 
-// ── Admin: List enquiries — scoped to the logged-in user's academy ────────────
+// ── Admin: list enquiries scoped to academy ───────────────────────────────────────
 router.get("/enquiries", auth, async (req, res) => {
   try {
     const academyId = req.academyId;
@@ -117,17 +115,50 @@ router.get("/enquiries", auth, async (req, res) => {
   }
 });
 
-// ── Admin: Approve enquiry — scoped to academy ────────────────────────────────
+// ── Admin: approve enquiry — BUG FIX: handle null branch_id gracefully ─────────────
 router.post("/enquiries/:id/approve", auth, async (req, res) => {
   try {
     const academyId = req.academyId;
-    const whereClause = academyId ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+
+    // Fetch the enquiry — scoped to this academy
+    const whereClause = academyId
+      ? "WHERE ae.id=$1 AND (ae.academy_id=$2 OR ae.academy_id IS NULL)"
+      : "WHERE ae.id=$1";
     const params = academyId ? [req.params.id, academyId] : [req.params.id];
+
     const { rows } = await db.query(
-      `SELECT * FROM admission_enquiries ${whereClause}`, params
+      `SELECT ae.*,
+              br.academy_id AS branch_academy_id
+       FROM admission_enquiries ae
+       LEFT JOIN branches br ON br.id = ae.branch_id
+       ${whereClause}`,
+      params
     );
-    if (!rows[0]) return res.status(404).json({ error: "Enquiry not found" });
+    if (!rows[0]) return res.status(404).json({ error: "Enquiry not found or does not belong to your academy" });
     const e = rows[0];
+
+    // Resolve the correct academy_id:
+    // Priority: enquiry.academy_id → branch.academy_id → logged-in admin's academy_id
+    const resolvedAcademyId = e.academy_id || e.branch_academy_id || academyId;
+
+    // branch_id is required for creating a student
+    // If the student didn’t select a branch, fall back to the first branch of this academy
+    let resolvedBranchId = e.branch_id;
+    if (!resolvedBranchId && resolvedAcademyId) {
+      const { rows: branchRows } = await db.query(
+        `SELECT id FROM branches WHERE academy_id = $1 ORDER BY id LIMIT 1`,
+        [resolvedAcademyId]
+      );
+      if (branchRows[0]) resolvedBranchId = branchRows[0].id;
+    }
+
+    if (!resolvedBranchId) {
+      return res.status(400).json({
+        error: "Cannot approve: no branch is set for this enquiry and no branches exist for this academy. Please add a branch first."
+      });
+    }
+
+    // Resolve photo
     let photoUrl = e.photo_url || null;
     if (!photoUrl && e.extra) {
       try {
@@ -135,35 +166,52 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
         photoUrl = ex.photo_url || null;
       } catch {}
     }
+
+    // Create the student
     const { rows: stuRows } = await db.query(
       `INSERT INTO students
-       (branch_id, batch_id, name, phone, parent_phone, email, address, admission_date, status, photo_url, academy_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_DATE,'active',$8,$9) RETURNING *`,
-      [e.branch_id, e.batch_id, e.name, e.phone, e.parent_phone,
-       e.email, e.address, photoUrl, e.academy_id]
+       (branch_id, batch_id, name, phone, parent_phone, email, address,
+        admission_date, status, photo_url, academy_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9)
+       RETURNING *`,
+      [
+        resolvedBranchId,
+        e.batch_id || null,
+        e.name,
+        e.phone,
+        e.parent_phone || null,
+        e.email || null,
+        e.address || null,
+        photoUrl,
+        resolvedAcademyId,
+      ]
     );
+
+    // Mark enquiry approved
     await db.query(
-      "UPDATE admission_enquiries SET status='approved', student_id=$1 WHERE id=$2",
-      [stuRows[0].id, req.params.id]
+      "UPDATE admission_enquiries SET status='approved', student_id=$1, academy_id=$2 WHERE id=$3",
+      [stuRows[0].id, resolvedAcademyId, req.params.id]
     );
+
     res.json({ success: true, student: stuRows[0] });
   } catch (e) {
     console.error("Approve error:", e.message);
-    res.status(500).json({ error: "Failed to approve enquiry" });
+    res.status(500).json({ error: "Failed to approve enquiry: " + e.message });
   }
 });
 
-// ── Admin: Reject enquiry — scoped to academy ─────────────────────────────────
-// BUG FIX: was missing academy scope — any admin could reject any academy's enquiry
+// ── Admin: reject enquiry scoped to academy ───────────────────────────────────────
 router.patch("/enquiries/:id/reject", auth, async (req, res) => {
   try {
     const academyId = req.academyId;
-    const whereClause = academyId ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const whereClause = academyId
+      ? "WHERE id=$1 AND (academy_id=$2 OR academy_id IS NULL)"
+      : "WHERE id=$1";
     const params = academyId ? [req.params.id, academyId] : [req.params.id];
     const { rowCount } = await db.query(
       `UPDATE admission_enquiries SET status='rejected' ${whereClause}`, params
     );
-    if (rowCount === 0) return res.status(404).json({ error: "Enquiry not found in your academy" });
+    if (rowCount === 0) return res.status(404).json({ error: "Enquiry not found" });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: "Failed to reject enquiry" });
