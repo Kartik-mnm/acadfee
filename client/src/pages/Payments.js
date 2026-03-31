@@ -9,10 +9,8 @@ function InfoBox({ why, steps }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ marginBottom: 20, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text1)" }}
-      >
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text1)" }}>
         <span>💡 How it works & Why use this section</span>
         <span style={{ fontSize: 18, fontWeight: 300, color: "var(--accent)", transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s" }}>+</span>
       </button>
@@ -65,104 +63,61 @@ function Receipt({ payment, onClose, academy }) {
   const dueDate       = p.due_date ? new Date(p.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
   const paidDate      = p.paid_on  ? new Date(p.paid_on).toLocaleDateString("en-IN",  { day: "numeric", month: "long", year: "numeric" }) : "—";
 
-  const receiptHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Fee Receipt - ${p.receipt_no}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; background: #fff; color: #000; }
-    .page { width: 750px; margin: 20px auto; }
-    .copies { display: flex; gap: 0; }
-    .copy { width: 375px; border: 2px solid #000; padding: 0; }
-    .copy + .copy { border-left: 1px dashed #999; }
-    .copy-inner { padding: 12px 14px; }
-    .hdr { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-    .academy-name { font-size: 17px; font-weight: 900; text-transform: uppercase; }
-    .academy-addr { font-size: 10px; color: #333; line-height: 1.5; margin-top: 2px; }
-    .receipt-title-box { border: 2px solid #000; text-align: center; padding: 5px; margin: 10px 0; }
-    .receipt-title-box h2 { font-size: 16px; font-weight: 900; letter-spacing: .05em; }
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-    .info-table td { padding: 4px 2px; font-size: 11px; vertical-align: top; }
-    .info-table .lbl { font-weight: 700; width: 90px; color: #333; }
-    .info-table .colon { width: 10px; }
-    .info-table .val { font-weight: 600; }
-    .fee-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-    .fee-table th { background: #e0e0e0; border: 1px solid #999; padding: 5px 6px; font-size: 11px; text-align: left; }
-    .fee-table td { border: 1px solid #ccc; padding: 5px 6px; font-size: 11px; }
-    .fee-table .amount-col { text-align: right; font-weight: 700; }
-    .fee-table .subtotal-row td { background: #e8e8e8; font-weight: 700; }
-    .summary-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-    .summary-table td { padding: 4px 6px; font-size: 11px; border: 1px solid #ccc; }
-    .summary-table .lbl { font-weight: 700; background: #f5f5f5; }
-    .summary-table .val { text-align: right; font-weight: 700; }
-    .summary-table .balance-row td { background: #fff3cd; }
-    .words-box { border: 1px solid #ccc; padding: 5px 8px; margin-top: 8px; font-size: 10px; }
-    .words-label { font-weight: 700; }
-    .footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc; }
-    .footer-note { font-size: 9px; color: #666; }
-    .sign-box { text-align: center; font-size: 10px; }
-    .sign-line { border-top: 1px solid #333; width: 100px; margin: 20px auto 4px; }
-    @media print { body { margin: 0; } .page { margin: 0; width: 100%; } .no-print { display: none; } }
-  </style>
-</head>
-<body>
-<div class="page">
-  <div class="copies">
-    ${[1,2].map(() => `
-    <div class="copy"><div class="copy-inner">
-      <div class="hdr">
-        <div class="academy-name">${academyName}</div>
-        <div class="academy-addr">${p.branch_name || ""}</div>
-        ${contactLine ? `<div class="academy-addr">Contact: ${contactLine}</div>` : ""}
-      </div>
-      <div class="receipt-title-box"><h2>FEES RECEIPT</h2></div>
-      <table class="info-table">
-        <tr>
-          <td class="lbl">Receipt No.</td><td class="colon">:</td>
-          <td class="val" style="font-family:monospace;">${p.receipt_no}</td>
-          <td class="lbl" style="text-align:right;">Date</td><td class="colon">:</td>
-          <td class="val">${paidDate}</td>
-        </tr>
-      </table>
-      <table class="info-table" style="border-top:1px solid #ccc;padding-top:6px;margin-top:4px;">
-        <tr><td class="lbl">Student Name</td><td class="colon">:</td><td class="val" colspan="3">${p.student_name}</td></tr>
-        <tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name || "—"}</td></tr>
-        <tr>
-          <td class="lbl">Batch / Course</td><td class="colon">:</td><td class="val">${p.batch_name || "—"}</td>
-          <td class="lbl" style="text-align:right;">Branch</td><td class="colon">:</td><td class="val">${p.branch_name || "—"}</td>
-        </tr>
-        <tr>
-          <td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label || "—"}</td>
-          <td class="lbl" style="text-align:right;">Due Date</td><td class="colon">:</td>
-          <td class="val" style="color:#c00;font-weight:900;">${dueDate}</td>
-        </tr>
-        <tr><td class="lbl">Payment Mode</td><td class="colon">:</td><td class="val" colspan="3">${(p.payment_mode||"").toUpperCase()}${p.transaction_ref ? " — "+p.transaction_ref : ""}</td></tr>
-      </table>
-      <table class="fee-table">
-        <thead><tr><th>Fee Details</th><th class="amount-col">Amount</th></tr></thead>
-        <tbody>
-          <tr><td>${p.period_label || "Tuition Fee"}</td><td class="amount-col">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-          <tr class="subtotal-row"><td></td><td class="amount-col">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-        </tbody>
-      </table>
-      <table class="summary-table">
-        <tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-        <tr><td class="lbl">Paid Fee</td><td class="val">₹${Number(p.amount_paid||0).toLocaleString("en-IN")}</td></tr>
-        <tr class="balance-row"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance>0?"#c00":"#090"};">₹${Number(balance).toLocaleString("en-IN")}</td></tr>
-      </table>
-      <div class="words-box"><span class="words-label">Rupees </span>${amountWords}</div>
-      <div class="footer">
-        <div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
-        <div class="sign-box"><div class="sign-line"></div>Authorized Signatory</div>
-      </div>
-    </div></div>
-    `).join("")}
-  </div>
-</div>
-<script>window.onload = () => window.print();</script>
-</body></html>`;
+  const receiptHTML = `<!DOCTYPE html><html><head><title>Fee Receipt - ${p.receipt_no}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;color:#000}
+.page{width:750px;margin:20px auto}.copies{display:flex}.copy{width:375px;border:2px solid #000}
+.copy+.copy{border-left:1px dashed #999}.copy-inner{padding:12px 14px}
+.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px}
+.academy-name{font-size:17px;font-weight:900;text-transform:uppercase}
+.academy-addr{font-size:10px;color:#333;line-height:1.5;margin-top:2px}
+.receipt-title-box{border:2px solid #000;text-align:center;padding:5px;margin:10px 0}
+.receipt-title-box h2{font-size:16px;font-weight:900;letter-spacing:.05em}
+.info-table{width:100%;border-collapse:collapse;margin-bottom:8px}
+.info-table td{padding:4px 2px;font-size:11px;vertical-align:top}
+.info-table .lbl{font-weight:700;width:90px;color:#333}.info-table .colon{width:10px}.info-table .val{font-weight:600}
+.fee-table{width:100%;border-collapse:collapse;margin:8px 0}
+.fee-table th{background:#e0e0e0;border:1px solid #999;padding:5px 6px;font-size:11px;text-align:left}
+.fee-table td{border:1px solid #ccc;padding:5px 6px;font-size:11px}.fee-table .ac{text-align:right;font-weight:700}
+.fee-table .sr td{background:#e8e8e8;font-weight:700}
+.summary-table{width:100%;border-collapse:collapse;margin-top:4px}
+.summary-table td{padding:4px 6px;font-size:11px;border:1px solid #ccc}
+.summary-table .lbl{font-weight:700;background:#f5f5f5}.summary-table .val{text-align:right;font-weight:700}
+.summary-table .br td{background:#fff3cd}
+.words-box{border:1px solid #ccc;padding:5px 8px;margin-top:8px;font-size:10px}
+.footer{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px;padding-top:8px;border-top:1px solid #ccc}
+.footer-note{font-size:9px;color:#666}.sign-box{text-align:center;font-size:10px}
+.sign-line{border-top:1px solid #333;width:100px;margin:20px auto 4px}
+@media print{body{margin:0}.page{margin:0;width:100%}.no-print{display:none}}</style>
+</head><body>
+<div class="page"><div class="copies">
+${[1,2].map(()=>`<div class="copy"><div class="copy-inner">
+<div class="hdr"><div class="academy-name">${academyName}</div>
+<div class="academy-addr">${p.branch_name||""}</div>
+${contactLine?`<div class="academy-addr">Contact: ${contactLine}</div>`:""}</div>
+<div class="receipt-title-box"><h2>FEES RECEIPT</h2></div>
+<table class="info-table"><tr>
+<td class="lbl">Receipt No.</td><td class="colon">:</td><td class="val" style="font-family:monospace">${p.receipt_no}</td>
+<td class="lbl" style="text-align:right">Date</td><td class="colon">:</td><td class="val">${paidDate}</td></tr></table>
+<table class="info-table" style="border-top:1px solid #ccc;padding-top:6px;margin-top:4px">
+<tr><td class="lbl">Student Name</td><td class="colon">:</td><td class="val" colspan="3">${p.student_name}</td></tr>
+<tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name||"—"}</td></tr>
+<tr><td class="lbl">Batch/Course</td><td class="colon">:</td><td class="val">${p.batch_name||"—"}</td>
+<td class="lbl" style="text-align:right">Branch</td><td class="colon">:</td><td class="val">${p.branch_name||"—"}</td></tr>
+<tr><td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label||"—"}</td>
+<td class="lbl" style="text-align:right">Due Date</td><td class="colon">:</td><td class="val" style="color:#c00;font-weight:900">${dueDate}</td></tr>
+<tr><td class="lbl">Payment Mode</td><td class="colon">:</td><td class="val" colspan="3">${(p.payment_mode||"").toUpperCase()}${p.transaction_ref?" — "+p.transaction_ref:""}</td></tr></table>
+<table class="fee-table"><thead><tr><th>Fee Details</th><th class="ac">Amount</th></tr></thead><tbody>
+<tr><td>${p.period_label||"Tuition Fee"}</td><td class="ac">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+<tr class="sr"><td></td><td class="ac">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr></tbody></table>
+<table class="summary-table">
+<tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+<tr><td class="lbl">Paid Fee</td><td class="val">₹${Number(p.amount_paid||0).toLocaleString("en-IN")}</td></tr>
+<tr class="br"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance>0?"#c00":"#090"}">₹${Number(balance).toLocaleString("en-IN")}</td></tr></table>
+<div class="words-box"><span style="font-weight:700">Rupees </span>${amountWords}</div>
+<div class="footer"><div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
+<div class="sign-box"><div class="sign-line"></div>Authorized Signatory</div></div>
+</div></div>`).join("")}
+</div></div><script>window.onload=()=>window.print();</script></body></html>`;
 
   const print = () => {
     const w = window.open("", "_blank");
@@ -176,7 +131,7 @@ function Receipt({ payment, onClose, academy }) {
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-header">
-          <div className="modal-title">🧾 Fee Receipt</div>
+          <div className="modal-title">🧾 Fee Receipt — {p.receipt_no}</div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -196,7 +151,7 @@ function Receipt({ payment, onClose, academy }) {
                 ["Student Name", p.student_name],
                 ["Father's Name", p.parent_name || "—"],
                 ["Batch / Course", p.batch_name || "—"],
-                ["Period", p.period_label],
+                ["Period", p.period_label || "—"],
                 ["Due Date", <span style={{ color: "var(--red)", fontWeight: 800 }}>{dueDate}</span>],
                 ["Payment Mode", (p.payment_mode || "").toUpperCase()],
                 p.transaction_ref ? ["Txn / Ref No.", p.transaction_ref] : null,
@@ -216,9 +171,9 @@ function Receipt({ payment, onClose, academy }) {
                 </div>
                 <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg3)", padding: "5px 10px" }}>
                   {[
-                    ["Total Fee", fmt(p.amount_due), "var(--text)"],
-                    ["Paid Fee", fmt(p.amount), "var(--green)"],
-                    ["Balance Fee", fmt(balance2), balance2 > 0 ? "var(--red)" : "var(--green)"],
+                    ["Total Fee",   fmt(p.amount_due), "var(--text)"],
+                    ["Paid Fee",    fmt(p.amount),     "var(--green)"],
+                    ["Balance Fee", fmt(balance2),     balance2 > 0 ? "var(--red)" : "var(--green)"],
                   ].map(([l, v, c]) => (
                     <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: 12 }}>
                       <span style={{ fontWeight: 700 }}>{l}</span>
@@ -252,6 +207,7 @@ export default function Payments() {
   const [search,       setSearch]       = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [receipt,      setReceipt]      = useState(null);
+  // FIX: removed student_id from form — backend now looks it up from fee_record_id
   const [form, setForm] = useState({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
@@ -263,8 +219,14 @@ export default function Payments() {
 
   useEffect(() => {
     load();
-    API.get("/fees?status=pending").then((r) => setFeeRecords(r.data));
-    API.get("/fees?status=partial").then((r) => setFeeRecords((p) => [...p, ...r.data]));
+    // Load ALL fee records that have outstanding balance (pending + partial + overdue)
+    Promise.all([
+      API.get("/fees?status=pending"),
+      API.get("/fees?status=partial"),
+      API.get("/fees?status=overdue"),
+    ]).then(([p, pa, o]) => {
+      setFeeRecords([...p.data, ...pa.data, ...o.data]);
+    });
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch]);
 
@@ -274,19 +236,37 @@ export default function Payments() {
   };
 
   const pay = async () => {
-    setSaving(true); setError("");
+    setError("");
+    if (!form.fee_record_id) { setError("Please select a fee record."); return; }
+    if (!form.amount || parseFloat(form.amount) <= 0) { setError("Please enter a valid amount."); return; }
+    setSaving(true);
     try {
-      const { data } = await API.post("/payments", form);
-      setShowModal(false); load();
+      // FIX: only send fee_record_id (no student_id) — backend resolves student from fee record
+      const { data } = await API.post("/payments", {
+        fee_record_id:   form.fee_record_id,
+        amount:          form.amount,
+        payment_mode:    form.payment_mode,
+        transaction_ref: form.transaction_ref || undefined,
+        paid_on:         form.paid_on,
+        notes:           form.notes || undefined,
+      });
+      setShowModal(false);
+      load();
+      // Fetch full payment details for receipt
       const { data: full } = await API.get(`/payments/${data.id}`);
       setReceipt(full);
-    } catch (e) { setError(e.response?.data?.error || "Failed"); }
-    finally { setSaving(false); }
+    } catch (e) {
+      setError(e.response?.data?.error || "Failed to record payment");
+    } finally { setSaving(false); }
   };
 
   const viewReceipt = async (id) => {
-    const { data } = await API.get(`/payments/${id}`);
-    setReceipt(data);
+    try {
+      const { data } = await API.get(`/payments/${id}`);
+      setReceipt(data);
+    } catch (e) {
+      alert("Failed to load receipt: " + (e.response?.data?.error || e.message));
+    }
   };
 
   const filtered = payments.filter((p) => {
@@ -300,7 +280,7 @@ export default function Payments() {
     const rec = feeRecords.find((r) => r.id == id);
     if (rec) {
       const balance = rec.amount_due - rec.amount_paid;
-      setForm((p) => ({ ...p, fee_record_id: id, amount: balance }));
+      setForm((p) => ({ ...p, fee_record_id: id, amount: balance > 0 ? balance : "" }));
     } else {
       setForm((p) => ({ ...p, fee_record_id: id }));
     }
@@ -399,7 +379,7 @@ export default function Payments() {
                     <option value="">Select fee record…</option>
                     {feeRecords.map((r) => (
                       <option key={r.id} value={r.id}>
-                        {r.student_name} – {r.period_label} (Balance: ₹{(r.amount_due - r.amount_paid).toLocaleString("en-IN")})
+                        {r.student_name} – {r.period_label || "Manual"} [{r.status}] (Balance: ₹{(r.amount_due - r.amount_paid).toLocaleString("en-IN")})
                       </option>
                     ))}
                   </select>
