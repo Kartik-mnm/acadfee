@@ -7,23 +7,21 @@ const EMPTY_BRANCH = { name: "", address: "", phone: "" };
 export default function Users() {
   const [users,    setUsers]    = useState([]);
   const [branches, setBranches] = useState([]);
-  const [tab,      setTab]      = useState("users"); // "users" | "branches"
+  const [tab,      setTab]      = useState("users");
 
-  // User modal
-  const [showUserModal,  setShowUserModal]  = useState(false);
-  const [showPassModal,  setShowPassModal]  = useState(false);
-  const [selectedUser,   setSelectedUser]   = useState(null);
-  const [newPassword,    setNewPassword]    = useState("");
-  const [userForm,       setUserForm]       = useState(EMPTY_USER);
-  const [savingUser,     setSavingUser]     = useState(false);
-  const [userError,      setUserError]      = useState("");
+  const [showUserModal,   setShowUserModal]   = useState(false);
+  const [showPassModal,   setShowPassModal]   = useState(false);
+  const [selectedUser,    setSelectedUser]    = useState(null);
+  const [newPassword,     setNewPassword]     = useState("");
+  const [userForm,        setUserForm]        = useState(EMPTY_USER);
+  const [savingUser,      setSavingUser]      = useState(false);
+  const [userError,       setUserError]       = useState("");
 
-  // Branch modal
-  const [showBranchModal,setShowBranchModal]= useState(false);
-  const [branchForm,     setBranchForm]     = useState(EMPTY_BRANCH);
-  const [editingBranch,  setEditingBranch]  = useState(null); // null = create, object = edit
-  const [savingBranch,   setSavingBranch]   = useState(false);
-  const [branchError,    setBranchError]    = useState("");
+  const [showBranchModal, setShowBranchModal] = useState(false);
+  const [branchForm,      setBranchForm]      = useState(EMPTY_BRANCH);
+  const [editingBranch,   setEditingBranch]   = useState(null);
+  const [savingBranch,    setSavingBranch]    = useState(false);
+  const [branchError,     setBranchError]     = useState("");
 
   const [msg, setMsg] = useState("");
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 3500); };
@@ -34,7 +32,7 @@ export default function Users() {
   };
   useEffect(load, []);
 
-  // ── User actions ────────────────────────────────────────────────────────────────
+  // ── User actions ─────────────────────────────────────────────────────────────
   const saveUser = async () => {
     setSavingUser(true); setUserError("");
     try {
@@ -62,7 +60,7 @@ export default function Users() {
     } catch { flash("\u26a0 Failed to update password"); }
   };
 
-  // ── Branch actions ─────────────────────────────────────────────────────────────
+  // ── Branch actions ────────────────────────────────────────────────────────────
   const openAddBranch  = ()  => { setBranchForm(EMPTY_BRANCH); setEditingBranch(null); setBranchError(""); setShowBranchModal(true); };
   const openEditBranch = (b) => { setBranchForm({ name: b.name, address: b.address || "", phone: b.phone || "" }); setEditingBranch(b); setBranchError(""); setShowBranchModal(true); };
 
@@ -87,7 +85,7 @@ export default function Users() {
     try {
       await API.delete(`/branches/${b.id}`);
       flash("\u2705 Branch deleted"); load();
-    } catch (e) { flash("\u26a0 " + (e.response?.data?.error || "Cannot delete branch — it may have students or batches linked.")); }
+    } catch (e) { flash("\u26a0 " + (e.response?.data?.error || "Cannot delete — branch may have students or batches linked.")); }
   };
 
   const f  = (k, v) => setUserForm((p)   => ({ ...p, [k]: v }));
@@ -114,13 +112,19 @@ export default function Users() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — emoji as JS expressions, NOT string literals */}
       <div className="gap-row" style={{ marginBottom: 20 }}>
-        <button className={`btn ${tab === "users" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("users")}>
-          \uD83D\uDC64 Users ({users.length})
+        <button
+          className={`btn ${tab === "users" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setTab("users")}
+        >
+          {"\uD83D\uDC64"} Users ({users.length})
         </button>
-        <button className={`btn ${tab === "branches" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("branches")}>
-          \uD83C\uDFEB Branches ({branches.length})
+        <button
+          className={`btn ${tab === "branches" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setTab("branches")}
+        >
+          {"\uD83C\uDFEB"} Branches ({branches.length})
         </button>
       </div>
 
@@ -128,15 +132,20 @@ export default function Users() {
         <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>{msg}</div>
       )}
 
-      {/* ── USERS TAB ─────────────────────────────────────────────────────────────── */}
+      {/* ── USERS TAB ──────────────────────────────────────────────────────────── */}
       {tab === "users" && (
         <div className="card">
           {users.length === 0 ? (
-            <div className="empty-state"><div className="empty-icon">\uD83D\uDC64</div><div className="empty-text">No users yet</div></div>
+            <div className="empty-state">
+              <div className="empty-icon">{"\uD83D\uDC64"}</div>
+              <div className="empty-text">No users yet</div>
+            </div>
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Branch</th><th>Actions</th></tr></thead>
+                <thead>
+                  <tr><th>Name</th><th>Email</th><th>Role</th><th>Branch</th><th>Actions</th></tr>
+                </thead>
                 <tbody>
                   {users.map((u) => (
                     <tr key={u.id}>
@@ -150,9 +159,14 @@ export default function Users() {
                       <td>{u.branch_name || <span className="text-muted">All Branches</span>}</td>
                       <td>
                         <div className="gap-row">
-                          <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedUser(u); setNewPassword(""); setShowPassModal(true); }}>\uD83D\uDD11 Reset Password</button>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => { setSelectedUser(u); setNewPassword(""); setShowPassModal(true); }}
+                          >
+                            Reset Password
+                          </button>
                           {u.role !== "super_admin" && (
-                            <button className="btn btn-danger btn-sm" onClick={() => deleteUser(u)}>\uD83D\uDDD1 Delete</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => deleteUser(u)}>Delete</button>
                           )}
                         </div>
                       </td>
@@ -165,30 +179,32 @@ export default function Users() {
         </div>
       )}
 
-      {/* ── BRANCHES TAB ──────────────────────────────────────────────────────────── */}
+      {/* ── BRANCHES TAB ───────────────────────────────────────────────────────── */}
       {tab === "branches" && (
         <div className="card">
           {branches.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-icon">\uD83C\uDFEB</div>
+              <div className="empty-icon">{"\uD83C\uDFEB"}</div>
               <div className="empty-text">No branches yet</div>
-              <div className="empty-sub">Add your first branch to get started. Each branch can have its own batches, students, and staff.</div>
+              <div className="empty-sub">Add your first branch to get started.</div>
               <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={openAddBranch}>+ Add First Branch</button>
             </div>
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Branch Name</th><th>Address</th><th>Phone</th><th>Actions</th></tr></thead>
+                <thead>
+                  <tr><th>Branch Name</th><th>Address</th><th>Phone</th><th>Actions</th></tr>
+                </thead>
                 <tbody>
                   {branches.map((b) => (
                     <tr key={b.id}>
-                      <td style={{ fontWeight: 600 }}>\uD83C\uDFEB {b.name}</td>
+                      <td style={{ fontWeight: 600 }}>{"\uD83C\uDFEB"} {b.name}</td>
                       <td className="text-muted">{b.address || "\u2014"}</td>
                       <td className="mono text-muted">{b.phone || "\u2014"}</td>
                       <td>
                         <div className="gap-row">
-                          <button className="btn btn-secondary btn-sm" onClick={() => openEditBranch(b)}>\u270E Edit</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => deleteBranch(b)}>\uD83D\uDDD1 Delete</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => openEditBranch(b)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => deleteBranch(b)}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -200,13 +216,13 @@ export default function Users() {
         </div>
       )}
 
-      {/* ── ADD/EDIT USER MODAL ──────────────────────────────────────────────────────── */}
+      {/* ── ADD/EDIT USER MODAL ─────────────────────────────────────────────────── */}
       {showUserModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowUserModal(false)}>
           <div className="modal">
             <div className="modal-header">
               <div className="modal-title">Add New User</div>
-              <button className="modal-close" onClick={() => setShowUserModal(false)}>\u2715</button>
+              <button className="modal-close" onClick={() => setShowUserModal(false)}>{"\u2715"}</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
@@ -239,23 +255,25 @@ export default function Users() {
                   </div>
                 )}
               </div>
-              {userError && <div className="error-msg" style={{ marginTop: 10 }}>\u26a0 {userError}</div>}
+              {userError && <div className="error-msg" style={{ marginTop: 10 }}>{"\u26a0"} {userError}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowUserModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveUser} disabled={savingUser}>{savingUser ? "Creating\u2026" : "Create User"}</button>
+              <button className="btn btn-primary" onClick={saveUser} disabled={savingUser}>
+                {savingUser ? "Creating..." : "Create User"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── RESET PASSWORD MODAL ──────────────────────────────────────────────────────────── */}
+      {/* ── RESET PASSWORD MODAL ────────────────────────────────────────────────── */}
       {showPassModal && selectedUser && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowPassModal(false)}>
           <div className="modal" style={{ maxWidth: 400 }}>
             <div className="modal-header">
-              <div className="modal-title">\uD83D\uDD11 Reset Password</div>
-              <button className="modal-close" onClick={() => setShowPassModal(false)}>\u2715</button>
+              <div className="modal-title">Reset Password</div>
+              <button className="modal-close" onClick={() => setShowPassModal(false)}>{"\u2715"}</button>
             </div>
             <div className="modal-body">
               <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8 }}>
@@ -264,45 +282,67 @@ export default function Users() {
               </div>
               <div className="form-group">
                 <label>New Password</label>
-                <input type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" />
+                <input
+                  type="text"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                />
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowPassModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={resetPassword}>\u2713 Update Password</button>
+              <button className="btn btn-primary" onClick={resetPassword}>Update Password</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── ADD/EDIT BRANCH MODAL ───────────────────────────────────────────────────────── */}
+      {/* ── ADD/EDIT BRANCH MODAL ───────────────────────────────────────────────── */}
       {showBranchModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowBranchModal(false)}>
           <div className="modal" style={{ maxWidth: 440 }}>
             <div className="modal-header">
-              <div className="modal-title">{editingBranch ? "\u270E Edit Branch" : "+ Add New Branch"}</div>
-              <button className="modal-close" onClick={() => setShowBranchModal(false)}>\u2715</button>
+              <div className="modal-title">{editingBranch ? "Edit Branch" : "+ Add New Branch"}</div>
+              <button className="modal-close" onClick={() => setShowBranchModal(false)}>{"\u2715"}</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
                 <div className="form-group full">
                   <label>Branch Name *</label>
-                  <input value={branchForm.name} onChange={(e) => bf("name", e.target.value)} placeholder="e.g. Main Branch, North Campus" autoFocus />
+                  <input
+                    value={branchForm.name}
+                    onChange={(e) => bf("name", e.target.value)}
+                    placeholder="e.g. Main Branch, North Campus"
+                    autoFocus
+                  />
                 </div>
                 <div className="form-group full">
                   <label>Address</label>
-                  <input value={branchForm.address} onChange={(e) => bf("address", e.target.value)} placeholder="Branch address (optional)" />
+                  <input
+                    value={branchForm.address}
+                    onChange={(e) => bf("address", e.target.value)}
+                    placeholder="Branch address (optional)"
+                  />
                 </div>
                 <div className="form-group">
                   <label>Phone</label>
-                  <input value={branchForm.phone} onChange={(e) => bf("phone", e.target.value)} placeholder="Branch contact number" />
+                  <input
+                    value={branchForm.phone}
+                    onChange={(e) => bf("phone", e.target.value)}
+                    placeholder="Branch contact number"
+                  />
                 </div>
               </div>
-              {branchError && <div className="error-msg" style={{ marginTop: 10 }}>\u26a0 {branchError}</div>}
+              {branchError && (
+                <div className="error-msg" style={{ marginTop: 10 }}>{"\u26a0"} {branchError}</div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowBranchModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveBranch} disabled={savingBranch}>{savingBranch ? "Saving\u2026" : editingBranch ? "Update Branch" : "Create Branch"}</button>
+              <button className="btn btn-primary" onClick={saveBranch} disabled={savingBranch}>
+                {savingBranch ? "Saving..." : editingBranch ? "Update Branch" : "Create Branch"}
+              </button>
             </div>
           </div>
         </div>
