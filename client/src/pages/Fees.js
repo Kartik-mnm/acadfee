@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 
-const fmt = (n) => `\u20b9${Number(n).toLocaleString("en-IN")}`;
+const fmt = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function statusBadge(s) {
@@ -10,7 +10,6 @@ function statusBadge(s) {
   return <span className={`badge ${map[s] || "badge-gray"}`}>{s}</span>;
 }
 
-// ── Info box component (reusable) ────────────────────────────────────────────
 function InfoBox({ why, steps }) {
   const [open, setOpen] = useState(false);
   return (
@@ -19,13 +18,13 @@ function InfoBox({ why, steps }) {
         onClick={() => setOpen(o => !o)}
         style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text1)" }}
       >
-        <span>\uD83D\uDCA1 How it works &amp; Why use this section</span>
+        <span>💡 How it works & Why use this section</span>
         <span style={{ fontSize: 18, fontWeight: 300, color: "var(--accent)", transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s" }}>+</span>
       </button>
       {open && (
         <div style={{ padding: "0 18px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div style={{ background: "rgba(79,142,247,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\u2139\uFE0F How it works</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>ℹ️ How it works</div>
             {steps.map((s, i) => (
               <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
                 <div style={{ minWidth: 22, height: 22, borderRadius: "50%", background: "var(--accent)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
@@ -34,10 +33,10 @@ function InfoBox({ why, steps }) {
             ))}
           </div>
           <div style={{ background: "rgba(16,185,129,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\u2705 Why use this</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>✅ Why use this</div>
             {why.map((w, i) => (
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
-                <span style={{ color: "var(--green)", fontWeight: 700, flexShrink: 0 }}>\u2713</span>
+                <span style={{ color: "var(--green)", fontWeight: 700, flexShrink: 0 }}>✓</span>
                 <span>{w}</span>
               </div>
             ))}
@@ -82,7 +81,7 @@ export default function Fees() {
 
   const markOverdue = async () => {
     const { data } = await API.patch("/fees/mark-overdue");
-    setMsg(`\u2713 Marked ${data.updated} records as overdue`);
+    setMsg(`✓ Marked ${data.updated} records as overdue`);
     load();
     setTimeout(() => setMsg(""), 3000);
   };
@@ -92,28 +91,28 @@ export default function Fees() {
     try {
       const bid = user.role === "super_admin" ? genForm.branch_id : user.branch_id;
       const { data } = await API.post("/fees/generate", { ...genForm, branch_id: bid });
-      setMsg(`\u2713 Generated ${data.created} fee records for ${data.label}`);
+      setMsg(`✓ Generated ${data.created} fee records for ${data.label}`);
       setShowGenerate(false); load();
-    } catch (e) { setMsg("\u26a0 " + (e.response?.data?.error || "Failed")); }
+    } catch (e) { setMsg("⚠ " + (e.response?.data?.error || "Failed")); }
     finally { setSaving(false); }
   };
 
   const addManual = async () => {
     setManError("");
-    if (!manForm.student_id)                                        { setManError("\u26a0 Please select a student"); return; }
-    if (!manForm.amount_due || parseFloat(manForm.amount_due) <= 0) { setManError("\u26a0 Amount Due must be greater than 0"); return; }
-    if (!manForm.due_date)                                          { setManError("\u26a0 Due Date is required"); return; }
-    if (!manForm.period_label)                                      { setManError("\u26a0 Period Label is required"); return; }
+    if (!manForm.student_id)                                        { setManError("⚠ Please select a student"); return; }
+    if (!manForm.amount_due || parseFloat(manForm.amount_due) <= 0) { setManError("⚠ Amount Due must be greater than 0"); return; }
+    if (!manForm.due_date)                                          { setManError("⚠ Due Date is required"); return; }
+    if (!manForm.period_label)                                      { setManError("⚠ Period Label is required"); return; }
     setSaving(true);
     try {
       await API.post("/fees", manForm);
       setShowManual(false);
       setManForm({ student_id: "", amount_due: "", due_date: "", period_label: "" });
       load();
-      setMsg("\u2713 Fee record added successfully");
+      setMsg("✓ Fee record added successfully");
       setTimeout(() => setMsg(""), 3000);
     } catch (e) {
-      setManError("\u26a0 " + (e.response?.data?.error || "Failed to add record"));
+      setManError("⚠ " + (e.response?.data?.error || "Failed to add record"));
     } finally { setSaving(false); }
   };
 
@@ -131,19 +130,18 @@ export default function Fees() {
           <div className="page-sub">{filtered.length} record(s)</div>
         </div>
         <div className="gap-row">
-          <button className="btn btn-secondary" onClick={markOverdue}>\u26a0 Mark Overdue</button>
+          <button className="btn btn-secondary" onClick={markOverdue}>⚠ Mark Overdue</button>
           <button className="btn btn-secondary" onClick={() => { setManError(""); setShowManual(true); }}>+ Manual Record</button>
-          <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>\u26a1 Generate Monthly</button>
+          <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>⚡ Generate Monthly</button>
         </div>
       </div>
 
-      {/* ── How it works box ── */}
       <InfoBox
         steps={[
-          "Click \u26a1 Generate Monthly — system auto-creates fee records for all active students in a branch based on their batch fees.",
+          "Click ⚡ Generate Monthly — system auto-creates fee records for all active students in a branch based on their batch fees.",
           "Each record tracks: Amount Due, Amount Paid, Balance, Due Date, and Status (pending / partial / paid / overdue).",
           "When a student pays, go to Payments → Record Payment — the fee record status updates automatically.",
-          "Click \u26a0 Mark Overdue any time to flag all records past their due date so you can follow up faster.",
+          "Click ⚠ Mark Overdue any time to flag all records past their due date so you can follow up faster.",
           "Use + Manual Record for custom fees like exam fees, registration, or one-time charges.",
         ]}
         why={[
@@ -160,7 +158,7 @@ export default function Fees() {
       )}
 
       <div className="filters-bar">
-        <input className="search-input" placeholder="Search student\u2026" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="search-input" placeholder="Search student…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
@@ -179,7 +177,7 @@ export default function Fees() {
       <div className="card">
         {filtered.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">\uD83D\uDCCB</div>
+            <div className="empty-icon">📋</div>
             <div className="empty-text">No fee records</div>
             <div className="empty-sub">Generate monthly records or add manually</div>
           </div>
@@ -202,8 +200,8 @@ export default function Fees() {
                       <div className="text-muted text-sm mono">{r.phone}</div>
                     </td>
                     {user.role === "super_admin" && <td className="text-muted">{r.branch_name}</td>}
-                    <td className="text-muted">{r.batch_name || "\u2014"}</td>
-                    <td>{r.period_label || "\u2014"}</td>
+                    <td className="text-muted">{r.batch_name || "—"}</td>
+                    <td>{r.period_label || "—"}</td>
                     <td className="text-muted">{new Date(r.due_date).toLocaleDateString("en-IN")}</td>
                     <td className="mono">{fmt(r.amount_due)}</td>
                     <td className="mono fee-credit">{fmt(r.amount_paid)}</td>
@@ -217,13 +215,12 @@ export default function Fees() {
         )}
       </div>
 
-      {/* Generate Modal */}
       {showGenerate && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowGenerate(false)}>
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-title">\u26a1 Generate Fee Records</div>
-              <button className="modal-close" onClick={() => setShowGenerate(false)}>\u2715</button>
+              <div className="modal-title">⚡ Generate Fee Records</div>
+              <button className="modal-close" onClick={() => setShowGenerate(false)}>✕</button>
             </div>
             <div className="modal-body">
               <p className="text-muted" style={{ marginBottom: 16, fontSize: 13 }}>
@@ -253,19 +250,18 @@ export default function Fees() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowGenerate(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={generate} disabled={saving}>{saving ? "Generating\u2026" : "Generate"}</button>
+              <button className="btn btn-primary" onClick={generate} disabled={saving}>{saving ? "Generating…" : "Generate"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Manual Record Modal */}
       {showManual && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowManual(false)}>
           <div className="modal">
             <div className="modal-header">
               <div className="modal-title">Add Manual Fee Record</div>
-              <button className="modal-close" onClick={() => setShowManual(false)}>\u2715</button>
+              <button className="modal-close" onClick={() => setShowManual(false)}>✕</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
@@ -275,13 +271,13 @@ export default function Fees() {
                     <option value="">Select Student</option>
                     {students.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} \u2013 {s.batch_name || "No batch"} ({s.branch_name || ""})
+                        {s.name} – {s.batch_name || "No batch"} ({s.branch_name || ""})
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Amount Due (\u20b9) *</label>
+                  <label>Amount Due (₹) *</label>
                   <input type="number" min="1" placeholder="e.g. 2500" value={manForm.amount_due} onChange={(e) => setManForm({ ...manForm, amount_due: e.target.value })} />
                 </div>
                 <div className="form-group">
@@ -302,7 +298,7 @@ export default function Fees() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowManual(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={addManual} disabled={saving}>
-                {saving ? "Saving\u2026" : "Add Record"}
+                {saving ? "Saving…" : "Add Record"}
               </button>
             </div>
           </div>

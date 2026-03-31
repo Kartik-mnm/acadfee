@@ -3,9 +3,8 @@ import { useAuth } from "../context/AuthContext";
 import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
-const fmt = (n) => `\u20b9${Number(n || 0).toLocaleString("en-IN")}`;
+const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
-// ── Info box component ────────────────────────────────────────────────────────────
 function InfoBox({ why, steps }) {
   const [open, setOpen] = useState(false);
   return (
@@ -14,13 +13,13 @@ function InfoBox({ why, steps }) {
         onClick={() => setOpen(o => !o)}
         style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text1)" }}
       >
-        <span>\uD83D\uDCA1 How it works &amp; Why use this section</span>
+        <span>💡 How it works & Why use this section</span>
         <span style={{ fontSize: 18, fontWeight: 300, color: "var(--accent)", transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s" }}>+</span>
       </button>
       {open && (
         <div style={{ padding: "0 18px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div style={{ background: "rgba(79,142,247,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\u2139\uFE0F How it works</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>ℹ️ How it works</div>
             {steps.map((s, i) => (
               <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
                 <div style={{ minWidth: 22, height: 22, borderRadius: "50%", background: "var(--accent)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
@@ -29,10 +28,10 @@ function InfoBox({ why, steps }) {
             ))}
           </div>
           <div style={{ background: "rgba(16,185,129,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\u2705 Why use this</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>✅ Why use this</div>
             {why.map((w, i) => (
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
-                <span style={{ color: "var(--green)", fontWeight: 700, flexShrink: 0 }}>\u2713</span>
+                <span style={{ color: "var(--green)", fontWeight: 700, flexShrink: 0 }}>✓</span>
                 <span>{w}</span>
               </div>
             ))}
@@ -63,8 +62,8 @@ function Receipt({ payment, onClose, academy }) {
   const contactLine   = [academyPhone, academyPhone2].filter(Boolean).join(" / ");
   const balance       = (p.amount_due || 0) - (p.amount_paid || 0);
   const amountWords   = numberToWords(Math.round(p.amount || 0)) + " Rupees Only";
-  const dueDate       = p.due_date ? new Date(p.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "\u2014";
-  const paidDate      = p.paid_on  ? new Date(p.paid_on).toLocaleDateString("en-IN",  { day: "numeric", month: "long", year: "numeric" }) : "\u2014";
+  const dueDate       = p.due_date ? new Date(p.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
+  const paidDate      = p.paid_on  ? new Date(p.paid_on).toLocaleDateString("en-IN",  { day: "numeric", month: "long", year: "numeric" }) : "—";
 
   const receiptHTML = `
 <!DOCTYPE html>
@@ -129,29 +128,29 @@ function Receipt({ payment, onClose, academy }) {
       </table>
       <table class="info-table" style="border-top:1px solid #ccc;padding-top:6px;margin-top:4px;">
         <tr><td class="lbl">Student Name</td><td class="colon">:</td><td class="val" colspan="3">${p.student_name}</td></tr>
-        <tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name || "\u2014"}</td></tr>
+        <tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name || "—"}</td></tr>
         <tr>
-          <td class="lbl">Batch / Course</td><td class="colon">:</td><td class="val">${p.batch_name || "\u2014"}</td>
-          <td class="lbl" style="text-align:right;">Branch</td><td class="colon">:</td><td class="val">${p.branch_name || "\u2014"}</td>
+          <td class="lbl">Batch / Course</td><td class="colon">:</td><td class="val">${p.batch_name || "—"}</td>
+          <td class="lbl" style="text-align:right;">Branch</td><td class="colon">:</td><td class="val">${p.branch_name || "—"}</td>
         </tr>
         <tr>
-          <td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label || "\u2014"}</td>
+          <td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label || "—"}</td>
           <td class="lbl" style="text-align:right;">Due Date</td><td class="colon">:</td>
           <td class="val" style="color:#c00;font-weight:900;">${dueDate}</td>
         </tr>
-        <tr><td class="lbl">Payment Mode</td><td class="colon">:</td><td class="val" colspan="3">${(p.payment_mode||"").toUpperCase()}${p.transaction_ref ? " \u2014 "+p.transaction_ref : ""}</td></tr>
+        <tr><td class="lbl">Payment Mode</td><td class="colon">:</td><td class="val" colspan="3">${(p.payment_mode||"").toUpperCase()}${p.transaction_ref ? " — "+p.transaction_ref : ""}</td></tr>
       </table>
       <table class="fee-table">
         <thead><tr><th>Fee Details</th><th class="amount-col">Amount</th></tr></thead>
         <tbody>
-          <tr><td>${p.period_label || "Tuition Fee"}</td><td class="amount-col">\u20b9${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-          <tr class="subtotal-row"><td></td><td class="amount-col">\u20b9${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+          <tr><td>${p.period_label || "Tuition Fee"}</td><td class="amount-col">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+          <tr class="subtotal-row"><td></td><td class="amount-col">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
         </tbody>
       </table>
       <table class="summary-table">
-        <tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">\u20b9${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-        <tr><td class="lbl">Paid Fee</td><td class="val">\u20b9${Number(p.amount_paid||0).toLocaleString("en-IN")}</td></tr>
-        <tr class="balance-row"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance>0?"#c00":"#090"};">\u20b9${Number(balance).toLocaleString("en-IN")}</td></tr>
+        <tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
+        <tr><td class="lbl">Paid Fee</td><td class="val">₹${Number(p.amount_paid||0).toLocaleString("en-IN")}</td></tr>
+        <tr class="balance-row"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance>0?"#c00":"#090"};">₹${Number(balance).toLocaleString("en-IN")}</td></tr>
       </table>
       <div class="words-box"><span class="words-label">Rupees </span>${amountWords}</div>
       <div class="footer">
@@ -177,15 +176,15 @@ function Receipt({ payment, onClose, academy }) {
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-header">
-          <div className="modal-title">\uD83E\uDDFE Fee Receipt</div>
-          <button className="modal-close" onClick={onClose}>\u2715</button>
+          <div className="modal-title">🧾 Fee Receipt</div>
+          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           <div style={{ border: "2px solid var(--border)", borderRadius: 8, overflow: "hidden", fontSize: 13 }}>
             <div style={{ background: "var(--bg3)", textAlign: "center", padding: "12px 16px", borderBottom: "2px solid var(--border)" }}>
               <div style={{ fontWeight: 900, fontSize: 16 }}>{academyName.toUpperCase()}</div>
               <div style={{ fontSize: 11, color: "var(--text2)" }}>{p.branch_name}</div>
-              {contactLine && <div style={{ fontSize: 11, color: "var(--text2)" }}>\uD83D\uDCDE {contactLine}</div>}
+              {contactLine && <div style={{ fontSize: 11, color: "var(--text2)" }}>📞 {contactLine}</div>}
               <div style={{ fontWeight: 800, fontSize: 13, marginTop: 6, border: "1px solid var(--border)", padding: "3px 20px", display: "inline-block", borderRadius: 4 }}>FEES RECEIPT</div>
             </div>
             <div style={{ padding: "12px 16px" }}>
@@ -195,8 +194,8 @@ function Receipt({ payment, onClose, academy }) {
               </div>
               {[
                 ["Student Name", p.student_name],
-                ["Father's Name", p.parent_name || "\u2014"],
-                ["Batch / Course", p.batch_name || "\u2014"],
+                ["Father's Name", p.parent_name || "—"],
+                ["Batch / Course", p.batch_name || "—"],
                 ["Period", p.period_label],
                 ["Due Date", <span style={{ color: "var(--red)", fontWeight: 800 }}>{dueDate}</span>],
                 ["Payment Mode", (p.payment_mode || "").toUpperCase()],
@@ -236,7 +235,7 @@ function Receipt({ payment, onClose, academy }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
-          <button className="btn btn-primary" onClick={print}>\uD83D\uDDB8 Print Receipt</button>
+          <button className="btn btn-primary" onClick={print}>🖨 Print Receipt</button>
         </div>
       </div>
     </div>
@@ -317,14 +316,13 @@ export default function Payments() {
         <button className="btn btn-primary" onClick={openPay}>+ Record Payment</button>
       </div>
 
-      {/* ── How it works box ── */}
       <InfoBox
         steps={[
           "A student comes to pay fees — click + Record Payment at the top right.",
           "Select the fee record (student name + period auto-fills), enter the amount received, choose payment mode (Cash / UPI / Bank Transfer / Cheque).",
-          "Click \u2713 Record & Get Receipt — a professional double-copy receipt is instantly generated and printed.",
-          "The fee record status auto-updates: Pending \u2192 Partial (if part-paid) \u2192 Paid (if fully paid).",
-          "All payments are logged here with receipt numbers. Click \uD83E\uDDFE Receipt on any row to reprint at any time.",
+          "Click ✓ Record & Get Receipt — a professional double-copy receipt is instantly generated and printed.",
+          "The fee record status auto-updates: Pending → Partial (if part-paid) → Paid (if fully paid).",
+          "All payments are logged here with receipt numbers. Click 🧾 Receipt on any row to reprint at any time.",
         ]}
         why={[
           "Instant professional receipts — no more handwritten slips that get lost.",
@@ -336,7 +334,7 @@ export default function Payments() {
       />
 
       <div className="filters-bar">
-        <input className="search-input" placeholder="Search student / receipt no\u2026" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="search-input" placeholder="Search student / receipt no…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
@@ -348,7 +346,7 @@ export default function Payments() {
       <div className="card">
         {filtered.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">\uD83D\uDCB3</div>
+            <div className="empty-icon">💳</div>
             <div className="empty-text">No payments recorded</div>
             <div className="empty-sub">Click + Record Payment to get started</div>
           </div>
@@ -371,12 +369,12 @@ export default function Payments() {
                       <div className="text-muted text-sm mono">{p.phone}</div>
                     </td>
                     {user.role === "super_admin" && <td className="text-muted">{p.branch_name}</td>}
-                    <td className="text-muted">{p.period_label || "\u2014"}</td>
+                    <td className="text-muted">{p.period_label || "—"}</td>
                     <td className="mono" style={{ color: "var(--green)", fontWeight: 700 }}>{fmt(p.amount)}</td>
                     <td><span className="badge badge-blue">{p.payment_mode}</span></td>
                     <td className="text-muted">{new Date(p.paid_on).toLocaleDateString("en-IN")}</td>
                     <td>
-                      <button className="btn btn-secondary btn-sm" onClick={() => viewReceipt(p.id)}>\uD83E\uDDFE Receipt</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => viewReceipt(p.id)}>🧾 Receipt</button>
                     </td>
                   </tr>
                 ))}
@@ -391,23 +389,23 @@ export default function Payments() {
           <div className="modal">
             <div className="modal-header">
               <div className="modal-title">Record Payment</div>
-              <button className="modal-close" onClick={() => setShowModal(false)}>\u2715</button>
+              <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">
               <div className="form-grid">
                 <div className="form-group full">
-                  <label>Fee Record (Student \u2013 Period) *</label>
+                  <label>Fee Record (Student – Period) *</label>
                   <select value={form.fee_record_id} onChange={(e) => selectRecord(e.target.value)}>
-                    <option value="">Select fee record\u2026</option>
+                    <option value="">Select fee record…</option>
                     {feeRecords.map((r) => (
                       <option key={r.id} value={r.id}>
-                        {r.student_name} \u2013 {r.period_label} (Balance: \u20b9{(r.amount_due - r.amount_paid).toLocaleString("en-IN")})
+                        {r.student_name} – {r.period_label} (Balance: ₹{(r.amount_due - r.amount_paid).toLocaleString("en-IN")})
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Amount (\u20b9) *</label>
+                  <label>Amount (₹) *</label>
                   <input type="number" value={form.amount} onChange={(e) => f("amount", e.target.value)} placeholder="0" />
                 </div>
                 <div className="form-group">
@@ -429,15 +427,15 @@ export default function Payments() {
                 </div>
                 <div className="form-group full">
                   <label>Notes</label>
-                  <textarea value={form.notes} onChange={(e) => f("notes", e.target.value)} placeholder="Optional remarks\u2026" style={{ minHeight: 50 }} />
+                  <textarea value={form.notes} onChange={(e) => f("notes", e.target.value)} placeholder="Optional remarks…" style={{ minHeight: 50 }} />
                 </div>
               </div>
-              {error && <div className="error-msg" style={{ marginTop: 10 }}>\u26a0 {error}</div>}
+              {error && <div className="error-msg" style={{ marginTop: 10 }}>⚠ {error}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={pay} disabled={saving}>
-                {saving ? "Processing\u2026" : "\u2713 Record & Get Receipt"}
+                {saving ? "Processing…" : "✓ Record & Get Receipt"}
               </button>
             </div>
           </div>
