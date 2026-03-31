@@ -40,14 +40,17 @@ router.post("/", auth, async (req, res) => {
     const { fee_record_id, student_id, amount, payment_mode, transaction_ref, paid_on, notes } = req.body;
     if (!fee_record_id || !student_id || !amount || !payment_mode)
       return res.status(400).json({ error: "fee_record_id, student_id, amount and payment_mode are required" });
-    const { rows: sRows } = await db.query("SELECT branch_id FROM students WHERE id=$1", [student_id]);
-    if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
+
+    const aid = req.academyId;
+    // Verify student belongs to this academy before recording payment
+    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const sParams = aid ? [student_id, aid] : [student_id];
+    const { rows: sRows } = await db.query(`SELECT branch_id FROM students ${whereClause}`, sParams);
+    if (!sRows[0]) return res.status(404).json({ error: "Student not found in your academy" });
     const branch_id = sRows[0].branch_id;
 
-    // Generate receipt number
-    const { rows: lastReceipt } = await db.query(
-      `SELECT receipt_no FROM payments ORDER BY id DESC LIMIT 1`
-    );
+    // Generate receipt number (global sequence is fine for receipts)
+    const { rows: lastReceipt } = await db.query(`SELECT receipt_no FROM payments ORDER BY id DESC LIMIT 1`);
     let receiptNum = 1001;
     if (lastReceipt[0]?.receipt_no) {
       const num = parseInt(lastReceipt[0].receipt_no.replace(/[^0-9]/g, ""));
@@ -68,10 +71,7 @@ router.post("/", auth, async (req, res) => {
     if (frRows[0]) {
       const totalPaid = parseFloat(frRows[0].amount_paid) + parseFloat(amount);
       const status = totalPaid >= frRows[0].amount_due ? "paid" : "partial";
-      await db.query(
-        "UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3",
-        [totalPaid, status, fee_record_id]
-      );
+      await db.query("UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3", [totalPaid, status, fee_record_id]);
     }
     res.json(rows[0]);
   } catch (e) {
@@ -80,14 +80,24 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// Delete payment
+// Delete payment — FIX: scope to academy so admin can't delete another academy's payments
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { rows } = await db.query("SELECT * FROM payments WHERE id=$1", [req.params.id]);
+    const aid = req.academyId;
+    // Fetch payment and verify it belongs to this academy via the student
+    const { rows } = await db.query(
+      `SELECT p.*, s.academy_id AS student_academy_id
+       FROM payments p JOIN students s ON s.id = p.student_id
+       WHERE p.id = $1`, [req.params.id]
+    );
     if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
+    if (aid && rows[0].student_academy_id && rows[0].student_academy_id !== aid)
+      return res.status(403).json({ error: "Access denied: payment belongs to a different academy" });
+
     const p = rows[0];
     await db.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
+
     // Reverse the fee record update
     const { rows: frRows } = await db.query("SELECT * FROM fee_records WHERE id=$1", [p.fee_record_id]);
     if (frRows[0]) {

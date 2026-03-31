@@ -104,7 +104,6 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
 router.get("/:id", auth, studentSelf, async (req, res) => {
   try {
     const aid = req.academyId;
-    // BUG FIX: scope by academy_id so academy A cannot read academy B's students
     const conditions = ["s.id=$1"];
     const params = [req.params.id];
     if (req.user.role !== "student" && aid) {
@@ -121,6 +120,7 @@ router.get("/:id", auth, studentSelf, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to fetch student" }); }
 });
 
+// Create student
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -153,7 +153,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// PUT update student — scoped to academy to prevent cross-academy tampering
+// Update student — scoped to academy
 router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -161,7 +161,6 @@ router.put("/:id", auth, async (req, res) => {
     const { batch_id, name, phone, parent_phone, email, address, dob, gender,
             fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url } = req.body;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
-    // BUG FIX: require academy_id match so academy A cannot overwrite academy B's student
     const whereClause = aid ? "WHERE id=$16 AND academy_id=$17" : "WHERE id=$16";
     const params = [
       batch_id, name, phone, parent_phone, email, address, dob, gender, fee_type,
@@ -181,12 +180,11 @@ router.put("/:id", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to update student" }); }
 });
 
-// DELETE student — scoped to academy
+// Delete student — scoped to academy
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    // BUG FIX: require academy_id match so academy A cannot delete academy B's student
     const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
     const params = aid ? [req.params.id, aid] : [req.params.id];
     const { rowCount } = await db.query(`DELETE FROM students ${whereClause}`, params);
@@ -195,10 +193,19 @@ router.delete("/:id", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to delete student" }); }
 });
 
+// Send email summary — FIX: verify student belongs to this academy before sending
 router.post("/:id/send-email", auth, async (req, res) => {
   if (req.user.role === "student" && req.user.id !== parseInt(req.params.id))
     return res.status(403).json({ error: "Access denied" });
   try {
+    const aid = req.academyId;
+    // Verify student belongs to this academy (unless student is viewing own data)
+    if (req.user.role !== "student" && aid) {
+      const { rows: check } = await db.query(
+        `SELECT id FROM students WHERE id=$1 AND academy_id=$2`, [req.params.id, aid]
+      );
+      if (!check[0]) return res.status(403).json({ error: "Student does not belong to your academy" });
+    }
     const { sendFeeSummaryEmail } = require("../email");
     const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
       db.query(`SELECT s.*, b.name AS batch_name, br.name AS branch_name FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id WHERE s.id=$1`, [req.params.id]),

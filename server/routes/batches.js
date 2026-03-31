@@ -25,13 +25,20 @@ router.get("/", auth, branchFilter, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to fetch batches" }); }
 });
 
-// Create batch
+// Create batch — verify branch belongs to this academy
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
+    const aid = req.academyId;
+
+    if (aid) {
+      const { rows: brRows } = await db.query(`SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]);
+      if (!brRows[0]) return res.status(403).json({ error: "Branch does not belong to your academy" });
+    }
+
     const { rows } = await db.query(
       `INSERT INTO batches (branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
@@ -41,14 +48,23 @@ router.post("/", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to create batch" }); }
 });
 
-// Update batch
+// Update batch — FIX: scope to academy so super_admin can't edit another academy's batches
 router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { rows: existing } = await db.query("SELECT branch_id FROM batches WHERE id=$1", [req.params.id]);
+    const aid = req.academyId;
+    const { rows: existing } = await db.query(
+      `SELECT b.*, br.academy_id FROM batches b JOIN branches br ON br.id=b.branch_id WHERE b.id=$1`,
+      [req.params.id]
+    );
     if (!existing[0]) return res.status(404).json({ error: "Batch not found" });
+    // Check academy ownership
+    if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
+      return res.status(403).json({ error: "Access denied: batch belongs to a different academy" });
+    // Branch manager can only edit their own branch's batches
     if (req.user.role === "branch_manager" && existing[0].branch_id !== req.user.branch_id)
       return res.status(403).json({ error: "Access denied" });
+
     const { name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date } = req.body;
     const { rows } = await db.query(
       `UPDATE batches SET name=$1, subjects=$2, fee_monthly=$3, fee_quarterly=$4, fee_yearly=$5,
@@ -59,12 +75,18 @@ router.put("/:id", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to update batch" }); }
 });
 
-// Delete batch
+// Delete batch — FIX: scope to academy
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { rows: existing } = await db.query("SELECT branch_id FROM batches WHERE id=$1", [req.params.id]);
+    const aid = req.academyId;
+    const { rows: existing } = await db.query(
+      `SELECT b.*, br.academy_id FROM batches b JOIN branches br ON br.id=b.branch_id WHERE b.id=$1`,
+      [req.params.id]
+    );
     if (!existing[0]) return res.status(404).json({ error: "Batch not found" });
+    if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
+      return res.status(403).json({ error: "Access denied: batch belongs to a different academy" });
     if (req.user.role === "branch_manager" && existing[0].branch_id !== req.user.branch_id)
       return res.status(403).json({ error: "Access denied" });
     await db.query("DELETE FROM batches WHERE id=$1", [req.params.id]);
