@@ -1,25 +1,23 @@
 import axios from "axios";
 
+// ── Primary API URL — uses custom domain, falls back to Render URL ──────────
+const API_BASE = "https://api.exponentgrow.in/api";
+const API_REFRESH_URL = "https://api.exponentgrow.in/api/auth/refresh";
+
 const API = axios.create({
-  baseURL: "https://acadfee.onrender.com/api",
+  baseURL: API_BASE,
 });
 
 // ── Request interceptor ──────────────────────────────────────────────────────
-// Attach the current access token to every request automatically.
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// ── Response interceptor ─────────────────────────────────────────────────────
-// When any request comes back with 401 (token expired):
-//   1. Silently call POST /auth/refresh with the stored refreshToken
-//   2. Save the new access token
-//   3. Retry the original request — the user notices nothing
-//   4. Only if the refresh itself fails do we log the user out
-let isRefreshing = false;               // prevents multiple simultaneous refresh calls
-let pendingQueue = [];                  // queues failed requests while refresh is in-flight
+// ── Response interceptor — silent token refresh ──────────────────────────────
+let isRefreshing = false;
+let pendingQueue = [];
 
 function processQueue(error, token = null) {
   pendingQueue.forEach((p) => (error ? p.reject(error) : p.resolve(token)));
@@ -31,7 +29,6 @@ API.interceptors.response.use(
   async (err) => {
     const original = err.config;
 
-    // Only attempt refresh on 401, and never retry the refresh call itself
     if (
       err.response?.status === 401 &&
       !original._retried &&
@@ -40,7 +37,6 @@ API.interceptors.response.use(
       original._retried = true;
 
       if (isRefreshing) {
-        // Another refresh is already in flight — queue this request
         return new Promise((resolve, reject) => {
           pendingQueue.push({ resolve, reject });
         })
@@ -55,25 +51,15 @@ API.interceptors.response.use(
 
       const refreshToken = localStorage.getItem("refreshToken");
       if (!refreshToken) {
-        // No refresh token stored — must log in again
         forceLogout();
         return Promise.reject(err);
       }
 
       try {
-        const { data } = await axios.post(
-          "https://acadfee.onrender.com/api/auth/refresh",
-          { refreshToken }
-        );
-
-        // Save the rotated tokens
+        const { data } = await axios.post(API_REFRESH_URL, { refreshToken });
         localStorage.setItem("token", data.token);
         localStorage.setItem("refreshToken", data.refreshToken);
-
-        // Unblock queued requests with the new token
         processQueue(null, data.token);
-
-        // Retry the original request
         original.headers.Authorization = `Bearer ${data.token}`;
         return API(original);
       } catch (refreshErr) {
