@@ -24,7 +24,7 @@ function InfoBox({ why, steps }) {
       {open && (
         <div style={{ padding: "0 18px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div style={{ background: "rgba(79,142,247,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>ℹ️ How it works</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>How it works</div>
             {steps.map((s, i) => (
               <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
                 <div style={{ minWidth: 22, height: 22, borderRadius: "50%", background: "var(--accent)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
@@ -33,7 +33,7 @@ function InfoBox({ why, steps }) {
             ))}
           </div>
           <div style={{ background: "rgba(16,185,129,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>✅ Why use this</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Why use this</div>
             {why.map((w, i) => (
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
                 <span style={{ color: "var(--green)", fontWeight: 700, flexShrink: 0 }}>✓</span>
@@ -122,6 +122,18 @@ export default function Fees() {
 
   const balanceClass = (r) => r.amount_due - r.amount_paid > 0 ? "fee-debit" : "fee-credit";
 
+  // Build WhatsApp message for overdue students
+  const whatsappOverdue = (r) => {
+    const phone = r.phone?.replace(/[^0-9]/g, "");
+    if (!phone) return null;
+    const wa = phone.startsWith("91") ? phone : `91${phone}`;
+    const balance = Number(r.amount_due - r.amount_paid).toLocaleString("en-IN");
+    const msg = encodeURIComponent(
+      `Dear ${r.student_name || "Student"},\n\nThis is a reminder that your fee of \u20b9${balance} for *${r.period_label || "this period"}* is overdue.\n\nPlease clear your dues at the earliest.\n\nThank you,\n${user?.branch_name || "Academy"}`
+    );
+    return `https://wa.me/${wa}?text=${msg}`;
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -147,7 +159,7 @@ export default function Fees() {
         why={[
           "Never lose track of who has paid and who hasn't — everything is in one place.",
           "Saves hours every month vs. maintaining Excel sheets manually.",
-          "Overdue tracking lets you send WhatsApp reminders directly from the Reports section.",
+          "Overdue tracking lets you send WhatsApp reminders directly from the fee records.",
           "Partial payments are supported — students can pay in installments.",
           "Balance auto-calculates as students pay, so your accounts are always accurate.",
         ]}
@@ -189,32 +201,63 @@ export default function Fees() {
                   <th>Student</th>
                   {user.role === "super_admin" && <th>Branch</th>}
                   <th>Batch</th><th>Period</th><th>Due Date</th>
-                  <th>Amount Due</th><th>Paid</th><th>Balance</th><th>Status</th>
+                  <th>Amount Due</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{r.student_name}</div>
-                      <div className="text-muted text-sm mono">{r.phone}</div>
-                    </td>
-                    {user.role === "super_admin" && <td className="text-muted">{r.branch_name}</td>}
-                    <td className="text-muted">{r.batch_name || "—"}</td>
-                    <td>{r.period_label || "—"}</td>
-                    <td className="text-muted">{new Date(r.due_date).toLocaleDateString("en-IN")}</td>
-                    <td className="mono">{fmt(r.amount_due)}</td>
-                    <td className="mono fee-credit">{fmt(r.amount_paid)}</td>
-                    <td className={`mono ${balanceClass(r)}`}>{fmt(r.amount_due - r.amount_paid)}</td>
-                    <td>{statusBadge(r.status)}</td>
-                  </tr>
-                ))}
+                {filtered.map((r) => {
+                  const waLink = whatsappOverdue(r);
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{r.student_name}</div>
+                        <div className="text-muted text-sm mono">{r.phone}</div>
+                      </td>
+                      {user.role === "super_admin" && <td className="text-muted">{r.branch_name}</td>}
+                      <td className="text-muted">{r.batch_name || "—"}</td>
+                      <td>{r.period_label || "—"}</td>
+                      <td className="text-muted">{new Date(r.due_date).toLocaleDateString("en-IN")}</td>
+                      <td className="mono">{fmt(r.amount_due)}</td>
+                      <td className="mono fee-credit">{fmt(r.amount_paid)}</td>
+                      <td className={`mono ${balanceClass(r)}`}>{fmt(r.amount_due - r.amount_paid)}</td>
+                      <td>{statusBadge(r.status)}</td>
+                      <td>
+                        {/* FIX: WhatsApp button shown for ALL non-paid statuses */}
+                        {(r.status === "overdue" || r.status === "pending" || r.status === "partial") && waLink && (
+                          <a
+                            href={waLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-sm"
+                            title="Send WhatsApp reminder"
+                            style={{
+                              background: "rgba(37,211,102,0.12)",
+                              color: "#25d366",
+                              border: "1px solid rgba(37,211,102,0.3)",
+                              textDecoration: "none",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "4px 10px",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                            }}
+                          >
+                            💬 WA
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
+      {/* Generate Modal */}
       {showGenerate && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowGenerate(false)}>
           <div className="modal">
@@ -256,6 +299,7 @@ export default function Fees() {
         </div>
       )}
 
+      {/* Manual Record Modal */}
       {showManual && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowManual(false)}>
           <div className="modal">
