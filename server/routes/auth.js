@@ -7,8 +7,8 @@ const db     = require("../db");
 const { Resend } = require("resend");
 const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
-// Resend sandbox sender — works without domain verification
-const FROM_ADDRESS = "Exponent Platform <onboarding@resend.dev>";
+// ✅ Verified domain sender — delivers to ALL email addresses worldwide
+const FROM_ADDRESS = "Exponent Platform <noreply@exponentgrow.in>";
 
 // Cleanup expired refresh tokens every hour
 setInterval(async () => {
@@ -38,7 +38,7 @@ async function issueTokenPair(payload) {
   return { accessToken, refreshToken };
 }
 
-// ── Admin Login ──────────────────────────────────────────────────────────────
+// ── Admin Login ─────────────────────────────────────────────────────────────
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
@@ -122,9 +122,12 @@ router.post("/forgot-password", async (req, res) => {
             <div style="font-size:22px;font-weight:900;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">EXPONENT</div>
           </div>
           <h2 style="color:#eef1fb;margin:0 0 16px;">Reset your password</h2>
-          <p style="color:#8892b5;line-height:1.7;">Hi ${rows[0].name}, click the button below to reset your password. This link expires in 1 hour.</p>
+          <p style="color:#8892b5;line-height:1.7;">Hi ${rows[0].name}, click the button below to reset your Exponent password. This link expires in 1 hour.</p>
           <a href="${resetUrl}" style="display:block;margin:24px 0;padding:13px 28px;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;text-align:center;">Reset Password</a>
           <p style="color:#454f72;font-size:12px;line-height:1.6;">If you didn't request this, ignore this email. Your password won't change.</p>
+          <div style="margin-top:24px;padding-top:16px;border-top:1px solid #1e2535;text-align:center;font-size:11px;color:#454f72;">
+            Exponent Platform · exponentgrow.in
+          </div>
         </div>
       `,
     });
