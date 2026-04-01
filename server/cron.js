@@ -9,10 +9,14 @@ let lastFiredDate = "";
 
 // ── Keep-alive ───────────────────────────────────────────────────────────────────
 function startKeepAlive() {
+  // Ping both old Render URLs AND new custom domain URLs
   const targets = [
     "https://acadfee.onrender.com/health",
     "https://acadfee-app.onrender.com/health",
-  ];
+    "https://api.exponentgrow.in/health",
+    "https://app.exponentgrow.in",
+  ].filter(Boolean);
+
   const ping = async () => {
     for (const url of targets) {
       try {
@@ -28,7 +32,7 @@ function startKeepAlive() {
   console.log("\u2705 Keep-alive started — pinging every 10 min");
 }
 
-// ── Backfill: fix students with null academy_id ─────────────────────────────────
+// ── Backfill ───────────────────────────────────────────────────────────────────
 async function backfillStudentAcademyIds() {
   try {
     const { rowCount } = await db.query(`
@@ -50,13 +54,13 @@ async function enforceTrialExpiry() {
       WHERE plan='trial' AND is_active=true AND trial_ends_at < NOW() - INTERVAL '1 day'
       RETURNING id, name
     `);
-    if (rows.length > 0) console.log(`[trial] Suspended ${rows.length} expired trial(s):`, rows.map(r=>r.name).join(", "));
+    if (rows.length > 0) console.log(`[trial] Suspended ${rows.length} expired trial(s):`, rows.map(r => r.name).join(", "));
   } catch (e) {
     console.error("[trial] Enforcement error:", e.message);
   }
 }
 
-// ── Auto-generate attendance ──────────────────────────────────────────────────────
+// ── Auto-generate attendance ─────────────────────────────────────────────────────
 async function autoGenerateAttendance(month, year) {
   try {
     const { rows: branches } = await db.query(`SELECT id, name FROM branches`);
@@ -102,9 +106,9 @@ async function sendAbsentNotifications(todayIST) {
     for (const student of notifyList) {
       const academyName = student.academy_name || "your academy";
       if (student.parent_fcm_token)
-        await sendNotification(student.parent_fcm_token, `\u26a0\ufe0f Absent Today \u2014 ${student.name}`, `${student.name} was not present at ${academyName} today (${todayIST}).`, { type:"absent_alert", student_id:String(student.id), date:todayIST });
+        await sendNotification(student.parent_fcm_token, `\u26a0\ufe0f Absent Today \u2014 ${student.name}`, `${student.name} was not present at ${academyName} today (${todayIST}).`, { type: "absent_alert", student_id: String(student.id), date: todayIST });
       if (student.fcm_token)
-        await sendNotification(student.fcm_token, `\u26a0\ufe0f You were absent today`, `You did not attend ${academyName} today (${todayIST}).`, { type:"absent_alert", date:todayIST });
+        await sendNotification(student.fcm_token, `\u26a0\ufe0f You were absent today`, `You did not attend ${academyName} today (${todayIST}).`, { type: "absent_alert", date: todayIST });
     }
   } catch (e) {
     console.error("[Cron] Absent notification error:", e.message);
@@ -113,34 +117,21 @@ async function sendAbsentNotifications(todayIST) {
 
 // ── Email daily reports to all active academies ──────────────────────────────────
 async function emailDailyReports(todayIST) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log("[daily-report] RESEND_API_KEY not set, skipping nightly email reports");
-    return;
-  }
+  if (!process.env.RESEND_API_KEY) return;
   try {
-    // Get all active academies that have an email address
     const { rows: academies } = await db.query(`
       SELECT id, name, email FROM academies
       WHERE is_active = true AND plan != 'lead' AND email IS NOT NULL AND email != ''
     `);
-
     const resend = new Resend(process.env.RESEND_API_KEY);
-    console.log(`[daily-report] Emailing reports to ${academies.length} academy/academies...`);
-
     for (const acad of academies) {
       try {
         const data = await fetchDayData(acad.id, todayIST);
         const s    = data.summary;
-        const fmt  = (n) => `\u20b9${parseFloat(n||0).toLocaleString("en-IN", { minimumFractionDigits:2 })}`;
-
-        // Only email if there was any activity today
         const hasActivity = s.payments_count > 0 || s.new_students > 0 || s.total_attendance > 0 || s.total_expenses > 0;
-        if (!hasActivity) {
-          console.log(`[daily-report] No activity for ${acad.name} — skipping email`);
-          continue;
-        }
-
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+        if (!hasActivity) continue;
+        const fmt = (n) => `\u20b9${parseFloat(n||0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+        const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
 <div style="max-width:560px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
   <div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:24px 28px;">
     <div style="font-size:18px;font-weight:900;color:#fff;">📊 Daily Report — ${todayIST}</div>
@@ -148,34 +139,17 @@ async function emailDailyReports(todayIST) {
   </div>
   <div style="padding:24px 28px;">
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
-      ${[
-        ["Collected",fmt(s.total_collected)],
-        ["Expenses",fmt(s.total_expenses)],
-        ["Net Cash",fmt(s.net_cash_flow)],
-        ["Payments",s.payments_count],
-        ["New Students",s.new_students],
-        ["Present/Total",`${s.present_count}/${s.total_attendance}`],
-      ].map(([l,v])=>`<div style="border:1px solid #eee;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:16px;font-weight:900;color:#6366f1;">${v}</div><div style="font-size:10px;color:#888;text-transform:uppercase;margin-top:3px;">${l}</div></div>`).join("")}
+      ${[["Collected",fmt(s.total_collected)],["Expenses",fmt(s.total_expenses)],["Net Cash",fmt(s.net_cash_flow)],["Payments",s.payments_count],["New Students",s.new_students],["Present/Total",`${s.present_count}/${s.total_attendance}`]]
+        .map(([l,v])=>`<div style="border:1px solid #eee;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:16px;font-weight:900;color:#6366f1;">${v}</div><div style="font-size:10px;color:#888;text-transform:uppercase;margin-top:3px;">${l}</div></div>`).join("")}
     </div>
-    ${data.payments.length > 0 ? `
-      <div style="margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;border-bottom:2px solid #6366f1;padding-bottom:4px;">💰 Payments Today (${data.payments.length})</div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-          <tr style="background:#6366f1;color:#fff;"><th style="padding:5px 8px;text-align:left;">Student</th><th style="padding:5px 8px;text-align:left;">Branch</th><th style="padding:5px 8px;text-align:right;">Amount</th><th style="padding:5px 8px;text-align:left;">Mode</th></tr>
-          ${data.payments.map((p,i)=>`<tr style="${i%2===1?"background:#f5f5ff":""}"><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.student_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.branch_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#6366f1;">${fmt(p.amount)}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.payment_mode}</td></tr>`).join("")}
-        </table>
-      </div>` : ""}
-    ${data.new_students.length > 0 ? `<div style="margin-bottom:16px;font-size:12px;"><span style="font-weight:700;color:#333;">🎓 New students:</span> ${data.new_students.map(st=>st.name).join(", ")}</div>` : ""}
-    ${data.expenses.length > 0 ? `<div style="margin-bottom:16px;font-size:12px;"><span style="font-weight:700;color:#333;">💸 Expenses:</span> ${fmt(s.total_expenses)} across ${data.expenses.length} item(s)</div>` : ""}
-    <div style="margin-top:16px;padding:10px 14px;background:#f5f5ff;border-radius:8px;font-size:11px;color:#555;">
-      📎 Log in to your dashboard to download the full Excel report.
-    </div>
+    ${data.payments.length > 0 ? `<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;border-bottom:2px solid #6366f1;padding-bottom:4px;">💰 Payments (${data.payments.length})</div><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="background:#6366f1;color:#fff;"><th style="padding:5px 8px;text-align:left;">Student</th><th style="padding:5px 8px;text-align:left;">Branch</th><th style="padding:5px 8px;text-align:right;">Amount</th><th style="padding:5px 8px;text-align:left;">Mode</th></tr>${data.payments.map((p,i)=>`<tr style="${i%2===1?"background:#f5f5ff":""}"><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.student_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.branch_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#6366f1;">${fmt(p.amount)}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.payment_mode}</td></tr>`).join("")}</table></div>` : ""}
+    ${data.new_students.length > 0 ? `<div style="font-size:12px;margin-bottom:12px;"><span style="font-weight:700;">🎓 New students:</span> ${data.new_students.map(st=>st.name).join(", ")}</div>` : ""}
+    <div style="margin-top:16px;padding:10px 14px;background:#f5f5ff;border-radius:8px;font-size:11px;color:#555;">Log in at <a href="https://app.exponentgrow.in" style="color:#6366f1;">app.exponentgrow.in</a> to download the full Excel report.</div>
   </div>
-  <div style="background:#1a1f35;padding:12px 28px;text-align:center;font-size:10px;color:rgba(255,255,255,0.4);">Exponent Platform · Daily Report · ${todayIST}</div>
+  <div style="background:#1a1f35;padding:12px 28px;text-align:center;font-size:10px;color:rgba(255,255,255,0.4);">Exponent Platform · exponentgrow.in · ${todayIST}</div>
 </div></body></html>`;
-
         await resend.emails.send({
-          from:    "Exponent Reports <onboarding@resend.dev>",
+          from:    "Exponent Reports <noreply@exponentgrow.in>",
           to:      acad.email,
           subject: `\uD83D\uDCCA Daily Report ${todayIST} — ${acad.name}`,
           html,
@@ -194,19 +168,15 @@ async function emailDailyReports(todayIST) {
 async function runNightlyJob() {
   const nowIST   = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" });
   const todayIST = nowIST.split(",")[0].trim();
-
   if (lastFiredDate === todayIST) return;
   lastFiredDate = todayIST;
-
   const [y, m] = todayIST.split("-").map(Number);
   console.log(`\n[Cron] \u23f0 Nightly job starting for ${todayIST}`);
-
   await autoGenerateAttendance(m, y);
   await sendAbsentNotifications(todayIST);
   await enforceTrialExpiry();
   await backfillStudentAcademyIds();
-  await emailDailyReports(todayIST);   // ← NEW: emails daily report to all academies
-
+  await emailDailyReports(todayIST);
   console.log(`[Cron] \u2705 Nightly job complete for ${todayIST}`);
 }
 
@@ -215,7 +185,7 @@ function startAbsentCron() {
   console.log("\u2705 Nightly cron started — fires at 10:00 PM IST");
   setInterval(() => {
     const nowIST = new Date().toLocaleString("en-US", {
-      timeZone:"Asia/Kolkata", hour:"2-digit", minute:"2-digit", hour12:false,
+      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
     });
     if (nowIST === "22:00") runNightlyJob();
   }, 60 * 1000);
