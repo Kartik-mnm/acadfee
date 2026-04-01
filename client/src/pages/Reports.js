@@ -1,36 +1,52 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
-const fmt = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
+const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+const API_BASE = "https://acadfee.onrender.com";
 
-const API_BASE = process.env.REACT_APP_API_URL || "https://acadfee.onrender.com";
-
-function sendWhatsApp(phone, studentName, balance, period, dueDate, branchName) {
+// ── WhatsApp reminder — uses academy name dynamically ──────────────────────────
+function sendWhatsApp(phone, studentName, balance, period, dueDate, branchName, academyName) {
   const cleanPhone = phone?.replace(/\D/g, "");
   if (!cleanPhone) { alert("No phone number available for this student!"); return; }
   const indiaPhone = cleanPhone.startsWith("91") ? cleanPhone : `91${cleanPhone}`;
-  const message = `Hello! 👋\n\nThis is a reminder from *NISHCHAY ACADEMY* 🎓\n\nStudent: *${studentName}*\nPeriod: *${period || "—"}*\nDue Date: *${dueDate}*\nBalance Due: *${fmt(balance)}*\nBranch: *${branchName}*\n\nKindly pay the pending fees at the earliest to avoid inconvenience.\n\nThank you! 🙏\n— Nishchay Academy Team`;
+  const acad = academyName || "the Academy";
+  const message =
+    `Hello! 👋\n\nThis is a fee reminder from *${acad}* 🎓\n\n` +
+    `Student: *${studentName}*\n` +
+    `Period: *${period || "—"}*\n` +
+    `Due Date: *${dueDate}*\n` +
+    `Balance Due: *${fmt(balance)}*\n` +
+    `Branch: *${branchName}*\n\n` +
+    `Kindly pay the pending fees at the earliest to avoid inconvenience.\n\n` +
+    `Thank you! 🙏\n— ${acad} Team`;
   window.open(`https://wa.me/${indiaPhone}?text=${encodeURIComponent(message)}`, "_blank");
 }
 
 export default function Reports() {
-  const { user } = useAuth();
-  const [overdue,      setOverdue]      = useState([]);
-  const [branchStats,  setBranchStats]  = useState([]);
-  const [tab,          setTab]          = useState("daily");
-  const [reportDate,   setReportDate]   = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
-  const [reportData,   setReportData]   = useState(null);
-  const [reportLoading,setReportLoading]= useState(false);
-  const [emailSending, setEmailSending] = useState(false);
-  const [emailMsg,     setEmailMsg]     = useState("");
+  const { user }    = useAuth();
+  const { academy } = useAcademy();
+  const academyName = academy?.name || "Academy";
+
+  const [overdue,       setOverdue]       = useState([]);
+  const [branchStats,   setBranchStats]   = useState([]);
+  const [tab,           setTab]           = useState("daily");
+
+  // Always default to today in IST
+  const todayIST = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const [reportDate,    setReportDate]    = useState(todayIST);
+  const [reportData,    setReportData]    = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [emailSending,  setEmailSending]  = useState(false);
+  const [emailMsg,      setEmailMsg]      = useState("");
 
   useEffect(() => {
-    API.get("/reports/overdue").then((r) => setOverdue(r.data));
-    if (user.role === "super_admin") API.get("/reports/by-branch").then((r) => setBranchStats(r.data));
+    API.get("/reports/overdue").then((r) => setOverdue(r.data)).catch(() => {});
+    if (user.role === "super_admin") API.get("/reports/by-branch").then((r) => setBranchStats(r.data)).catch(() => {});
   }, []);
 
-  // Load daily report data when tab/date changes
+  // Reload report whenever date changes OR tab switches to daily
   useEffect(() => {
     if (tab !== "daily") return;
     setReportLoading(true);
@@ -41,42 +57,41 @@ export default function Reports() {
       .finally(() => setReportLoading(false));
   }, [tab, reportDate]);
 
-  const downloadExcel = () => {
+  // ── Download Excel via fetch+blob (passes auth header) ─────────────────────
+  const downloadExcel = async () => {
     const token = localStorage.getItem("token");
-    const url   = `${API_BASE}/api/daily-report/excel?date=${reportDate}`;
-    // Use anchor trick to pass auth header via URL — works because the server accepts token in query too
-    // Actually: open in new tab (auth token is in cookie/header — won't work directly)
-    // Better: create a temporary fetch + blob download
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
-      .then(blob => {
-        const a  = document.createElement("a");
-        a.href   = URL.createObjectURL(blob);
-        a.download = `daily-report-${reportDate}.xlsx`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      })
-      .catch(() => alert("Failed to download. Please try again."));
+    try {
+      const res = await fetch(`${API_BASE}/api/daily-report/excel?date=${reportDate}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { alert("Failed to generate Excel. Try again."); return; }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `daily-report-${reportDate}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch { alert("Download failed. Please try again."); }
   };
 
-  const openPrintView = () => {
+  // ── Open printable HTML in new tab ──────────────────────────────────────────
+  const openPrintView = async () => {
     const token = localStorage.getItem("token");
-    // Fetch HTML content and open in new window
-    fetch(`${API_BASE}/api/daily-report/print?date=${reportDate}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(r => r.text())
-      .then(html => {
-        const w = window.open("", "_blank");
-        w.document.write(html);
-        w.document.close();
-      })
-      .catch(() => alert("Failed to open print view."));
+    try {
+      const res = await fetch(`${API_BASE}/api/daily-report/print?date=${reportDate}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { alert("Failed to generate print view. Try again."); return; }
+      const html = await res.text();
+      const w = window.open("", "_blank");
+      if (!w) { alert("Popup blocked — please allow popups for this site."); return; }
+      w.document.write(html);
+      w.document.close();
+    } catch { alert("Print view failed. Please try again."); }
   };
 
   const sendEmail = async () => {
-    setEmailSending(true);
-    setEmailMsg("");
+    setEmailSending(true); setEmailMsg("");
     try {
       const r = await API.post(`/daily-report/email?date=${reportDate}`);
       setEmailMsg("✅ " + r.data.message);
@@ -84,7 +99,7 @@ export default function Reports() {
       setEmailMsg("❌ " + (e.response?.data?.error || "Failed to send email"));
     } finally {
       setEmailSending(false);
-      setTimeout(() => setEmailMsg(""), 5000);
+      setTimeout(() => setEmailMsg(""), 6000);
     }
   };
 
@@ -101,10 +116,10 @@ export default function Reports() {
     if (!window.confirm(`Send WhatsApp reminders to all ${overdue.length} overdue students?`)) return;
     overdue.forEach((r, i) => {
       setTimeout(() => {
-        const phone = r.parent_phone || r.phone;
+        const phone   = r.parent_phone || r.phone;
         const balance = r.amount_due - r.amount_paid;
         const dueDate = new Date(r.due_date).toLocaleDateString("en-IN");
-        sendWhatsApp(phone, r.student_name, balance, r.period_label, dueDate, r.branch_name);
+        sendWhatsApp(phone, r.student_name, balance, r.period_label, dueDate, r.branch_name, academyName);
       }, i * 1500);
     });
   };
@@ -120,42 +135,41 @@ export default function Reports() {
       {/* Tabs */}
       <div className="gap-row" style={{ marginBottom: 20 }}>
         {[
-          { id: "daily",     label: "📥 Daily Report" },
-          { id: "overdue",   label: "⚠ Overdue List" },
-          { id: "defaulters",label: "📋 Defaulter List" },
+          { id: "daily",      label: "📥 Daily Report"    },
+          { id: "overdue",    label: "⚠ Overdue List"     },
+          { id: "defaulters", label: "📋 Defaulter List"  },
           ...(user.role === "super_admin" ? [{ id: "branches", label: "🏢 Branch Summary" }] : []),
         ].map((t) => (
-          <button key={t.id} className={`btn ${tab === t.id ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab(t.id)}>
+          <button key={t.id}
+            className={`btn ${tab === t.id ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setTab(t.id)}>
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* ── DAILY REPORT TAB ────────────────────────────────────────────────── */}
+      {/* ── DAILY REPORT ───────────────────────────────────────────────────────── */}
       {tab === "daily" && (
         <div>
-          {/* Controls */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Report Date</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Report Date
+                </label>
                 <input
                   type="date"
                   value={reportDate}
-                  max={new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })}
+                  max={todayIST()}
                   onChange={e => setReportDate(e.target.value)}
                   style={{ fontSize: 14, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--text1)" }}
                 />
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", paddingBottom: 0, marginTop: "auto" }}>
-                <button className="btn btn-primary btn-sm" onClick={downloadExcel} disabled={reportLoading}>
-                  📊 Download Excel (.xlsx)
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={openPrintView} disabled={reportLoading}>
-                  🖨 Print / Save as PDF
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={sendEmail} disabled={emailSending || reportLoading}>
-                  {emailSending ? "Sending..." : "📧 Email Report"}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn btn-primary btn-sm"   onClick={downloadExcel}  disabled={reportLoading}>📊 Download Excel (.xlsx)</button>
+                <button className="btn btn-secondary btn-sm" onClick={openPrintView}  disabled={reportLoading}>🖨 Print / Save as PDF</button>
+                <button className="btn btn-secondary btn-sm" onClick={sendEmail}      disabled={emailSending || reportLoading}>
+                  {emailSending ? "Sending…" : "📧 Email Report"}
                 </button>
               </div>
             </div>
@@ -166,19 +180,19 @@ export default function Reports() {
             )}
           </div>
 
-          {/* Summary cards */}
           {reportLoading ? (
-            <div className="spinner">Loading report...</div>
+            <div className="card"><div className="loading">Loading report…</div></div>
           ) : reportData ? (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+              {/* Summary cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
                 {[
-                  { label: "Collected",      val: fmt(s.total_collected),   color: "var(--green)"  },
-                  { label: "Expenses",       val: fmt(s.total_expenses),    color: "var(--red)"    },
-                  { label: "Net Cash Flow",  val: fmt(s.net_cash_flow),     color: "var(--accent)" },
-                  { label: "Payments",       val: s.payments_count,         color: "var(--accent)" },
-                  { label: "New Students",   val: s.new_students,           color: "var(--green)"  },
-                  { label: "Present / Total",val: `${s.present_count}/${s.total_attendance}`, color: "var(--cyan)" },
+                  { label: "Collected",       val: fmt(s.total_collected),  color: "var(--green)"  },
+                  { label: "Expenses",         val: fmt(s.total_expenses),   color: "var(--red)"    },
+                  { label: "Net Cash Flow",    val: fmt(s.net_cash_flow),    color: "var(--accent)" },
+                  { label: "Payments",         val: s.payments_count,        color: "var(--accent)" },
+                  { label: "New Students",     val: s.new_students,          color: "var(--green)"  },
+                  { label: "Present / Total",  val: `${s.present_count}/${s.total_attendance}`, color: "var(--cyan)" },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: c.color }}>{c.val}</div>
@@ -187,19 +201,17 @@ export default function Reports() {
                 ))}
               </div>
 
-              {/* Payments */}
+              {/* Payments table */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title">💰 Payments ({reportData.payments.length})</div>
-                {reportData.payments.length === 0 ? (
-                  <div className="empty-state"><div className="empty-icon">💳</div><div className="empty-text">No payments today</div></div>
-                ) : (
-                  <div className="table-wrap">
-                    <table>
+                {reportData.payments.length === 0
+                  ? <div className="empty-state"><div className="empty-icon">💳</div><div className="empty-text">No payments on this date</div></div>
+                  : <div className="table-wrap"><table>
                       <thead><tr><th>Receipt</th><th>Student</th><th>Branch</th><th>Period</th><th>Amount</th><th>Mode</th></tr></thead>
                       <tbody>
                         {reportData.payments.map((p, i) => (
                           <tr key={i}>
-                            <td className="mono text-muted">{p.receipt_no}</td>
+                            <td className="mono text-muted" style={{ fontSize: 11 }}>{p.receipt_no}</td>
                             <td style={{ fontWeight: 600 }}>{p.student_name}</td>
                             <td className="text-muted">{p.branch_name}</td>
                             <td className="text-muted">{p.period_label || "—"}</td>
@@ -208,19 +220,16 @@ export default function Reports() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
-                  </div>
-                )}
+                    </table></div>
+                }
               </div>
 
               {/* New Students */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title">🎓 New Students ({reportData.new_students.length})</div>
-                {reportData.new_students.length === 0 ? (
-                  <div className="empty-state"><div className="empty-icon">👤</div><div className="empty-text">No new students today</div></div>
-                ) : (
-                  <div className="table-wrap">
-                    <table>
+                {reportData.new_students.length === 0
+                  ? <div className="empty-state"><div className="empty-icon">👤</div><div className="empty-text">No new students on this date</div></div>
+                  : <div className="table-wrap"><table>
                       <thead><tr><th>Name</th><th>Phone</th><th>Branch</th><th>Batch</th></tr></thead>
                       <tbody>
                         {reportData.new_students.map((st, i) => (
@@ -232,55 +241,72 @@ export default function Reports() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
-                  </div>
-                )}
+                    </table></div>
+                }
               </div>
 
               {/* Expenses */}
               {reportData.expenses.length > 0 && (
                 <div className="card" style={{ marginBottom: 16 }}>
                   <div className="card-title">💸 Expenses ({reportData.expenses.length})</div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Description</th><th>Category</th><th>Branch</th><th>Amount</th></tr></thead>
-                      <tbody>
-                        {reportData.expenses.map((e, i) => (
-                          <tr key={i}>
-                            <td>{e.description}</td>
-                            <td className="text-muted">{e.category || "—"}</td>
-                            <td className="text-muted">{e.branch_name}</td>
-                            <td className="mono" style={{ color: "var(--red)", fontWeight: 700 }}>{fmt(e.amount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <div className="table-wrap"><table>
+                    <thead><tr><th>Description</th><th>Category</th><th>Branch</th><th>Amount</th></tr></thead>
+                    <tbody>
+                      {reportData.expenses.map((e, i) => (
+                        <tr key={i}>
+                          <td>{e.description}</td>
+                          <td className="text-muted">{e.category || "—"}</td>
+                          <td className="text-muted">{e.branch_name}</td>
+                          <td className="mono" style={{ color: "var(--red)", fontWeight: 700 }}>{fmt(e.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table></div>
                 </div>
               )}
             </>
           ) : (
-            <div className="card"><div className="empty-state"><div className="empty-icon">📊</div><div className="empty-text">No data for this date</div></div></div>
+            <div className="card">
+              <div className="empty-state">
+                <div className="empty-icon">📊</div>
+                <div className="empty-text">No data for {reportDate}</div>
+                <div className="empty-sub">Try a different date or check if there was any activity that day.</div>
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      {/* ── OVERDUE TAB ─────────────────────────────────────────────────────── */}
+      {/* ── OVERDUE LIST ───────────────────────────────────────────────────────── */}
       {tab === "overdue" && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Overdue Fee Records ({overdue.length})</div>
+            <div className="card-title" style={{ marginBottom: 0 }}>⚠ Overdue Fee Records ({overdue.length})</div>
             <div className="gap-row">
-              <button className="btn btn-success btn-sm" onClick={sendBulkReminders} disabled={overdue.length === 0}>📱 Send All Reminders</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(overdue, "overdue-fees.csv")}>⬇ Export CSV</button>
+              <button className="btn btn-success btn-sm" onClick={sendBulkReminders} disabled={overdue.length === 0}>
+                📱 Send All WhatsApp Reminders
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(overdue, "overdue-fees.csv")}>
+                ⬇ Export CSV
+              </button>
             </div>
           </div>
           {overdue.length === 0 ? (
-            <div className="empty-state"><div className="empty-icon">✅</div><div className="empty-text">No overdue records!</div><div className="empty-sub">All students are up to date.</div></div>
+            <div className="empty-state">
+              <div className="empty-icon">✅</div>
+              <div className="empty-text">No overdue records!</div>
+              <div className="empty-sub">All students are up to date.</div>
+            </div>
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Student</th>{user.role === "super_admin" && <th>Branch</th>}<th>Batch</th><th>Period</th><th>Due Date</th><th>Balance</th><th>Contact</th><th>Remind</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    {user.role === "super_admin" && <th>Branch</th>}
+                    <th>Batch</th><th>Period</th><th>Due Date</th><th>Balance</th><th>Contact</th><th>WhatsApp</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {overdue.map((r) => {
                     const balance = r.amount_due - r.amount_paid;
@@ -292,10 +318,20 @@ export default function Reports() {
                         {user.role === "super_admin" && <td className="text-muted">{r.branch_name}</td>}
                         <td className="text-muted">{r.batch_name || "—"}</td>
                         <td>{r.period_label || "—"}</td>
-                        <td style={{ color: "var(--red)" }}>{dueDate}</td>
+                        <td style={{ color: "var(--red)", fontWeight: 600 }}>{dueDate}</td>
                         <td className="mono" style={{ color: "var(--red)", fontWeight: 700 }}>{fmt(balance)}</td>
-                        <td><div className="mono text-sm">{r.phone}</div>{r.parent_phone && <div className="mono text-sm text-muted">{r.parent_phone}</div>}</td>
-                        <td><button className="btn btn-success btn-sm" onClick={() => sendWhatsApp(phone, r.student_name, balance, r.period_label, dueDate, r.branch_name)}>📱 WhatsApp</button></td>
+                        <td>
+                          <div className="mono text-sm">{r.phone}</div>
+                          {r.parent_phone && <div className="mono text-sm text-muted">{r.parent_phone}</div>}
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-success btn-sm"
+                            onClick={() => sendWhatsApp(phone, r.student_name, balance, r.period_label, dueDate, r.branch_name, academyName)}
+                          >
+                            📱 Remind
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -306,19 +342,34 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── DEFAULTERS TAB ──────────────────────────────────────────────────── */}
+      {/* ── DEFAULTERS LIST ────────────────────────────────────────────────────── */}
       {tab === "defaulters" && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div className="card-title" style={{ marginBottom: 0 }}>Fee Defaulter List ({overdue.length})</div>
-            <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(overdue.map((r) => ({ "Student Name": r.student_name, "Branch": r.branch_name, "Batch": r.batch_name || "—", "Period": r.period_label || "—", "Due Date": new Date(r.due_date).toLocaleDateString("en-IN"), "Amount Due": r.amount_due, "Amount Paid": r.amount_paid, "Balance": r.amount_due - r.amount_paid, "Phone": r.phone, "Parent Phone": r.parent_phone || "—" })), "defaulters.csv")}>⬇ Export CSV</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(
+              overdue.map((r) => ({
+                "Student Name": r.student_name, "Branch": r.branch_name,
+                "Batch": r.batch_name || "—", "Period": r.period_label || "—",
+                "Due Date": new Date(r.due_date).toLocaleDateString("en-IN"),
+                "Amount Due": r.amount_due, "Amount Paid": r.amount_paid,
+                "Balance": r.amount_due - r.amount_paid,
+                "Phone": r.phone, "Parent Phone": r.parent_phone || "—",
+              })), "defaulters.csv"
+            )}>⬇ Export CSV</button>
           </div>
           {overdue.length === 0 ? (
             <div className="empty-state"><div className="empty-icon">✅</div><div className="empty-text">No defaulters!</div></div>
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>#</th><th>Student</th>{user.role === "super_admin" && <th>Branch</th>}<th>Batch</th><th>Period</th><th>Balance</th><th>Phone</th><th>Parent Phone</th><th>Action</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>#</th><th>Student</th>
+                    {user.role === "super_admin" && <th>Branch</th>}
+                    <th>Batch</th><th>Period</th><th>Balance</th><th>Phone</th><th>Parent Phone</th><th>Action</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {overdue.map((r, i) => {
                     const balance = r.amount_due - r.amount_paid;
@@ -334,7 +385,12 @@ export default function Reports() {
                         <td className="mono" style={{ color: "var(--red)", fontWeight: 700 }}>{fmt(balance)}</td>
                         <td className="mono text-sm">{r.phone || "—"}</td>
                         <td className="mono text-sm">{r.parent_phone || "—"}</td>
-                        <td><button className="btn btn-success btn-sm" onClick={() => sendWhatsApp(phone, r.student_name, balance, r.period_label, dueDate, r.branch_name)}>📱 Remind</button></td>
+                        <td>
+                          <button className="btn btn-success btn-sm"
+                            onClick={() => sendWhatsApp(phone, r.student_name, balance, r.period_label, dueDate, r.branch_name, academyName)}>
+                            📱 Remind
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -345,7 +401,7 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── BRANCHES TAB ────────────────────────────────────────────────────── */}
+      {/* ── BRANCH SUMMARY ─────────────────────────────────────────────────────── */}
       {tab === "branches" && user.role === "super_admin" && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
