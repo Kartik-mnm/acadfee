@@ -193,13 +193,12 @@ router.delete("/:id", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to delete student" }); }
 });
 
-// Send email summary — FIX: verify student belongs to this academy before sending
+// Send fee summary email — now passes academy info for branding
 router.post("/:id/send-email", auth, async (req, res) => {
   if (req.user.role === "student" && req.user.id !== parseInt(req.params.id))
     return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    // Verify student belongs to this academy (unless student is viewing own data)
     if (req.user.role !== "student" && aid) {
       const { rows: check } = await db.query(
         `SELECT id FROM students WHERE id=$1 AND academy_id=$2`, [req.params.id, aid]
@@ -207,16 +206,25 @@ router.post("/:id/send-email", auth, async (req, res) => {
       if (!check[0]) return res.status(403).json({ error: "Student does not belong to your academy" });
     }
     const { sendFeeSummaryEmail } = require("../email");
-    const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
+    const [stuRes, feeRes, payRes, attRes, testRes, acadRes] = await Promise.all([
       db.query(`SELECT s.*, b.name AS batch_name, br.name AS branch_name FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id WHERE s.id=$1`, [req.params.id]),
       db.query("SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC", [req.params.id]),
       db.query(`SELECT p.*, fr.period_label FROM payments p JOIN fee_records fr ON fr.id=p.fee_record_id WHERE p.student_id=$1 ORDER BY p.paid_on DESC`, [req.params.id]),
       db.query("SELECT * FROM attendance WHERE student_id=$1 ORDER BY year DESC, month DESC", [req.params.id]),
       db.query(`SELECT tr.*, t.name AS test_name, t.subject, t.total_marks, t.test_date, ROUND((tr.marks/t.total_marks::numeric)*100,1) AS percentage FROM test_results tr JOIN tests t ON t.id=tr.test_id WHERE tr.student_id=$1 ORDER BY t.test_date DESC`, [req.params.id]),
+      // FIX: fetch academy info for dynamic branding
+      aid ? db.query(`SELECT name, phone, primary_color, accent_color FROM academies WHERE id=$1`, [aid]) : Promise.resolve({ rows: [{}] }),
     ]);
     if (!stuRes.rows[0]) return res.status(404).json({ error: "Student not found" });
     if (!stuRes.rows[0].email) return res.status(400).json({ error: "Student has no email address" });
-    const result = await sendFeeSummaryEmail({ student: stuRes.rows[0], fees: feeRes.rows, payments: payRes.rows, attendance: attRes.rows, tests: testRes.rows });
+    const result = await sendFeeSummaryEmail({
+      student:    stuRes.rows[0],
+      fees:       feeRes.rows,
+      payments:   payRes.rows,
+      attendance: attRes.rows,
+      tests:      testRes.rows,
+      academy:    acadRes.rows[0] || {}, // pass academy for dynamic name + colors
+    });
     res.json(result);
   } catch (e) { res.status(500).json({ error: "Failed to send email" }); }
 });

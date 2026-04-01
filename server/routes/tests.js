@@ -2,7 +2,7 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
-// List tests — FIX: scoped to academy
+// List tests — scoped to academy
 router.get("/", auth, branchFilter, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -31,14 +31,16 @@ router.get("/", auth, branchFilter, async (req, res) => {
   }
 });
 
-// Create test — FIX: verify branch belongs to this academy
+// Create test — FIX: subject is now optional (was required, causing 400)
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { branch_id, batch_id, name, subject, total_marks, test_date } = req.body;
-    if (!name || !subject || !total_marks || !test_date)
-      return res.status(400).json({ error: "name, subject, total_marks and test_date are required" });
+    // FIX: only name, total_marks, test_date are required — subject is optional
+    if (!name || !total_marks || !test_date)
+      return res.status(400).json({ error: "name, total_marks and test_date are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
+    if (!bid) return res.status(400).json({ error: "branch_id is required" });
     const aid = req.academyId;
 
     if (aid) {
@@ -49,7 +51,7 @@ router.post("/", auth, async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO tests (branch_id, batch_id, name, subject, total_marks, test_date)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [bid, batch_id, name, subject, total_marks, test_date]
+      [bid, batch_id || null, name, subject || null, total_marks, test_date]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -58,7 +60,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// Delete test — FIX: scope to academy
+// Delete test — scoped to academy
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -78,12 +80,11 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-// Get results for a test — FIX: scope to academy
+// Get results for a test — scoped to academy
 router.get("/:id/results", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    // Verify test belongs to this academy
     const { rows: testRows } = await db.query(
       `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`,
       [req.params.id]
@@ -91,7 +92,6 @@ router.get("/:id/results", auth, async (req, res) => {
     if (!testRows[0]) return res.status(404).json({ error: "Test not found" });
     if (aid && testRows[0].academy_id && testRows[0].academy_id !== aid)
       return res.status(403).json({ error: "Access denied: test belongs to a different academy" });
-
     const { rows } = await db.query(
       `SELECT tr.*, s.name AS student_name, s.phone,
               ROUND((tr.marks / t.total_marks::numeric) * 100, 1) AS percentage
@@ -101,14 +101,15 @@ router.get("/:id/results", auth, async (req, res) => {
        WHERE tr.test_id=$1 ORDER BY tr.marks DESC`,
       [req.params.id]
     );
-    res.json(rows);
+    // Return as { data: [...] } so frontend can destructure correctly
+    res.json({ data: rows });
   } catch (e) {
     console.error("Get results error:", e.message);
     res.status(500).json({ error: "Failed to fetch results" });
   }
 });
 
-// Save bulk results — FIX: verify test belongs to this academy
+// Save bulk results — verify test belongs to this academy
 router.post("/:id/results", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { results } = req.body;
@@ -126,7 +127,6 @@ router.post("/:id/results", auth, async (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: "Failed to verify test ownership" });
   }
-
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
@@ -146,18 +146,15 @@ router.post("/:id/results", auth, async (req, res) => {
     await client.query("ROLLBACK");
     console.error("Bulk results save error:", e.message);
     res.status(500).json({ error: "Failed to save results" });
-  } finally {
-    client.release();
-  }
+  } finally { client.release(); }
 });
 
-// Student performance summary — FIX: also verify academy for admins
+// Student performance summary
 router.get("/student/:studentId", auth, async (req, res) => {
   if (req.user.role === "student" && req.user.id !== parseInt(req.params.studentId))
     return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    // Verify student belongs to this academy (skip check for student viewing own data)
     if (req.user.role !== "student" && aid) {
       const { rows: sRows } = await db.query(
         `SELECT id FROM students WHERE id=$1 AND academy_id=$2`, [req.params.studentId, aid]
