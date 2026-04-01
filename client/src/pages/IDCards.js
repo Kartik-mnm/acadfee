@@ -14,7 +14,6 @@ export default function IDCards() {
   const { user }    = useAuth();
   const { academy } = useAcademy();
 
-  // Dynamic academy info — never hardcoded
   const academyName  = academy?.name  || "Academy";
   const academyPhone = academy?.phone  || "";
   const academyPhone2= academy?.phone2 || "";
@@ -27,9 +26,9 @@ export default function IDCards() {
     : "#1565c0";
   const contactLine  = [academyPhone, academyPhone2].filter(Boolean).join(" / ");
 
-  const [students, setStudents]         = useState([]);
-  const [branches, setBranches]         = useState([]);
-  const [batches,  setBatches]          = useState([]);
+  const [students,     setStudents]     = useState([]);
+  const [branches,     setBranches]     = useState([]);
+  const [batches,      setBatches]      = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
   const [filterBatch,  setFilterBatch]  = useState("");
   const [search,       setSearch]       = useState("");
@@ -63,14 +62,20 @@ export default function IDCards() {
   }, [selected]);
 
   const backfillRollNumbers = async () => {
-    if (!window.confirm("Assign branch-based roll numbers to all students that don't have one yet?")) return;
+    if (!window.confirm("Assign sequential roll numbers to all students that don't have one yet? (Students who already have roll numbers will not be changed.)")) return;
     setBackfilling(true);
     try {
       const { data } = await API.post("/students/backfill-roll-numbers");
       setBackfillMsg(`✅ ${data.message}`);
       loadStudents();
+      // Refresh selected student if they were updated
+      if (selected) {
+        const updated = await fetchAllStudents();
+        const fresh = updated.find(s => s.id === selected.id);
+        if (fresh) setSelected(fresh);
+      }
     } catch (e) {
-      setBackfillMsg("⚠️ " + (e.response?.data?.error || "Failed"));
+      setBackfillMsg("⚠️ " + (e.response?.data?.error || "Failed to assign roll numbers"));
     } finally {
       setBackfilling(false);
       setTimeout(() => setBackfillMsg(""), 5000);
@@ -92,8 +97,8 @@ export default function IDCards() {
   };
 
   const getRollDisplay = (s) => s?.roll_no || `NA-${String(s?.id || 0).padStart(5, "0")}`;
-  const studentId = selected ? getRollDisplay(selected) : "";
-  const missingRollCount = students.filter((s) => !s.roll_no).length;
+  const studentId    = selected ? getRollDisplay(selected) : "";
+  const missingCount = students.filter((s) => !s.roll_no).length;
 
   const printCard = () => {
     const ended = isBatchEnded(selected);
@@ -179,20 +184,39 @@ export default function IDCards() {
           <div className="page-title">Student ID Cards</div>
           <div className="page-sub">Generate and print ID cards with QR attendance</div>
         </div>
-        {user.role === "super_admin" && missingRollCount > 0 && (
-          <button className="btn btn-secondary" onClick={backfillRollNumbers} disabled={backfilling}
-            title={`${missingRollCount} students missing roll number`}>
-            {backfilling ? "⏳ Assigning…" : `🎫 Fix Roll Numbers (${missingRollCount})`}
-          </button>
+        {/* Always show sync button — not just when missing */}
+        {user.role === "super_admin" && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {missingCount > 0 && (
+              <span style={{ fontSize: 12, color: "var(--yellow)", background: "rgba(245,158,11,0.1)", padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(245,158,11,0.2)" }}>
+                ⚠ {missingCount} students missing roll no.
+              </span>
+            )}
+            <button
+              className="btn btn-secondary"
+              onClick={backfillRollNumbers}
+              disabled={backfilling}
+              title="Assign sequential roll numbers to students that don't have one yet"
+            >
+              {backfilling ? "⏳ Syncing…" : "🔄 Sync Roll Numbers"}
+            </button>
+          </div>
         )}
       </div>
 
       {backfillMsg && (
-        <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>{backfillMsg}</div>
+        <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>
+          {backfillMsg}
+        </div>
       )}
 
       <div className="filters-bar">
-        <input className="search-input" placeholder="Search student or roll no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input
+          className="search-input"
+          placeholder="Search student or roll no…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
@@ -206,34 +230,45 @@ export default function IDCards() {
       </div>
 
       <div className="grid-2">
+        {/* Student list */}
         <div className="card">
           <div className="card-title">Select Student ({filtered.length})</div>
-          {filtered.length === 0 ? <div className="empty-state"><div className="empty-text">No students found</div></div>
-          : (
-            <div style={{ maxHeight: 500, overflowY: "auto" }}>
-              {filtered.map((s) => (
-                <div key={s.id} onClick={() => setSelected(s)} style={{
-                  padding: "10px 14px", borderRadius: 8, cursor: "pointer", marginBottom: 4,
-                  background: selected?.id === s.id ? "rgba(59,130,246,0.12)" : "var(--bg3)",
-                  border: `1px solid ${selected?.id === s.id ? "rgba(59,130,246,0.3)" : "transparent"}`,
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  opacity: isBatchEnded(s) ? 0.5 : 1,
-                  transition: "all 0.15s",
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{s.name}</div>
-                    <div className="text-muted text-sm">{s.batch_name || "No batch"} · {s.branch_name}</div>
+          {filtered.length === 0
+            ? <div className="empty-state"><div className="empty-text">No students found</div></div>
+            : (
+              <div style={{ maxHeight: 500, overflowY: "auto" }}>
+                {filtered.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => setSelected(s)}
+                    style={{
+                      padding: "10px 14px", borderRadius: 8, cursor: "pointer", marginBottom: 4,
+                      background: selected?.id === s.id ? "rgba(59,130,246,0.12)" : "var(--bg3)",
+                      border: `1px solid ${selected?.id === s.id ? "rgba(59,130,246,0.3)" : "transparent"}`,
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      opacity: isBatchEnded(s) ? 0.5 : 1,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{s.name}</div>
+                      <div className="text-muted text-sm">{s.batch_name || "No batch"} · {s.branch_name}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div className="text-muted text-sm mono" style={{ color: s.roll_no ? "var(--accent)" : "var(--red)" }}>
+                        {getRollDisplay(s)}
+                      </div>
+                      {!s.roll_no && <div style={{ fontSize: 9, color: "var(--red)" }}>no roll no.</div>}
+                      {isBatchEnded(s) && <div style={{ fontSize: 10, color: "var(--red)" }}>Batch ended</div>}
+                    </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div className="text-muted text-sm mono">{getRollDisplay(s)}</div>
-                    {isBatchEnded(s) && <div style={{ fontSize: 10, color: "var(--red)" }}>Batch ended</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )
+          }
         </div>
 
+        {/* ID Card Preview */}
         <div className="card">
           <div className="card-title">ID Card Preview</div>
           {!selected ? (
@@ -249,7 +284,7 @@ export default function IDCards() {
                   ⚠️ Batch ended — ID card is INACTIVE
                 </div>
               )}
-              {/* Preview */}
+              {/* Preview card */}
               <div style={{ width: 220, background: "white", borderRadius: 16, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.3)", fontFamily: "Inter, sans-serif", position: "relative" }}>
                 {isBatchEnded(selected) && (
                   <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%) rotate(-30deg)", fontSize: 18, fontWeight: 900, color: "rgba(200,0,0,0.2)", border: "3px solid rgba(200,0,0,0.15)", padding: "4px 10px", borderRadius: 4, whiteSpace: "nowrap", zIndex: 20, pointerEvents: "none" }}>INACTIVE</div>
@@ -278,15 +313,23 @@ export default function IDCards() {
                   ))}
                 </div>
                 <div style={{ background: "#f8faff", borderTop: "1px solid #e0e8f5", padding: "8px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  {loadingQr ? <div style={{ width: 80, height: 80, background: "#eee", borderRadius: 4 }} />
-                    : qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 80, height: 80, border: "1px solid #ddd", borderRadius: 4, padding: 2, background: "white" }} /> : null}
+                  {loadingQr
+                    ? <div style={{ width: 80, height: 80, background: "#eee", borderRadius: 4 }} />
+                    : qrDataUrl
+                      ? <img src={qrDataUrl} alt="QR" style={{ width: 80, height: 80, border: "1px solid #ddd", borderRadius: 4, padding: 2, background: "white" }} />
+                      : null
+                  }
                   <div style={{ fontSize: 7, color: "#888", marginTop: 4 }}>SCAN FOR ATTENDANCE</div>
                 </div>
                 <div style={{ background: isBatchEnded(selected) ? "linear-gradient(135deg,#888,#aaa)" : `linear-gradient(135deg,${primaryColor},${accentColor})`, padding: "6px 12px", display: "flex", justifyContent: "center" }}>
-                  <div style={{ background: "rgba(255,255,255,0.15)", color: "white", fontSize: 7, fontWeight: 800, padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>{isBatchEnded(selected) ? "Inactive" : "Student"}</div>
+                  <div style={{ background: "rgba(255,255,255,0.15)", color: "white", fontSize: 7, fontWeight: 800, padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>
+                    {isBatchEnded(selected) ? "Inactive" : "Student"}
+                  </div>
                 </div>
               </div>
-              <button className="btn btn-primary" onClick={printCard} disabled={loadingQr}>🖨 Print ID Card</button>
+              <button className="btn btn-primary" onClick={printCard} disabled={loadingQr}>
+                🖨 Print ID Card
+              </button>
             </div>
           )}
         </div>
