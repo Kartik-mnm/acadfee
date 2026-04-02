@@ -1,457 +1,453 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
-import NotificationSetup from "../components/NotificationSetup";
 import QRCode from "qrcode";
 
-const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const grade = (p) => p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B" : p >= 60 ? "C" : p >= 50 ? "D" : "F";
-const gradeColor = (p) => p >= 70 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
-const pctColor  = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
+const fmt = (n) => `\u20b9${Number(n || 0).toLocaleString("en-IN")}`;
 
-export default function StudentDashboard() {
-  const { user, logout } = useAuth();
-  const [student,    setStudent]    = useState(null);
-  const [fees,       setFees]       = useState([]);
-  const [payments,   setPayments]   = useState([]);
-  const [attendance, setAttendance] = useState([]);
-  const [tests,      setTests]      = useState([]);
-  const [tab,        setTab]        = useState("overview");
-  const [loading,    setLoading]    = useState(true);
-  const [qrDataUrl,  setQrDataUrl]  = useState("");
-  const [qrStatus,   setQrStatus]   = useState(null);
+// ── Firebase push notification helper ──────────────────────────────────────────────────
+async function requestAndSaveFCMToken(studentId) {
+  try {
+    // Check if Firebase is available (it may not be in all environments)
+    if (!window.firebase || !window.firebase.messaging) return;
+    const messaging = window.firebase.messaging();
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+    const token = await messaging.getToken();
+    if (!token) return;
+    // Save token to backend
+    await API.post(`/students/${studentId}/fcm-token`, { token, type: "student" });
+    localStorage.setItem("fcm_token", token);
+    console.log("[FCM] Token saved:", token.substring(0, 20) + "...");
+  } catch (e) {
+    // FCM is optional — never block the UI if it fails
+    console.warn("[FCM] Could not register:", e.message);
+  }
+}
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
-          API.get(`/students/${user.id}`),
-          API.get(`/fees?student_id=${user.id}`),
-          API.get(`/payments?student_id=${user.id}`),
-          API.get(`/attendance?student_id=${user.id}`),
-          API.get(`/tests/student/${user.id}`),
-        ]);
-        setStudent(stuRes.data);
-        setFees(feeRes.data);
-        setPayments(payRes.data);
-        setAttendance(attRes.data);
-        setTests(testRes.data);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    };
-    load();
-  }, []);
+// ── Push notification prompt banner ───────────────────────────────────────────────────
+function NotificationPrompt({ studentId, onDismiss }) {
+  const [requesting, setRequesting] = useState(false);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    API.get(`/qrscan/token/${user.id}`)
-      .then(async (r) => {
-        const url = await QRCode.toDataURL(r.data.token, {
-          width: 180, margin: 1,
-          errorCorrectionLevel: "L",
-          color: { dark: "#0a1628", light: "#ffffff" },
-        });
-        setQrDataUrl(url);
-        setQrStatus("active");
-      })
-      .catch(async (err) => {
-        const reason = err.response?.data?.reason || "inactive";
-        const dummyText = reason === "expired" ? "SESSION EXPIRED" : "STUDENT INACTIVE";
-        try {
-          const url = await QRCode.toDataURL(dummyText, {
-            width: 180, margin: 1,
-            errorCorrectionLevel: "L",
-            color: { dark: "#94a3b8", light: "#f1f5f9" },
-          });
-          setQrDataUrl(url);
-        } catch { /* ignore */ }
-        setQrStatus(reason === "expired" ? "expired" : "inactive");
-      });
-  }, [user?.id]);
-
-  if (loading) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-      <div className="loading">Loading your dashboard…</div>
-    </div>
-  );
-
-  const totalDue    = fees.reduce((s, f) => s + parseFloat(f.amount_due  || 0), 0);
-  const totalPaid   = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
-  const balance     = totalDue - totalPaid;
-  const pendingFees = fees.filter((f) => f.status !== "paid");
-  const avgAtt      = attendance.length ? Math.round(attendance.reduce((s, a) => s + parseFloat(a.percentage || 0), 0) / attendance.length) : null;
-  const avgScore    = tests.length      ? Math.round(tests.reduce((s, t)      => s + parseFloat(t.percentage || 0), 0) / tests.length)      : null;
-
-  // FIX (Issue 3): Roll number display — use the actual DB roll_no.
-  // Only fall back to the padded ID if roll_no is truly empty.
-  // The previous fallback `NA-${user.id padded}` was misleading because
-  // it generated a fake roll number matching no branch prefix convention.
-  const rollDisplay = student?.roll_no || "—";
-
-  const tabs = [
-    { id: "overview",    label: "🏠 Overview" },
-    { id: "idcard",      label: "🪪 ID Card" },
-    { id: "fees",        label: "📋 Fees" },
-    { id: "payments",    label: "💳 Payments" },
-    { id: "attendance",  label: "📅 Attendance" },
-    { id: "performance", label: "📊 Tests" },
-  ];
-
-  const QrStatusOverlay = () => {
-    if (qrStatus === "active" || qrStatus === null) return null;
-    const isExpired = qrStatus === "expired";
-    return (
-      <div style={{
-        position: "absolute", inset: 0,
-        background: isExpired ? "rgba(239,68,68,0.85)" : "rgba(100,116,139,0.88)",
-        borderRadius: 12,
-        display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
-        gap: 6, padding: 12,
-        backdropFilter: "blur(2px)",
-      }}>
-        <div style={{ fontSize: 28 }}>{isExpired ? "⏰" : "🚫"}</div>
-        <div style={{ color: "#fff", fontWeight: 900, fontSize: 14, textAlign: "center", lineHeight: 1.3 }}>
-          {isExpired ? "Session Expired" : "You're Inactive"}
-        </div>
-        <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, textAlign: "center", lineHeight: 1.4 }}>
-          {isExpired
-            ? "Your batch has ended. Contact the academy."
-            : "Your account is inactive. Contact admin."}
-        </div>
-      </div>
-    );
+  const enable = async () => {
+    setRequesting(true);
+    try {
+      await requestAndSaveFCMToken(studentId);
+    } finally {
+      setRequesting(false);
+      onDismiss();
+    }
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
-      <NotificationSetup studentId={student?.id} type="student" />
-
-      {/* Navbar */}
-      <div style={{
-        background: "var(--glass)", backdropFilter: "blur(20px)",
-        borderBottom: "1px solid var(--border)",
-        padding: "0 24px", height: 60,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        position: "sticky", top: 0, zIndex: 100,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: "linear-gradient(135deg, var(--blue-600), var(--cyan-400))",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontWeight: 900, color: "#fff", fontSize: 16,
-            boxShadow: "0 2px 8px rgba(37,99,235,0.4)",
-          }}>
-            {student?.photo_url
-              ? <img src={student.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10 }} />
-              : user.name[0].toUpperCase()}
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{user.name}</div>
-            {/* FIX: show academy name + branch, not hardcoded "Nishchay Academy" */}
-            <div style={{ fontSize: 11, color: "var(--text3)" }}>Student · {student?.branch_name || user.branch_name}</div>
-          </div>
+    <div style={{
+      marginBottom: 16,
+      background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08))",
+      border: "1px solid rgba(99,102,241,0.3)",
+      borderRadius: 12,
+      padding: "14px 18px",
+      display: "flex",
+      alignItems: "center",
+      gap: 14,
+      flexWrap: "wrap",
+    }}>
+      <span style={{ fontSize: 28 }}>\uD83D\uDD14</span>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text1)", marginBottom: 3 }}>
+          Enable Attendance Notifications
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            fontSize: 12, fontWeight: 700, color: "var(--cyan-300)",
-            fontFamily: "JetBrains Mono, monospace", letterSpacing: 0.5,
-          }}>
-            {rollDisplay !== "—" ? rollDisplay : ""}
+        <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>
+          Get notified instantly when your attendance is marked or when fees are due.
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={enable}
+          disabled={requesting}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          {requesting ? "Enabling..." : "\uD83D\uDD14 Enable Notifications"}
+        </button>
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={onDismiss}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          Not now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function StudentDashboard() {
+  const { user, logout } = useAuth();
+  const [tab,          setTab]          = useState("overview");
+  const [fees,         setFees]         = useState([]);
+  const [payments,     setPayments]     = useState([]);
+  const [attendance,   setAttendance]   = useState([]);
+  const [tests,        setTests]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [qrDataUrl,    setQrDataUrl]    = useState("");
+  const [showNotifPrompt, setShowNotifPrompt] = useState(false);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoading(true);
+      try {
+        const [feesRes, paymentsRes, attRes, testsRes] = await Promise.allSettled([
+          API.get("/fees"),
+          API.get(`/payments?student_id=${user.id}`),
+          API.get(`/attendance?student_id=${user.id}&limit=30`),
+          API.get(`/tests?student_id=${user.id}`),
+        ]);
+        if (feesRes.status     === "fulfilled") setFees(feesRes.value.data);
+        if (paymentsRes.status === "fulfilled") setPayments(paymentsRes.value.data);
+        if (attRes.status      === "fulfilled") setAttendance(attRes.value.data);
+        if (testsRes.status    === "fulfilled") setTests(testsRes.value.data);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
+
+    // Generate QR code for attendance
+    API.get(`/qrscan/token/${user.id}`)
+      .then(async (r) => {
+        const url = await QRCode.toDataURL(r.data.token, {
+          width: 200, margin: 1, errorCorrectionLevel: "L",
+          color: { dark: "#0a1628", light: "#ffffff" },
+        });
+        setQrDataUrl(url);
+      })
+      .catch(() => {});
+
+    // Show notification prompt if not yet enabled
+    const dismissed  = localStorage.getItem("notif_dismissed");
+    const hasFcmToken = localStorage.getItem("fcm_token");
+    const notifSupported = ("Notification" in window) && Notification.permission !== "denied";
+    if (!dismissed && !hasFcmToken && notifSupported) {
+      // Show after 1 second so it doesn't flash immediately
+      setTimeout(() => setShowNotifPrompt(true), 1000);
+    }
+  }, [user.id]);
+
+  const dismissNotifPrompt = () => {
+    localStorage.setItem("notif_dismissed", "1");
+    setShowNotifPrompt(false);
+  };
+
+  // Summary stats
+  const totalFees    = fees.reduce((s, f) => s + parseFloat(f.amount_due || 0), 0);
+  const totalPaid    = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
+  const balance      = totalFees - totalPaid;
+  const pendingFees  = fees.filter((f) => f.status !== "paid");
+
+  const presentDays  = attendance.filter((a) => a.status === "present" || a.status === "late").length;
+  const totalDays    = attendance.length;
+  const attendancePct= totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
+
+  const testScores   = tests.filter((t) => t.score != null);
+  const avgScore     = testScores.length > 0
+    ? (testScores.reduce((s, t) => s + parseFloat(t.score || 0), 0) / testScores.length).toFixed(1)
+    : null;
+
+  const statusBadge = (s) => {
+    const map = { paid: ["var(--green)", "Paid"], partial: ["var(--yellow)", "Partial"], overdue: ["var(--red)", "Overdue"], pending: ["var(--text3)", "Pending"] };
+    const [c, l] = map[s] || ["var(--text3)", s];
+    return <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${c}18`, color: c, fontWeight: 700 }}>{l}</span>;
+  };
+
+  const attBadge = (s) => {
+    const map = { present: ["var(--green)", "P"], absent: ["var(--red)", "A"], late: ["var(--yellow)", "L"], holiday: ["var(--text3)", "H"] };
+    const [c, l] = map[s] || ["var(--text3)", "?"];
+    return <span style={{ display: "inline-block", width: 24, height: 24, borderRadius: "50%", background: `${c}22`, color: c, fontSize: 10, fontWeight: 800, lineHeight: "24px", textAlign: "center" }}>{l}</span>;
+  };
+
+  if (loading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+      <div style={{ textAlign: "center", color: "var(--text2)" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>\uD83C\uDF93</div>
+        <div>Loading your dashboard...</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text1)" }}>
+      {/* Header */}
+      <div style={{
+        background: "linear-gradient(135deg, #1a237e, #0d47a1, #006064)",
+        padding: "20px 20px 40px",
+        position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)" }}>
+            {user.branch_name && `${user.academy_name || ""} \u2013 ${user.branch_name}`}
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={logout}>Logout</button>
+          <button
+            onClick={logout}
+            style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 8, padding: "6px 14px", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+          >
+            Logout
+          </button>
+        </div>
+        <div style={{ color: "rgba(255,255,255,0.9)", fontSize: 24, fontWeight: 800 }}>
+          Welcome, {user.name}! \uD83D\uDC4B
+        </div>
+        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, marginTop: 4 }}>
+          {user.batch_name || "No batch"} \u00b7 {user.branch_name || ""}
         </div>
       </div>
 
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 16px" }}>
-
-        {/* Welcome banner */}
-        <div style={{
-          background: "linear-gradient(135deg, #1e3a8a, #2563eb, #0ea5e9)",
-          borderRadius: 16, padding: "22px 26px", marginBottom: 24,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          flexWrap: "wrap", gap: 12,
-          border: "1px solid rgba(56,189,248,0.2)",
-          boxShadow: "0 4px 24px rgba(37,99,235,0.2)",
-          position: "relative", overflow: "hidden",
-        }}>
-          <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>Welcome, {user.name.split(" ")[0]}! 👋</div>
-            {/* FIX: use student batch_name and branch_name from DB, not hardcoded academy name */}
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
-              {student?.batch_name || "No batch"} · {student?.branch_name || user.branch_name}
-            </div>
-          </div>
-          {balance > 0 && (
-            <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: "10px 16px", textAlign: "center", border: "1px solid rgba(255,255,255,0.1)" }}>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>Pending Balance</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>{fmt(balance)}</div>
-            </div>
-          )}
-        </div>
-
-        {/* Stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
+      <div style={{ padding: "0 16px", marginTop: -24 }}>
+        {/* Stats cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 20 }}>
           {[
-            { label: "Total Fees",      value: fmt(totalDue),   color: "var(--blue-400)",   icon: "📋" },
-            { label: "Total Paid",      value: fmt(totalPaid),  color: "var(--green)",       icon: "✅" },
-            { label: "Balance Due",     value: fmt(balance),    color: balance > 0 ? "var(--red)" : "var(--green)", icon: "💰" },
-            { label: "Avg Attendance",  value: avgAtt  !== null ? `${avgAtt}%`   : "—", color: avgAtt  !== null ? pctColor(avgAtt)   : "var(--text3)", icon: "📅" },
-            { label: "Avg Test Score",  value: avgScore !== null ? `${avgScore}%` : "—", color: avgScore !== null ? gradeColor(avgScore) : "var(--text3)", icon: "📊" },
-          ].map((s) => (
-            <div key={s.label} style={{
-              background: "var(--glass)", backdropFilter: "blur(16px)",
-              border: "1px solid var(--border)", borderRadius: 12, padding: "16px",
-            }}>
-              <div style={{ fontSize: 20, marginBottom: 6 }}>{s.icon}</div>
-              <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: s.color }}>{s.value}</div>
+            { icon: "\uD83D\uDCCB", label: "Total Fees",    val: fmt(totalFees),   color: "var(--text1)" },
+            { icon: "\u2705",       label: "Total Paid",    val: fmt(totalPaid),   color: "var(--green)" },
+            { icon: "\uD83D\uDCB0", label: "Balance Due",  val: fmt(balance),     color: balance > 0 ? "var(--red)" : "var(--green)" },
+            { icon: "\uD83D\uDCC5", label: "Avg Attendance", val: attendancePct != null ? `${attendancePct}%` : "\u2014", color: "var(--cyan)" },
+            { icon: "\uD83D\uDCCA", label: "Avg Test Score", val: avgScore != null ? avgScore : "\u2014", color: "var(--accent)" },
+          ].map((c) => (
+            <div key={c.label} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 14px" }}>
+              <div style={{ fontSize: 22, marginBottom: 4 }}>{c.icon}</div>
+              <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 3 }}>{c.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: c.color }}>{c.val}</div>
             </div>
           ))}
         </div>
+
+        {/* Notification prompt */}
+        {showNotifPrompt && (
+          <NotificationPrompt studentId={user.id} onDismiss={dismissNotifPrompt} />
+        )}
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-          {tabs.map((t) => (
-            <button key={t.id} className={`btn ${tab === t.id ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab(t.id)}>
-              {t.label}
-            </button>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
+          {[
+            { id: "overview",   label: "\uD83C\uDFE0 Overview"    },
+            { id: "idcard",     label: "\uD83E\uDEAA ID Card"      },
+            { id: "fees",       label: "\uD83D\uDCB3 Fees"         },
+            { id: "payments",   label: "\uD83D\uDCB8 Payments"     },
+            { id: "attendance", label: "\u2705 Attendance"         },
+            { id: "tests",      label: "\uD83D\uDCCA Tests"         },
+          ].map((t) => (
+            <button key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600,
+                border: "1px solid var(--border)", cursor: "pointer", whiteSpace: "nowrap",
+                background: tab === t.id ? "var(--accent)"       : "var(--bg2)",
+                color:      tab === t.id ? "#fff"                 : "var(--text2)",
+              }}
+            >{t.label}</button>
           ))}
         </div>
 
-        {/* ── ID Card Tab ── */}
+        {/* ── OVERVIEW ── */}
+        {tab === "overview" && (
+          <div style={{ display: "grid", gap: 14 }}>
+            {/* Pending fees */}
+            <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--yellow)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\u26A0 Pending Fees</div>
+              {pendingFees.length === 0
+                ? <div style={{ color: "var(--green)", fontWeight: 700 }}>\u2705 All fees paid!</div>
+                : pendingFees.map((f) => (
+                    <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{f.period_label || "Fee"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>Due: {f.due_date ? new Date(f.due_date).toLocaleDateString("en-IN") : "\u2014"}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 800, color: "var(--red)", fontSize: 14 }}>{fmt(f.amount_due - f.amount_paid)}</div>
+                        {statusBadge(f.status)}
+                      </div>
+                    </div>
+                  ))
+              }
+            </div>
+
+            {/* Recent payments */}
+            <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\uD83D\uDCB8 Recent Payments</div>
+              {payments.length === 0
+                ? <div style={{ color: "var(--text3)", fontSize: 13 }}>No payments yet</div>
+                : payments.slice(0, 5).map((p) => (
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{p.period_label || "Payment"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{new Date(p.paid_on).toLocaleDateString("en-IN")} \u00b7 {p.payment_mode?.toUpperCase()}</div>
+                      </div>
+                      <div style={{ fontWeight: 800, color: "var(--green)", fontSize: 14 }}>{fmt(p.amount)}</div>
+                    </div>
+                  ))
+              }
+            </div>
+
+            {/* Recent tests */}
+            <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\uD83D\uDCCA Recent Tests</div>
+              {tests.length === 0
+                ? <div style={{ color: "var(--text3)", fontSize: 13 }}>No tests yet</div>
+                : tests.slice(0, 5).map((t) => (
+                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{t.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{t.test_date ? new Date(t.test_date).toLocaleDateString("en-IN") : "\u2014"}</div>
+                      </div>
+                      <div style={{ fontWeight: 800, color: "var(--accent)", fontSize: 14 }}>
+                        {t.score != null ? `${t.score}/${t.total_marks}` : "\u2014"}
+                      </div>
+                    </div>
+                  ))
+              }
+            </div>
+
+            {/* Attendance summary */}
+            <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--cyan)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>\uD83D\uDCC5 Attendance</div>
+              {attendance.length === 0
+                ? <div style={{ color: "var(--text3)", fontSize: 13 }}>No records</div>
+                : (
+                  <>
+                    <div style={{ marginBottom: 10, fontSize: 13 }}>
+                      <span style={{ fontWeight: 700, color: "var(--green)" }}>{presentDays}</span>
+                      <span style={{ color: "var(--text3)" }}> / {totalDays} days present</span>
+                      {attendancePct != null && (
+                        <span style={{ marginLeft: 8, fontWeight: 700, color: attendancePct >= 75 ? "var(--green)" : "var(--red)" }}>({attendancePct}%)</span>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {attendance.slice(0, 30).map((a) => (
+                        <div key={a.id} title={`${a.date}: ${a.status}`}>{attBadge(a.status)}</div>
+                      ))}
+                    </div>
+                  </>
+                )
+              }
+            </div>
+          </div>
+        )}
+
+        {/* ── ID CARD ── */}
         {tab === "idcard" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
-            <div className="card">
-              <div className="card-title">Student Info</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: "50%", overflow: "hidden", background: "var(--bg3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>
-                    {student?.photo_url
-                      ? <img src={student.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : "👤"}
+          <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, textAlign: "center" }}>
+            <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 700, color: "var(--text1)" }}>Your Attendance QR Code</div>
+            {qrDataUrl
+              ? <img src={qrDataUrl} alt="QR" style={{ width: 180, height: 180, border: "1px solid var(--border)", borderRadius: 8, padding: 8, background: "white" }} />
+              : <div style={{ width: 180, height: 180, background: "var(--bg3)", borderRadius: 8, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text3)" }}>Loading...</div>
+            }
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--text3)" }}>Show this at entry for attendance</div>
+            <div style={{ marginTop: 16, fontSize: 20, fontWeight: 900, color: "var(--accent)", fontFamily: "monospace" }}>
+              {user.roll_no || `NA-${String(user.id).padStart(5, "0")}`}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text3)" }}>Roll Number</div>
+          </div>
+        )}
+
+        {/* ── FEES ── */}
+        {tab === "fees" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {fees.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text3)", padding: 32 }}>No fee records</div>
+              : fees.map((f) => (
+                  <div key={f.id} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{f.period_label || "Fee"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Due: {f.due_date ? new Date(f.due_date).toLocaleDateString("en-IN") : "\u2014"}</div>
+                      </div>
+                      {statusBadge(f.status)}
+                    </div>
+                    <div style={{ display: "flex", gap: 20, marginTop: 10, fontSize: 12 }}>
+                      <div><div style={{ color: "var(--text3)" }}>Total</div><div style={{ fontWeight: 700 }}>{fmt(f.amount_due)}</div></div>
+                      <div><div style={{ color: "var(--text3)" }}>Paid</div><div style={{ fontWeight: 700, color: "var(--green)" }}>{fmt(f.amount_paid)}</div></div>
+                      <div><div style={{ color: "var(--text3)" }}>Balance</div><div style={{ fontWeight: 700, color: f.amount_due - f.amount_paid > 0 ? "var(--red)" : "var(--green)" }}>{fmt(f.amount_due - f.amount_paid)}</div></div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 16 }}>{student?.name || user.name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{student?.batch_name || "No batch"}</div>
+                ))
+            }
+          </div>
+        )}
+
+        {/* ── PAYMENTS ── */}
+        {tab === "payments" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {payments.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text3)", padding: 32 }}>No payments recorded yet</div>
+              : payments.map((p) => (
+                  <div key={p.id} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{fmt(p.amount)}</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{p.period_label || "\u2014"}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 12, color: "var(--text3)" }}>{new Date(p.paid_on).toLocaleDateString("en-IN")}</div>
+                        <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>{p.payment_mode?.toUpperCase()}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6, fontFamily: "monospace" }}>{p.receipt_no}</div>
                   </div>
-                </div>
-                {[
-                  ["Roll Number",  student?.roll_no || "Not assigned"],
-                  ["Branch",       student?.branch_name || user.branch_name || "—"],
-                  ["Phone",        student?.phone || "—"],
-                  ["Admission",    student?.admission_date
-                                    ? new Date(student.admission_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-                                    : "—"],
-                  ["Email",        student?.email || "—"],
-                  ["Gender",       student?.gender || "—"],
-                ].map(([l, v]) => (
-                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border2)", fontSize: 13 }}>
-                    <span style={{ color: "var(--text3)" }}>{l}</span>
-                    <span style={{
-                      fontWeight: 600,
-                      color: l === "Roll Number" ? "var(--cyan-300)" : "var(--text)",
-                      fontFamily: l === "Roll Number" ? "JetBrains Mono, monospace" : "inherit",
-                      maxWidth: "60%", textAlign: "right", wordBreak: "break-word"
-                    }}>{v}</span>
+                ))
+            }
+          </div>
+        )}
+
+        {/* ── ATTENDANCE ── */}
+        {tab === "attendance" && (
+          <div>
+            <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+              <div style={{ display: "flex", gap: 20 }}>
+                {[{l:"Present",v:presentDays,c:"var(--green)"},{l:"Absent",v:attendance.filter(a=>a.status==="absent").length,c:"var(--red)"},{l:"Late",v:attendance.filter(a=>a.status==="late").length,c:"var(--yellow)"},{l:"Total",v:totalDays,c:"var(--text1)"}].map(x=>(
+                  <div key={x.l} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: x.c }}>{x.v}</div>
+                    <div style={{ fontSize: 10, color: "var(--text3)" }}>{x.l}</div>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* QR Code card */}
-            <div className="card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
-              <div className="card-title" style={{ alignSelf: "flex-start" }}>Attendance QR Code</div>
-              <div style={{ position: "relative", display: "inline-block" }}>
-                <div style={{
-                  background: "white", padding: 14, borderRadius: 12,
-                  border: `1px solid ${qrStatus === "active" ? "var(--border)" : "rgba(248,113,113,0.3)"}`,
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-                  opacity: qrStatus !== "active" && qrStatus !== null ? 0.5 : 1,
-                  transition: "opacity 0.3s",
-                }}>
-                  {qrDataUrl
-                    ? <img src={qrDataUrl} alt="QR" style={{ width: 160, height: 160, display: "block" }} />
-                    : <div style={{ width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 12 }}>Loading…</div>
-                  }
-                </div>
-                <QrStatusOverlay />
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 13 }}>{student?.name || user.name}</div>
-                {qrStatus === "active" && (
-                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>Show this QR at entry/exit to mark attendance</div>
-                )}
-                {student?.roll_no && (
-                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--cyan-300)", marginTop: 4 }}>{student.roll_no}</div>
-                )}
-              </div>
-            </div>
+            {attendance.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text3)", padding: 32 }}>No attendance records</div>
+              : attendance.map((a) => (
+                  <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", background: "var(--bg2)", borderRadius: 8, marginBottom: 6, border: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: 13 }}>{new Date(a.date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</div>
+                    {attBadge(a.status)}
+                  </div>
+                ))
+            }
           </div>
         )}
 
-        {/* Overview */}
-        {tab === "overview" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-            <div className="card">
-              <div className="card-title">⚠️ Pending Fees</div>
-              {pendingFees.length === 0 ? (
-                <div style={{ color: "var(--green)", fontWeight: 700, fontSize: 14 }}>✅ All fees paid!</div>
-              ) : pendingFees.map((f) => (
-                <div key={f.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border2)", fontSize: 13 }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{f.period_label}</div>
-                    <div style={{ fontSize: 11, color: "var(--red)" }}>Due: {new Date(f.due_date).toLocaleDateString("en-IN")}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 700, color: "var(--red)" }}>{fmt(f.amount_due - f.amount_paid)}</div>
-                    <span className={`badge ${f.status === "overdue" ? "badge-red" : "badge-yellow"}`} style={{ fontSize: 10 }}>{f.status}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="card">
-              <div className="card-title">💳 Recent Payments</div>
-              {payments.length === 0 ? <div className="text-muted" style={{ fontSize: 13 }}>No payments yet</div>
-              : payments.slice(0, 5).map((p) => (
-                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border2)", fontSize: 13 }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{fmt(p.amount)}</div>
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>{p.period_label}</div>
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text3)" }}>{new Date(p.paid_on).toLocaleDateString("en-IN")}</div>
-                </div>
-              ))}
-            </div>
-            <div className="card">
-              <div className="card-title">📊 Recent Tests</div>
-              {tests.length === 0 ? <div className="text-muted" style={{ fontSize: 13 }}>No tests yet</div>
-              : tests.slice(0, 5).map((t, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border2)", fontSize: 13 }}>
-                  <div><div style={{ fontWeight: 600 }}>{t.test_name}</div><div style={{ fontSize: 11, color: "var(--text3)" }}>{t.subject || "—"}</div></div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 900, color: gradeColor(t.percentage) }}>{t.percentage}%</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: gradeColor(t.percentage) }}>{grade(t.percentage)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="card">
-              <div className="card-title">📅 Attendance</div>
-              {attendance.length === 0 ? <div className="text-muted" style={{ fontSize: 13 }}>No records</div>
-              : attendance.slice(0, 5).map((a) => (
-                <div key={a.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border2)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 13 }}>
-                    <span style={{ fontWeight: 600 }}>{MONTHS[a.month - 1]} {a.year}</span>
-                    <span style={{ fontWeight: 700, color: pctColor(a.percentage) }}>{a.percentage}%</span>
-                  </div>
-                  <div style={{ background: "var(--bg3)", borderRadius: 4, height: 5 }}>
-                    <div style={{ width: `${a.percentage}%`, background: pctColor(a.percentage), height: "100%", borderRadius: 4 }} />
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>{a.present} / {a.total_days} days present</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {tab === "fees" && (
-          <div className="card">
-            <div className="card-title">📋 All Fee Records</div>
-            {fees.length === 0 ? <div className="empty-state"><div className="empty-text">No fee records yet</div></div>
-            : (
-              <div className="table-wrap"><table>
-                <thead><tr><th>Period</th><th>Amount Due</th><th>Paid</th><th>Balance</th><th>Due Date</th><th>Status</th></tr></thead>
-                <tbody>{fees.map((f) => (
-                  <tr key={f.id}>
-                    <td style={{ fontWeight: 600 }}>{f.period_label}</td>
-                    <td className="mono">{fmt(f.amount_due)}</td>
-                    <td className="mono" style={{ color: "var(--green)" }}>{fmt(f.amount_paid)}</td>
-                    <td className="mono" style={{ color: f.amount_due - f.amount_paid > 0 ? "var(--red)" : "var(--green)", fontWeight: 700 }}>{fmt(f.amount_due - f.amount_paid)}</td>
-                    <td className="text-muted">{new Date(f.due_date).toLocaleDateString("en-IN")}</td>
-                    <td><span className={`badge ${f.status === "paid" ? "badge-green" : f.status === "overdue" ? "badge-red" : "badge-yellow"}`}>{f.status}</span></td>
-                  </tr>
-                ))}</tbody>
-              </table></div>
-            )}
-          </div>
-        )}
-
-        {tab === "payments" && (
-          <div className="card">
-            <div className="card-title">💳 Payment History</div>
-            {payments.length === 0 ? <div className="empty-state"><div className="empty-text">No payments yet</div></div>
-            : (
-              <div className="table-wrap"><table>
-                <thead><tr><th>Receipt</th><th>Period</th><th>Amount</th><th>Mode</th><th>Date</th></tr></thead>
-                <tbody>{payments.map((p) => (
-                  <tr key={p.id}>
-                    <td className="mono" style={{ color: "var(--accent)" }}>{p.receipt_no}</td>
-                    <td>{p.period_label}</td>
-                    <td className="mono" style={{ color: "var(--green)", fontWeight: 700 }}>{fmt(p.amount)}</td>
-                    <td><span className="badge badge-blue">{p.payment_mode}</span></td>
-                    <td className="text-muted">{new Date(p.paid_on).toLocaleDateString("en-IN")}</td>
-                  </tr>
-                ))}</tbody>
-              </table></div>
-            )}
-          </div>
-        )}
-
-        {tab === "attendance" && (
-          <div className="card">
-            <div className="card-title">📅 Attendance History</div>
-            {attendance.length === 0 ? <div className="empty-state"><div className="empty-text">No attendance records</div></div>
-            : (
-              <div className="table-wrap"><table>
-                <thead><tr><th>Month</th><th>Year</th><th>Working Days</th><th>Present</th><th>Absent</th><th>%</th></tr></thead>
-                <tbody>{attendance.map((a) => (
-                  <tr key={a.id}>
-                    <td style={{ fontWeight: 600 }}>{MONTHS[a.month - 1]}</td>
-                    <td>{a.year}</td>
-                    <td>{a.total_days}</td>
-                    <td style={{ color: "var(--green)", fontWeight: 600 }}>{a.present}</td>
-                    <td style={{ color: "var(--red)", fontWeight: 600 }}>{Math.max(0, a.total_days - a.present)}</td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, background: "var(--bg3)", borderRadius: 4, height: 5 }}>
-                          <div style={{ width: `${a.percentage}%`, background: pctColor(a.percentage), height: "100%", borderRadius: 4 }} />
-                        </div>
-                        <span style={{ color: pctColor(a.percentage), fontWeight: 700, minWidth: 40 }}>{a.percentage}%</span>
+        {/* ── TESTS ── */}
+        {tab === "tests" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {tests.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text3)", padding: 32 }}>No tests yet</div>
+              : tests.map((t) => (
+                  <div key={t.id} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{t.subject || "\u2014"} \u00b7 {t.test_date ? new Date(t.test_date).toLocaleDateString("en-IN") : ""}</div>
                       </div>
-                    </td>
-                  </tr>
-                ))}</tbody>
-              </table></div>
-            )}
+                      <div style={{ textAlign: "right" }}>
+                        {t.score != null
+                          ? <div style={{ fontWeight: 800, fontSize: 18, color: "var(--accent)" }}>{t.score}<span style={{ fontSize: 12, color: "var(--text3)" }}>/{t.total_marks}</span></div>
+                          : <div style={{ fontSize: 12, color: "var(--text3)" }}>Not graded</div>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                ))
+            }
           </div>
         )}
 
-        {tab === "performance" && (
-          <div className="card">
-            <div className="card-title">📊 Test Performance</div>
-            {tests.length === 0 ? <div className="empty-state"><div className="empty-text">No test records yet</div></div>
-            : (
-              <div className="table-wrap"><table>
-                <thead><tr><th>Test</th><th>Subject</th><th>Marks</th><th>Out of</th><th>%</th><th>Grade</th><th>Date</th></tr></thead>
-                <tbody>{tests.map((t, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 600 }}>{t.test_name}</td>
-                    <td className="text-muted">{t.subject || "—"}</td>
-                    <td className="mono" style={{ fontWeight: 700 }}>{t.marks}</td>
-                    <td className="mono text-muted">{t.total_marks}</td>
-                    <td style={{ color: gradeColor(t.percentage), fontWeight: 700 }}>{t.percentage}%</td>
-                    <td><span style={{ background: gradeColor(t.percentage), color: "#fff", padding: "2px 10px", borderRadius: 6, fontSize: 12, fontWeight: 800 }}>{grade(t.percentage)}</span></td>
-                    <td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td>
-                  </tr>
-                ))}</tbody>
-              </table></div>
-            )}
-          </div>
-        )}
+        <div style={{ height: 40 }} />
       </div>
     </div>
   );

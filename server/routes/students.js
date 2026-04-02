@@ -1,154 +1,102 @@
-const router = require("express").Router();
-const db = require("../db");
-const { auth, branchFilter, studentSelf } = require("../middleware");
+const router  = require("express").Router();
+const db      = require("../db");
+const bcrypt  = require("bcryptjs");
+const { auth, branchFilter } = require("../middleware");
+const cloudinary = (() => { try { return require("cloudinary").v2; } catch { return null; } })();
 
-const BRANCH_PREFIX = {
-  "favinagar": "RN", "ravinagar": "RN",
-  "dattawadi": "DW", "dattwadi":  "DW",
-  "dabha":     "DB", "dhabha":    "DB",
-};
-
-function getRollPrefix(branchName) {
-  if (!branchName) return "NA";
-  const lower = branchName.toLowerCase();
-  for (const [key, prefix] of Object.entries(BRANCH_PREFIX)) {
-    if (lower.includes(key)) return prefix;
-  }
-  return branchName.replace(/[^a-zA-Z]/g, "").substring(0, 2).toUpperCase() || "NA";
+if (cloudinary && process.env.CLOUDINARY_CLOUD_NAME) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
 }
 
-router.post("/backfill-roll-numbers", auth, async (req, res) => {
-  if (req.user.role !== "super_admin") return res.status(403).json({ error: "Super admin only" });
+// ── List students ─────────────────────────────────────────────────────────────────
+router.get("/", auth, branchFilter, async (req, res) => {
   try {
-    const aid = req.academyId;
-    const aidCond = aid ? "AND s.academy_id = " + parseInt(aid) : "AND s.academy_id IS NULL";
-    const { rows: students } = await db.query(
-      `SELECT s.id, s.branch_id, br.name AS branch_name
-       FROM students s JOIN branches br ON br.id = s.branch_id
-       WHERE s.roll_no IS NULL ${aidCond} ORDER BY s.branch_id, s.id ASC`
-    );
-    const { rows: existing } = await db.query(
-      `SELECT branch_id, MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
-       FROM students WHERE roll_no IS NOT NULL GROUP BY branch_id`
-    );
-    const maxSerial = {};
-    existing.forEach((r) => { maxSerial[r.branch_id] = r.max_serial || 0; });
-    let updated = 0;
-    const client = await db.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const s of students) {
-        const prefix = getRollPrefix(s.branch_name);
-        const serial = (maxSerial[s.branch_id] || 0) + 1;
-        maxSerial[s.branch_id] = serial;
-        const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
-        await client.query(`UPDATE students SET roll_no=$1 WHERE id=$2 AND roll_no IS NULL`, [rollNo, s.id]);
-        updated++;
-      }
-      await client.query("COMMIT");
-      res.json({ updated, message: `Roll numbers assigned to ${updated} students` });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
-  } catch (e) {
-    console.error("Backfill roll numbers error:", e.message);
-    res.status(500).json({ error: "Failed to backfill roll numbers: " + e.message });
-  }
-});
-
-router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
-  try {
-    const aid = req.academyId;
+    // Students can only see themselves
     if (req.user.role === "student") {
       const { rows } = await db.query(
         `SELECT s.*, b.name AS batch_name, br.name AS branch_name
-         FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
-         WHERE s.id=$1`, [req.user.id]
+         FROM students s
+         LEFT JOIN batches  b  ON b.id  = s.batch_id
+         LEFT JOIN branches br ON br.id = s.branch_id
+         WHERE s.id = $1`,
+        [req.user.id]
       );
       return res.json(rows);
     }
-    const page   = Math.max(1, parseInt(req.query.page) || 1);
-    const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
-    const offset = (page - 1) * limit;
-    const search = (req.query.search || "").trim();
+    const { status, batch_id, search, limit } = req.query;
+    const aid = req.academyId;
     let conditions = []; let params = []; let idx = 1;
-    if (aid) { conditions.push(`s.academy_id=$${idx++}`); params.push(aid); }
-    if (req.branchId)       { conditions.push(`s.branch_id=$${idx++}`); params.push(req.branchId); }
-    if (req.query.batch_id) { conditions.push(`s.batch_id=$${idx++}`);  params.push(req.query.batch_id); }
-    if (req.query.status)   { conditions.push(`s.status=$${idx++}`);    params.push(req.query.status); }
-    if (search) {
-      conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR s.parent_phone ILIKE $${idx} OR s.email ILIKE $${idx} OR s.roll_no ILIKE $${idx})`);
-      params.push(`%${search}%`); idx++;
-    }
+    if (aid)          { conditions.push(`s.academy_id=$${idx++}`);  params.push(aid); }
+    if (req.branchId) { conditions.push(`s.branch_id=$${idx++}`);   params.push(req.branchId); }
+    if (status)       { conditions.push(`s.status=$${idx++}`);      params.push(status); }
+    if (batch_id)     { conditions.push(`s.batch_id=$${idx++}`);    params.push(batch_id); }
+    if (search)       { conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR s.roll_no ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-    const { rows: countRows } = await db.query(`SELECT COUNT(*) FROM students s ${where}`, [...params]);
-    const total = parseInt(countRows[0].count);
-    const totalPages = Math.ceil(total / limit);
-
-    // BUG FIX: was using idx++ inside template literal which evaluates both sides before
-    // pushing to params — causing mismatched $N indices when search param is present.
-    // Now push limit/offset first, then reference their known positions.
-    const limitIdx  = idx;
-    const offsetIdx = idx + 1;
-    params.push(limit);
-    params.push(offset);
-
+    const limitClause = limit ? `LIMIT ${parseInt(limit)}` : "";
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
-       FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
-       ${where} ORDER BY s.id DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+       FROM students s
+       LEFT JOIN batches  b  ON b.id  = s.batch_id
+       LEFT JOIN branches br ON br.id = s.branch_id
+       ${where} ORDER BY s.name ${limitClause}`,
       params
     );
-    res.json({ data: rows, page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 });
+    res.json(rows);
   } catch (e) {
     console.error("List students error:", e.message);
     res.status(500).json({ error: "Failed to fetch students" });
   }
 });
 
-router.get("/:id", auth, studentSelf, async (req, res) => {
+// ── Get one student ─────────────────────────────────────────────────────────────────
+router.get("/:id", auth, async (req, res) => {
   try {
-    const aid = req.academyId;
-    const conditions = ["s.id=$1"];
-    const params = [req.params.id];
-    if (req.user.role !== "student" && aid) {
-      conditions.push(`s.academy_id=$2`);
-      params.push(aid);
-    }
+    const targetId = parseInt(req.params.id);
+    if (req.user.role === "student" && req.user.id !== targetId)
+      return res.status(403).json({ error: "Access denied" });
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
-       FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
-       WHERE ${conditions.join(" AND ")}`, params
+       FROM students s
+       LEFT JOIN batches b ON b.id = s.batch_id
+       LEFT JOIN branches br ON br.id = s.branch_id
+       WHERE s.id = $1`, [targetId]
     );
-    if (!rows[0]) return res.status(404).json({ error: "Not found" });
+    if (!rows[0]) return res.status(404).json({ error: "Student not found" });
+    if (req.academyId && req.user.role !== "student" && rows[0].academy_id && rows[0].academy_id !== req.academyId)
+      return res.status(403).json({ error: "Access denied" });
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: "Failed to fetch student" }); }
+  } catch (e) {
+    console.error("Get student error:", e.message);
+    res.status(500).json({ error: "Failed to fetch student" });
+  }
 });
 
+// ── Create student ─────────────────────────────────────────────────────────────────
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
-            admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url } = req.body;
-    if (!name || !batch_id) return res.status(400).json({ error: "name and batch_id are required" });
+    const {
+      name, email, phone, parent_phone, parent_name,
+      batch_id, branch_id, status, admission_date,
+      fee_type, discount, due_day, roll_no,
+    } = req.body;
+    if (!name || !phone) return res.status(400).json({ error: "name and phone are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     const aid = req.academyId;
-    const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
-    const { rows: brRows } = await db.query("SELECT name FROM branches WHERE id=$1", [bid]);
-    const prefix = getRollPrefix(brRows[0]?.name || "");
-    const { rows: maxRows } = await db.query(
-      `SELECT MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
-       FROM students WHERE branch_id=$1 AND roll_no IS NOT NULL`, [bid]
-    );
-    const serial = (maxRows[0]?.max_serial || 0) + 1;
-    const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
     const { rows } = await db.query(
-      `INSERT INTO students (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
-        admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, roll_no, academy_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [bid, batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date,
-       fee_type, admission_fee || 0, discount || 0, discount_reason, dueDaySafe, photo_url || null, rollNo, aid]
+      `INSERT INTO students
+         (name, email, phone, parent_phone, parent_name,
+          batch_id, branch_id, academy_id, status, admission_date,
+          fee_type, discount, due_day, roll_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [name, email||null, phone, parent_phone||null, parent_name||null,
+       batch_id||null, bid, aid||null, status||"active", admission_date||new Date().toISOString().split("T")[0],
+       fee_type||"monthly", discount||0, due_day||10, roll_no||null]
     );
-    if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
     res.json(rows[0]);
   } catch (e) {
     console.error("Create student error:", e.message);
@@ -156,77 +104,168 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
+// ── Update student ─────────────────────────────────────────────────────────────────
 router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    const { batch_id, name, phone, parent_phone, email, address, dob, gender,
-            fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url } = req.body;
-    const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
-    const whereClause = aid ? "WHERE id=$16 AND academy_id=$17" : "WHERE id=$16";
-    const params = [
-      batch_id, name, phone, parent_phone, email, address, dob, gender, fee_type,
-      admission_fee, discount, discount_reason, status, dueDaySafe, photo_url || null,
-      req.params.id,
-    ];
-    if (aid) params.push(aid);
+    if (aid) {
+      const { rows: check } = await db.query(`SELECT academy_id FROM students WHERE id=$1`, [req.params.id]);
+      if (!check[0]) return res.status(404).json({ error: "Student not found" });
+      if (check[0].academy_id && check[0].academy_id !== aid) return res.status(403).json({ error: "Access denied" });
+    }
+    const {
+      name, email, phone, parent_phone, parent_name,
+      batch_id, branch_id, status, admission_date,
+      fee_type, discount, due_day, roll_no,
+    } = req.body;
     const { rows } = await db.query(
-      `UPDATE students SET batch_id=$1, name=$2, phone=$3, parent_phone=$4, email=$5, address=$6,
-        dob=$7, gender=$8, fee_type=$9, admission_fee=$10, discount=$11, discount_reason=$12,
-        status=$13, due_day=$14, photo_url=$15 ${whereClause} RETURNING *`,
-      params
+      `UPDATE students SET
+         name=$1, email=$2, phone=$3, parent_phone=$4, parent_name=$5,
+         batch_id=$6, branch_id=$7, status=$8, admission_date=$9,
+         fee_type=$10, discount=$11, due_day=$12, roll_no=$13
+       WHERE id=$14 RETURNING *`,
+      [name, email||null, phone, parent_phone||null, parent_name||null,
+       batch_id||null, branch_id, status||"active", admission_date,
+       fee_type||"monthly", discount||0, due_day||10, roll_no||null, req.params.id]
     );
-    if (!rows[0]) return res.status(404).json({ error: "Student not found in your academy" });
-    if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
+    if (!rows[0]) return res.status(404).json({ error: "Student not found" });
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: "Failed to update student" }); }
+  } catch (e) {
+    console.error("Update student error:", e.message);
+    res.status(500).json({ error: "Failed to update student" });
+  }
 });
 
+// ── Delete student ─────────────────────────────────────────────────────────────────
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
-    const params = aid ? [req.params.id, aid] : [req.params.id];
-    const { rowCount } = await db.query(`DELETE FROM students ${whereClause}`, params);
-    if (rowCount === 0) return res.status(404).json({ error: "Student not found in your academy" });
+    if (aid) {
+      const { rows: check } = await db.query(`SELECT academy_id FROM students WHERE id=$1`, [req.params.id]);
+      if (!check[0]) return res.status(404).json({ error: "Student not found" });
+      if (check[0].academy_id && check[0].academy_id !== aid) return res.status(403).json({ error: "Access denied" });
+    }
+    await db.query("DELETE FROM students WHERE id=$1", [req.params.id]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: "Failed to delete student" }); }
+  } catch (e) {
+    console.error("Delete student error:", e.message);
+    res.status(500).json({ error: "Failed to delete student" });
+  }
 });
 
-// Send fee summary email — passes academy info for dynamic branding
+// ── Upload photo ─────────────────────────────────────────────────────────────────
+router.post("/:id/photo", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { photo_base64 } = req.body;
+    if (!photo_base64) return res.status(400).json({ error: "photo_base64 is required" });
+    if (!cloudinary) return res.status(500).json({ error: "Cloudinary not configured" });
+    const result = await cloudinary.uploader.upload(photo_base64, {
+      folder: "acadfee/students", resource_type: "image",
+      transformation: [{ width: 300, height: 300, crop: "fill", gravity: "face" }],
+    });
+    await db.query("UPDATE students SET photo_url=$1 WHERE id=$2", [result.secure_url, req.params.id]);
+    res.json({ photo_url: result.secure_url });
+  } catch (e) {
+    console.error("Photo upload error:", e.message);
+    res.status(500).json({ error: "Photo upload failed" });
+  }
+});
+
+// ── Update FCM token (student registers their device for push notifications) ──────────────────
+router.post("/:id/fcm-token", auth, async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    // Students can only update their own token; admins can update any
+    if (req.user.role === "student" && req.user.id !== targetId)
+      return res.status(403).json({ error: "Access denied" });
+    const { token, type } = req.body; // type: "student" | "parent"
+    if (!token) return res.status(400).json({ error: "token is required" });
+    const col = type === "parent" ? "parent_fcm_token" : "fcm_token";
+    await db.query(`UPDATE students SET ${col}=$1 WHERE id=$2`, [token, targetId]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error("FCM token update error:", e.message);
+    res.status(500).json({ error: "Failed to update FCM token" });
+  }
+});
+
+// ── Send fee summary email ────────────────────────────────────────────────────────────
 router.post("/:id/send-email", auth, async (req, res) => {
-  if (req.user.role === "student" && req.user.id !== parseInt(req.params.id))
-    return res.status(403).json({ error: "Access denied" });
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { rows: sRows } = await db.query(
+      `SELECT s.*, b.name AS batch_name, br.name AS branch_name, a.name AS academy_name,
+              a.primary_color, a.accent_color, a.phone AS academy_phone
+       FROM students s
+       LEFT JOIN batches  b  ON b.id  = s.batch_id
+       LEFT JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN academies a ON a.id  = s.academy_id
+       WHERE s.id = $1`, [req.params.id]
+    );
+    if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
+    const student = sRows[0];
+    if (!student.email) return res.status(400).json({ error: "Student has no email address" });
+    const { rows: feeRows } = await db.query(
+      `SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC LIMIT 10`,
+      [req.params.id]
+    );
+    const { sendFeeSummaryEmail } = require("./email");
+    await sendFeeSummaryEmail(student, feeRows, {
+      name:          student.academy_name,
+      primary_color: student.primary_color,
+      accent_color:  student.accent_color,
+      phone:         student.academy_phone,
+    });
+    res.json({ message: `Fee summary sent to ${student.email}` });
+  } catch (e) {
+    console.error("Send email error:", e.message);
+    res.status(500).json({ error: e.message || "Failed to send email" });
+  }
+});
+
+// ── Backfill roll numbers ───────────────────────────────────────────────────────────────
+router.post("/backfill-roll-numbers", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    if (req.user.role !== "student" && aid) {
-      const { rows: check } = await db.query(
-        `SELECT id FROM students WHERE id=$1 AND academy_id=$2`, [req.params.id, aid]
-      );
-      if (!check[0]) return res.status(403).json({ error: "Student does not belong to your academy" });
+    // Get all students without roll numbers, ordered by id (admission order)
+    const whereAcademy = aid ? "AND s.academy_id = $1" : "";
+    const params       = aid ? [aid] : [];
+    const { rows: students } = await db.query(
+      `SELECT s.id, s.branch_id, br.name AS branch_name
+       FROM students s
+       JOIN branches br ON br.id = s.branch_id
+       WHERE s.roll_no IS NULL ${whereAcademy}
+       ORDER BY s.id ASC`,
+      params
+    );
+    if (students.length === 0)
+      return res.json({ message: "All students already have roll numbers.", updated: 0 });
+
+    // Find the current highest roll number for this academy to continue the sequence
+    const { rows: maxRow } = await db.query(
+      `SELECT roll_no FROM students
+       WHERE roll_no ~ '^[0-9]+$' ${aid ? "AND academy_id=$1" : ""}
+       ORDER BY CAST(roll_no AS INT) DESC LIMIT 1`,
+      aid ? [aid] : []
+    );
+    let seq = maxRow[0] ? parseInt(maxRow[0].roll_no) + 1 : 1;
+
+    let updated = 0;
+    for (const s of students) {
+      const roll = String(seq).padStart(4, "0");
+      await db.query("UPDATE students SET roll_no=$1 WHERE id=$2", [roll, s.id]);
+      seq++;
+      updated++;
     }
-    const { sendFeeSummaryEmail } = require("../email");
-    const [stuRes, feeRes, payRes, attRes, testRes, acadRes] = await Promise.all([
-      db.query(`SELECT s.*, b.name AS batch_name, br.name AS branch_name FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id WHERE s.id=$1`, [req.params.id]),
-      db.query("SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC", [req.params.id]),
-      db.query(`SELECT p.*, fr.period_label FROM payments p JOIN fee_records fr ON fr.id=p.fee_record_id WHERE p.student_id=$1 ORDER BY p.paid_on DESC`, [req.params.id]),
-      db.query("SELECT * FROM attendance WHERE student_id=$1 ORDER BY year DESC, month DESC", [req.params.id]),
-      db.query(`SELECT tr.*, t.name AS test_name, t.subject, t.total_marks, t.test_date, ROUND((tr.marks/t.total_marks::numeric)*100,1) AS percentage FROM test_results tr JOIN tests t ON t.id=tr.test_id WHERE tr.student_id=$1 ORDER BY t.test_date DESC`, [req.params.id]),
-      aid ? db.query(`SELECT name, phone, primary_color, accent_color FROM academies WHERE id=$1`, [aid]) : Promise.resolve({ rows: [{}] }),
-    ]);
-    if (!stuRes.rows[0]) return res.status(404).json({ error: "Student not found" });
-    if (!stuRes.rows[0].email) return res.status(400).json({ error: "Student has no email address" });
-    const result = await sendFeeSummaryEmail({
-      student:    stuRes.rows[0],
-      fees:       feeRes.rows,
-      payments:   payRes.rows,
-      attendance: attRes.rows,
-      tests:      testRes.rows,
-      academy:    acadRes.rows[0] || {},
-    });
-    res.json(result);
-  } catch (e) { res.status(500).json({ error: "Failed to send email" }); }
+    res.json({ message: `Assigned roll numbers to ${updated} student(s).`, updated });
+  } catch (e) {
+    console.error("Backfill roll numbers error:", e.message);
+    res.status(500).json({ error: "Failed to assign roll numbers" });
+  }
 });
 
 module.exports = router;
