@@ -5,9 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#020617" />
     <meta name="description" content="Academy Management Platform" />
-    <!-- Favicon is set dynamically by AcademyContext based on the logged-in academy's favicon_url -->
-    <!-- If no favicon is set for the academy, no favicon is shown -->
     <title>Exponent App</title>
+
+    <!-- Firebase SDK (compat version — works with service worker) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js"></script>
+    <script>
+      // Initialize Firebase — same config as the service worker
+      firebase.initializeApp({
+        apiKey:            "AIzaSyCZhx8olWYNqaqDwOz2wiGYz6VGeQpHkEM",
+        authDomain:        "nishchay-academy-11698.firebaseapp.com",
+        projectId:         "nishchay-academy-11698",
+        storageBucket:     "nishchay-academy-11698.firebasestorage.app",
+        messagingSenderId: "872165691943",
+        appId:             "1:872165691943:web:98006936d0158e9fa77402",
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
