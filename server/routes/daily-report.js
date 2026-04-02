@@ -8,31 +8,31 @@ const { Resend } = require("resend");
 
 // ── Fetch all activity for an academy on a given date ──────────────────────────
 async function fetchDayData(academyId, date) {
-  // FIX: use the exact date string passed in — no timezone conversion
-  // The frontend always sends YYYY-MM-DD (e.g. "2026-03-20") and we match it exactly
   const d = date || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
-  const [academy, payments, newStudents, attendance, expenses, feeDue] = await Promise.all([
+  const [academy, payments, newStudents, qrAttendance, expenses, feeDue] = await Promise.all([
     db.query(`SELECT name, email, phone FROM academies WHERE id=$1`, [academyId]),
 
-    // Payments: match on the date part only, cast to IST date
+    // Payments on the given date
     db.query(`
       SELECT p.receipt_no, p.amount, p.payment_mode, p.paid_on,
              s.name AS student_name, s.phone AS student_phone,
              br.name AS branch_name, b.name AS batch_name,
              fr.period_label
       FROM payments p
-      JOIN students s  ON s.id  = p.student_id
-      JOIN branches br ON br.id = p.branch_id
-      LEFT JOIN batches b  ON b.id  = s.batch_id
+      JOIN students s   ON s.id  = p.student_id
+      JOIN branches br  ON br.id = p.branch_id
+      LEFT JOIN batches b      ON b.id  = s.batch_id
       LEFT JOIN fee_records fr ON fr.id = p.fee_record_id
       WHERE s.academy_id = $1
-        AND (p.paid_on::date = $2::date
-             OR DATE(p.created_at AT TIME ZONE 'Asia/Kolkata') = $2::date)
+        AND (
+          p.paid_on::date = $2::date
+          OR DATE(p.created_at AT TIME ZONE 'Asia/Kolkata') = $2::date
+        )
       ORDER BY p.created_at DESC
     `, [academyId, d]),
 
-    // New students: match created date in IST
+    // New students added that day
     db.query(`
       SELECT s.name, s.phone, s.parent_phone, s.email,
              br.name AS branch_name, b.name AS batch_name,
@@ -45,22 +45,27 @@ async function fetchDayData(academyId, date) {
       ORDER BY s.created_at DESC
     `, [academyId, d]),
 
-    // Attendance
+    // QR scans that day (entry + exit) — uses qr_scans table NOT attendance table
+    // The attendance table stores monthly aggregates, not daily rows with status
     db.query(`
       SELECT
-        COUNT(*) FILTER (WHERE status = 'present') AS present_count,
-        COUNT(*) FILTER (WHERE status = 'absent')  AS absent_count,
-        COUNT(*) FILTER (WHERE status = 'late')    AS late_count,
-        COUNT(*) AS total_count
-      FROM attendance a
-      JOIN students s ON s.id = a.student_id
-      WHERE s.academy_id = $1 AND a.date = $2::date
+        COUNT(*) FILTER (WHERE qs.exit_time IS NOT NULL) AS present_count,
+        COUNT(*) FILTER (WHERE qs.exit_time IS NULL)     AS partial_count,
+        COUNT(*) AS total_scans
+      FROM qr_scans qs
+      JOIN students s  ON s.id  = qs.student_id
+      JOIN branches br ON br.id = qs.branch_id
+      WHERE s.academy_id = $1
+        AND qs.scan_date = $2::date
     `, [academyId, d]),
 
-    // Expenses
+    // Expenses created that day
     db.query(`
-      SELECT e.description, e.amount, e.category,
-             br.name AS branch_name, e.created_at
+      SELECT
+        COALESCE(e.title, e.description) AS description,
+        e.amount, e.category,
+        br.name AS branch_name,
+        e.created_at
       FROM expenses e
       JOIN branches br ON br.id = e.branch_id
       WHERE br.academy_id = $1
@@ -68,7 +73,7 @@ async function fetchDayData(academyId, date) {
       ORDER BY e.created_at DESC
     `, [academyId, d]),
 
-    // Fee records created today
+    // Fee records created that day
     db.query(`
       SELECT fr.period_label, fr.amount_due, fr.status,
              s.name AS student_name, br.name AS branch_name
@@ -83,7 +88,7 @@ async function fetchDayData(academyId, date) {
 
   const totalCollected = payments.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
   const totalExpenses  = expenses.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
-  const att            = attendance.rows[0] || {};
+  const att            = qrAttendance.rows[0] || {};
 
   return {
     date: d,
@@ -94,10 +99,9 @@ async function fetchDayData(academyId, date) {
       net_cash_flow:       totalCollected - totalExpenses,
       payments_count:      payments.rows.length,
       new_students:        newStudents.rows.length,
-      present_count:       parseInt(att.present_count  || 0),
-      absent_count:        parseInt(att.absent_count   || 0),
-      late_count:          parseInt(att.late_count     || 0),
-      total_attendance:    parseInt(att.total_count    || 0),
+      present_count:       parseInt(att.present_count || 0),
+      partial_count:       parseInt(att.partial_count || 0),
+      total_attendance:    parseInt(att.total_scans   || 0),
       fee_records_created: feeDue.rows.length,
     },
     payments:     payments.rows,
@@ -113,8 +117,8 @@ router.get("/data", auth, async (req, res) => {
     const data = await fetchDayData(req.academyId, req.query.date);
     res.json(data);
   } catch (e) {
-    console.error("Daily report data error:", e.message);
-    res.status(500).json({ error: "Failed to fetch daily report" });
+    console.error("Daily report data error:", e.message, e.stack);
+    res.status(500).json({ error: "Failed to fetch daily report: " + e.message });
   }
 });
 
@@ -161,7 +165,6 @@ router.get("/excel", auth, async (req, res) => {
       return ws;
     };
 
-    // Sheet 1: Summary
     const summaryWs = wb.addWorksheet("Summary");
     summaryWs.mergeCells("A1:B1");
     summaryWs.getCell("A1").value = `${academyName} — Daily Report — ${dateLabel}`;
@@ -169,15 +172,14 @@ router.get("/excel", auth, async (req, res) => {
     summaryWs.getCell("A1").alignment = { horizontal: "center" };
     const s = data.summary;
     const summaryData = [
-      ["Total Collected",   `\u20b9${s.total_collected.toLocaleString("en-IN")}`],
-      ["Total Expenses",    `\u20b9${s.total_expenses.toLocaleString("en-IN")}`],
-      ["Net Cash Flow",     `\u20b9${s.net_cash_flow.toLocaleString("en-IN")}`],
-      ["Payments Count",    s.payments_count],
-      ["New Students",      s.new_students],
-      ["Present Today",     s.present_count],
-      ["Absent Today",      s.absent_count],
-      ["Late Today",        s.late_count],
-      ["Fee Records Created",s.fee_records_created],
+      ["Total Collected",     `\u20b9${s.total_collected.toLocaleString("en-IN")}`],
+      ["Total Expenses",      `\u20b9${s.total_expenses.toLocaleString("en-IN")}`],
+      ["Net Cash Flow",       `\u20b9${s.net_cash_flow.toLocaleString("en-IN")}`],
+      ["Payments Count",      s.payments_count],
+      ["New Students",        s.new_students],
+      ["QR Scans (complete)", s.present_count],
+      ["QR Scans (partial)",  s.partial_count],
+      ["Fee Records Created", s.fee_records_created],
     ];
     summaryData.forEach(([label, val], i) => {
       const row = summaryWs.addRow([label, val]);
@@ -225,7 +227,7 @@ router.get("/excel", auth, async (req, res) => {
       { header: "Status",        key: "status",        width: 12 },
     ], data.fee_records);
 
-    const filename = `daily-report-${academyName.replace(/\s+/g, "-")}-${dateLabel}.xlsx`;
+    const filename = `daily-report-${(data.academy.name||"").replace(/\s+/g, "-")}-${dateLabel}.xlsx`;
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     await wb.xlsx.write(res);
@@ -264,10 +266,10 @@ router.get("/print", auth, async (req, res) => {
   tr:nth-child(even) td{background:#f5f5ff}
   .no-data{color:#aaa;font-style:italic;font-size:11px;margin-bottom:12px}
   .footer{margin-top:24px;font-size:10px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:12px}
-  @media print{body{padding:0}.no-print{display:none}h2{page-break-after:avoid}}
+  @media print{body{padding:0}.no-print{display:none}}
 </style></head><body>
 <div class="no-print" style="text-align:right;margin-bottom:16px">
-  <button onclick="window.print()" style="padding:8px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">🖸 Save as PDF / Print</button>
+  <button onclick="window.print()" style="padding:8px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">Save as PDF / Print</button>
 </div>
 <h1>${academy} — Daily Activity Report</h1>
 <div class="sub">Date: ${date} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</div>
@@ -277,24 +279,24 @@ router.get("/print", auth, async (req, res) => {
   <div class="card"><div class="val">${fmt(s.net_cash_flow)}</div><div class="lbl">Net Cash</div></div>
   <div class="card"><div class="val">${s.payments_count}</div><div class="lbl">Payments</div></div>
   <div class="card"><div class="val">${s.new_students}</div><div class="lbl">New Students</div></div>
-  <div class="card"><div class="val">${s.present_count}/${s.total_attendance}</div><div class="lbl">Present / Total</div></div>
+  <div class="card"><div class="val">${s.present_count}/${s.total_attendance}</div><div class="lbl">QR Scans</div></div>
 </div>
-<h2>💰 Payments (${data.payments.length})</h2>
+<h2>Payments (${data.payments.length})</h2>
 ${data.payments.length === 0 ? '<div class="no-data">No payments today.</div>' : `
 <table>${thead(["Receipt","Student","Branch","Period","Amount","Mode"])}<tbody>
 ${data.payments.map(p => row([p.receipt_no, p.student_name, p.branch_name, p.period_label||"—", fmt(p.amount), p.payment_mode])).join("")}
 </tbody></table>`}
-<h2>🎓 New Students (${data.new_students.length})</h2>
+<h2>New Students (${data.new_students.length})</h2>
 ${data.new_students.length === 0 ? '<div class="no-data">No new students today.</div>' : `
 <table>${thead(["Name","Phone","Parent Phone","Branch","Batch"])}<tbody>
-${data.new_students.map(s => row([s.name, s.phone, s.parent_phone||"—", s.branch_name, s.batch_name||"—"])).join("")}
+${data.new_students.map(st => row([st.name, st.phone, st.parent_phone||"—", st.branch_name, st.batch_name||"—"])).join("")}
 </tbody></table>`}
-<h2>💸 Expenses (${data.expenses.length})</h2>
+<h2>Expenses (${data.expenses.length})</h2>
 ${data.expenses.length === 0 ? '<div class="no-data">No expenses today.</div>' : `
 <table>${thead(["Description","Category","Branch","Amount"])}<tbody>
 ${data.expenses.map(e => row([e.description, e.category||"—", e.branch_name, fmt(e.amount)])).join("")}
 </tbody></table>`}
-<h2>📝 Fee Records Created (${data.fee_records.length})</h2>
+<h2>Fee Records Created (${data.fee_records.length})</h2>
 ${data.fee_records.length === 0 ? '<div class="no-data">No fee records created today.</div>' : `
 <table>${thead(["Student","Branch","Period","Amount Due","Status"])}<tbody>
 ${data.fee_records.map(f => row([f.student_name, f.branch_name, f.period_label||"—", fmt(f.amount_due), f.status])).join("")}
@@ -353,18 +355,18 @@ router.post("/email", auth, async (req, res) => {
       ${data.expenses.map(e => trow([e.description, e.category||"—", fmt(e.amount)])).join("")}`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
 <div style="max-width:600px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
-  <div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:28px 32px;">
-    <div style="font-size:20px;font-weight:900;color:#fff;">📊 Daily Report — ${data.date}</div>
+  <div style="background:#1a1f35;padding:28px 32px;">
+    <div style="font-size:20px;font-weight:900;color:#fff;">Daily Report — ${data.date}</div>
     <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px;">${academy}</div>
   </div>
   <div style="padding:24px 32px;">
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px;">
-      ${[["Collected",fmt(s.total_collected)],["Expenses",fmt(s.total_expenses)],["Net Cash",fmt(s.net_cash_flow)],["Payments",s.payments_count],["New Students",s.new_students],["Present/Total",`${s.present_count}/${s.total_attendance}`]]
+      ${[["Collected",fmt(s.total_collected)],["Expenses",fmt(s.total_expenses)],["Net Cash",fmt(s.net_cash_flow)],["Payments",s.payments_count],["New Students",s.new_students],["QR Scans",s.total_attendance]]
         .map(([l,v])=>`<div style="border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;"><div style="font-size:18px;font-weight:900;color:#6366f1;">${v}</div><div style="font-size:10px;color:#888;text-transform:uppercase;margin-top:4px;">${l}</div></div>`).join("")}
     </div>
-    ${section("💰 Payments", data.payments.length, paymentsTable)}
-    ${section("🎓 New Students", data.new_students.length, studentsTable)}
-    ${section("💸 Expenses", data.expenses.length, expensesTable)}
+    ${section("Payments", data.payments.length, paymentsTable)}
+    ${section("New Students", data.new_students.length, studentsTable)}
+    ${section("Expenses", data.expenses.length, expensesTable)}
     <div style="margin-top:20px;padding:12px 16px;background:#f5f5ff;border-radius:8px;font-size:12px;color:#555;">
       Log in to your dashboard to download the full Excel report.
     </div>
