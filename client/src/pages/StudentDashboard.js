@@ -5,42 +5,40 @@ import QRCode from "qrcode";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
-// VAPID key for Nishchay Academy Firebase project
-const VAPID_KEY = "BPodYBiVZ4R7gq4XqhcHmFjXlU2rME8EHbZYUCJdFJlJfY-vOipBX3y0jMH5ZbXxJrHvEkUhgF-EK-pUj3AuRdI";
+// ⚠️  IMPORTANT: Replace this with your REAL VAPID key from Firebase Console:
+// Firebase Console → Project Settings → Cloud Messaging → Web Push certificates → Key pair
+// It looks like: BNt9J3w... (starts with B, ~88 chars)
+const VAPID_KEY = process.env.REACT_APP_VAPID_KEY || "";
 
 // ── Firebase push notification helper ──────────────────────────────────
 async function requestAndSaveFCMToken(studentId) {
   try {
-    // 1. Check browser support
     if (!("Notification" in window)) {
       console.warn("[FCM] Browser does not support notifications");
       return false;
     }
-
-    // 2. Check Firebase is loaded (added via index.html script tags)
     if (!window.firebase) {
       console.warn("[FCM] Firebase SDK not loaded");
       return false;
     }
-
-    // 3. Register the service worker first
     if (!("serviceWorker" in navigator)) {
       console.warn("[FCM] Service workers not supported");
       return false;
     }
-    const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+    if (!VAPID_KEY) {
+      console.warn("[FCM] VAPID key not set — set REACT_APP_VAPID_KEY in your .env");
+      return false;
+    }
 
-    // 4. Get Firebase messaging instance
+    const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     const messaging = window.firebase.messaging();
 
-    // 5. Request notification permission
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
       console.warn("[FCM] Permission denied");
       return false;
     }
 
-    // 6. Get the FCM token
     const token = await messaging.getToken({
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: swReg,
@@ -51,13 +49,11 @@ async function requestAndSaveFCMToken(studentId) {
       return false;
     }
 
-    // 7. Save token to backend
     await API.post(`/students/${studentId}/fcm-token`, { token, type: "student" });
     localStorage.setItem("fcm_token", token);
     console.log("[FCM] ✅ Token saved:", token.substring(0, 20) + "...");
     return true;
   } catch (e) {
-    // FCM is optional — never crash the UI
     console.warn("[FCM] Could not register:", e.message);
     return false;
   }
@@ -66,7 +62,7 @@ async function requestAndSaveFCMToken(studentId) {
 // ── Notification prompt banner ─────────────────────────────────────────────
 function NotificationPrompt({ studentId, onDismiss }) {
   const [requesting, setRequesting] = useState(false);
-  const [result,     setResult]     = useState(null); // null | "success" | "denied"
+  const [result,     setResult]     = useState(null);
 
   const enable = async () => {
     setRequesting(true);
@@ -74,13 +70,12 @@ function NotificationPrompt({ studentId, onDismiss }) {
     setRequesting(false);
     if (ok) {
       setResult("success");
-      setTimeout(onDismiss, 2000); // auto-close after showing success
+      setTimeout(onDismiss, 2000);
     } else {
-      // Check if they denied in the browser popup
       if (Notification.permission === "denied") {
         setResult("denied");
       } else {
-        onDismiss(); // some other issue, just dismiss
+        onDismiss();
       }
     }
   };
@@ -108,17 +103,7 @@ function NotificationPrompt({ studentId, onDismiss }) {
   }
 
   return (
-    <div style={{
-      marginBottom: 16,
-      background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08))",
-      border: "1px solid rgba(99,102,241,0.3)",
-      borderRadius: 12,
-      padding: "14px 18px",
-      display: "flex",
-      alignItems: "center",
-      gap: 14,
-      flexWrap: "wrap",
-    }}>
+    <div style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08))", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
       <span style={{ fontSize: 24 }}>🔔</span>
       <div style={{ flex: 1, minWidth: 200 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text1)", marginBottom: 3 }}>Enable Attendance Notifications</div>
@@ -149,11 +134,12 @@ export default function StudentDashboard() {
     const fetchAll = async () => {
       setLoading(true);
       try {
+        // FIX: students must call /tests/student/:id — the GET / route blocks students with 403
         const [feesRes, paymentsRes, attRes, testsRes] = await Promise.allSettled([
           API.get("/fees"),
           API.get(`/payments?student_id=${user.id}`),
           API.get(`/attendance?student_id=${user.id}&limit=60`),
-          API.get(`/tests?student_id=${user.id}`),
+          API.get(`/tests/student/${user.id}`),  // ← fixed: was /tests?student_id= which gives 403
         ]);
         if (feesRes.status     === "fulfilled") setFees(feesRes.value.data);
         if (paymentsRes.status === "fulfilled") setPayments(paymentsRes.value.data);
@@ -165,7 +151,6 @@ export default function StudentDashboard() {
     };
     fetchAll();
 
-    // Generate QR for attendance
     API.get(`/qrscan/token/${user.id}`)
       .then(async (r) => {
         const url = await QRCode.toDataURL(r.data.token, {
@@ -176,11 +161,10 @@ export default function StudentDashboard() {
       })
       .catch(() => {});
 
-    // Show notification prompt if not already enabled/dismissed
     const dismissed   = localStorage.getItem("notif_dismissed");
     const hasFcmToken = localStorage.getItem("fcm_token");
     const supported   = ("Notification" in window) && Notification.permission !== "denied";
-    if (!dismissed && !hasFcmToken && supported) {
+    if (!dismissed && !hasFcmToken && supported && VAPID_KEY) {
       setTimeout(() => setShowNotifPrompt(true), 1200);
     }
   }, [user.id]);
@@ -190,7 +174,6 @@ export default function StudentDashboard() {
     setShowNotifPrompt(false);
   };
 
-  // Stats
   const totalFees   = fees.reduce((s, f) => s + parseFloat(f.amount_due  || 0), 0);
   const totalPaid   = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
   const balance     = totalFees - totalPaid;
@@ -200,9 +183,9 @@ export default function StudentDashboard() {
   const totalDays     = attendance.length;
   const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
 
-  const testScores = tests.filter((t) => t.score != null);
+  const testScores = tests.filter((t) => t.score != null || t.marks != null);
   const avgScore   = testScores.length > 0
-    ? (testScores.reduce((s, t) => s + parseFloat(t.score || 0), 0) / testScores.length).toFixed(1)
+    ? (testScores.reduce((s, t) => s + parseFloat(t.score || t.marks || 0), 0) / testScores.length).toFixed(1)
     : null;
 
   const statusBadge = (s) => {
@@ -247,7 +230,7 @@ export default function StudentDashboard() {
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:10, marginBottom:16 }}>
           {[
             { icon:"📋", label:"Total Fees",    val:fmt(totalFees),  color:"var(--text1)" },
-            { icon:"✅",      label:"Total Paid",   val:fmt(totalPaid),  color:"var(--green)" },
+            { icon:"✅",  label:"Total Paid",   val:fmt(totalPaid),  color:"var(--green)" },
             { icon:"💰", label:"Balance Due",  val:fmt(balance),    color:balance>0?"var(--red)":"var(--green)" },
             { icon:"📅", label:"Attendance",   val:attendancePct!=null?`${attendancePct}%`:"—", color:"var(--cyan)" },
             { icon:"📊", label:"Avg Score",    val:avgScore!=null?avgScore:"—", color:"var(--accent)" },
@@ -260,7 +243,6 @@ export default function StudentDashboard() {
           ))}
         </div>
 
-        {/* Notification prompt */}
         {showNotifPrompt && <NotificationPrompt studentId={user.id} onDismiss={dismissNotifPrompt} />}
 
         {/* Tabs */}
@@ -341,10 +323,12 @@ export default function StudentDashboard() {
                 : tests.slice(0,5).map((t) => (
                     <div key={t.id} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
                       <div>
-                        <div style={{ fontWeight:600, fontSize:13 }}>{t.name}</div>
+                        <div style={{ fontWeight:600, fontSize:13 }}>{t.test_name || t.name}</div>
                         <div style={{ fontSize:11, color:"var(--text3)" }}>{t.test_date ? new Date(t.test_date).toLocaleDateString("en-IN") : "—"}</div>
                       </div>
-                      <div style={{ fontWeight:800, color:"var(--accent)", fontSize:14 }}>{t.score!=null?`${t.score}/${t.total_marks}`:"—"}</div>
+                      <div style={{ fontWeight:800, color:"var(--accent)", fontSize:14 }}>
+                        {t.marks!=null?`${t.marks}/${t.total_marks}`:"—"}
+                      </div>
                     </div>
                   ))
               }
@@ -450,18 +434,19 @@ export default function StudentDashboard() {
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {tests.length === 0
               ? <div style={{ textAlign:"center", color:"var(--text3)", padding:32 }}>No tests yet</div>
-              : tests.map((t) => (
-                  <div key={t.id} style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:14 }}>
+              : tests.map((t, i) => (
+                  <div key={t.id || i} style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:14 }}>
                     <div style={{ display:"flex", justifyContent:"space-between" }}>
                       <div>
-                        <div style={{ fontWeight:700, fontSize:14 }}>{t.name}</div>
+                        <div style={{ fontWeight:700, fontSize:14 }}>{t.test_name || t.name}</div>
                         <div style={{ fontSize:12, color:"var(--text3)", marginTop:2 }}>{t.subject || "—"} · {t.test_date ? new Date(t.test_date).toLocaleDateString("en-IN") : ""}</div>
                       </div>
                       <div style={{ textAlign:"right" }}>
-                        {t.score != null
-                          ? <div style={{ fontWeight:800, fontSize:18, color:"var(--accent)" }}>{t.score}<span style={{ fontSize:12, color:"var(--text3)" }}>/{t.total_marks}</span></div>
+                        {t.marks != null
+                          ? <div style={{ fontWeight:800, fontSize:18, color:"var(--accent)" }}>{t.marks}<span style={{ fontSize:12, color:"var(--text3)" }}>/{t.total_marks}</span></div>
                           : <div style={{ fontSize:12, color:"var(--text3)" }}>Not graded</div>
                         }
+                        {t.percentage != null && <div style={{ fontSize:11, color:"var(--text3)" }}>{t.percentage}%</div>}
                       </div>
                     </div>
                   </div>
