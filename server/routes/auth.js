@@ -9,7 +9,7 @@ const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
 // Verified domain sender
 const FROM_ADDRESS = "Exponent Platform <noreply@exponentgrow.in>";
-// App URL — updated to custom domain
+// Custom domain URL — where the reset form lives
 const APP_URL = "https://app.exponentgrow.in";
 
 setInterval(async () => {
@@ -75,12 +75,8 @@ router.post("/login", loginLimiter, async (req, res) => {
     const { accessToken, refreshToken } = await issueTokenPair(payload);
     res.json({
       token: accessToken, refreshToken,
-      user: {
-        id: user.id, name: user.name, email: user.email,
-        role: user.role, branch_id: user.branch_id,
-        branch_name: user.branch_name,
-        academy_id: user.academy_id || null,
-      }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role,
+              branch_id: user.branch_id, branch_name: user.branch_name, academy_id: user.academy_id || null }
     });
   } catch (e) {
     console.error("Login error:", e.message);
@@ -92,14 +88,20 @@ router.post("/login", loginLimiter, async (req, res) => {
 router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email is required" });
+  // Always return success — prevents email enumeration
   res.json({ message: "If that email exists, a reset link has been sent." });
 
   try {
-    const { rows } = await db.query("SELECT id, name FROM users WHERE email=$1", [email.toLowerCase().trim()]);
-    if (!rows[0]) return;
+    const { rows } = await db.query(
+      "SELECT id, name FROM users WHERE email = $1", [email.toLowerCase().trim()]
+    );
+    if (!rows[0]) {
+      console.log(`[auth] Forgot password: email not found: ${email}`);
+      return;
+    }
 
     const token     = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await db.query(`
       INSERT INTO password_reset_tokens (user_id, token, expires_at)
@@ -107,31 +109,40 @@ router.post("/forgot-password", async (req, res) => {
       ON CONFLICT (user_id) DO UPDATE SET token=$2, expires_at=$3, created_at=NOW()
     `, [rows[0].id, token, expiresAt]);
 
-    if (!process.env.RESEND_API_KEY) return;
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    // FIX: use new custom domain URL so reset link works correctly
-    const resetUrl = `${APP_URL}?reset_token=${token}`;
+    if (!process.env.RESEND_API_KEY) {
+      console.log("[auth] RESEND_API_KEY not set — skipping reset email");
+      return;
+    }
 
-    await resend.emails.send({
+    const resend   = new Resend(process.env.RESEND_API_KEY);
+    const resetUrl = `${APP_URL}?reset_token=${token}`;
+    console.log(`[auth] Sending reset email to ${email}, link: ${resetUrl}`);
+
+    const { data, error } = await resend.emails.send({
       from:    FROM_ADDRESS,
       to:      email,
-      subject: "Reset your password — Exponent",
+      subject: "Reset your password \u2014 Exponent",
       html: `
         <div style="font-family:Arial,sans-serif;max-width:500px;margin:20px auto;background:#0d1117;border-radius:12px;padding:32px;border:1px solid #1e2535;">
           <div style="text-align:center;margin-bottom:24px;">
             <div style="font-size:22px;font-weight:900;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">EXPONENT</div>
           </div>
           <h2 style="color:#eef1fb;margin:0 0 16px;">Reset your password</h2>
-          <p style="color:#8892b5;line-height:1.7;">Hi ${rows[0].name}, click the button below to reset your Exponent password. This link expires in 1 hour.</p>
+          <p style="color:#8892b5;line-height:1.7;">Hi ${rows[0].name},<br><br>Click the button below to reset your Exponent password. This link expires in <strong style="color:#eef1fb;">1 hour</strong>.</p>
           <a href="${resetUrl}" style="display:block;margin:24px 0;padding:13px 28px;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;text-align:center;">Reset Password</a>
-          <p style="color:#454f72;font-size:12px;line-height:1.6;">If you didn't request this, ignore this email. Your password won't change.</p>
+          <p style="color:#454f72;font-size:12px;">If you didn't request this, ignore this email.</p>
           <div style="margin-top:24px;padding-top:16px;border-top:1px solid #1e2535;text-align:center;font-size:11px;color:#454f72;">
-            Exponent Platform · exponentgrow.in
+            Exponent Platform &middot; exponentgrow.in
           </div>
         </div>
       `,
     });
-    console.log("[auth] Password reset email sent to", email);
+
+    if (error) {
+      console.error("[auth] Resend error:", JSON.stringify(error));
+    } else {
+      console.log(`[auth] Reset email sent to ${email}, id: ${data?.id}`);
+    }
   } catch (e) {
     console.error("Forgot password error:", e.message);
   }
@@ -196,9 +207,9 @@ router.get("/student-sessions/:studentId", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { rows } = await db.query(
-      `SELECT id, created_at, expires_at, EXTRACT(EPOCH FROM (expires_at-NOW())) AS seconds_left
-       FROM refresh_tokens WHERE (payload->>'id')::int=$1 AND payload->>'role'='student' AND expires_at>NOW() ORDER BY created_at DESC`,
-      [req.params.studentId]
+      `SELECT id, created_at, expires_at FROM refresh_tokens
+       WHERE (payload->>'id')::int=$1 AND payload->>'role'='student' AND expires_at>NOW()
+       ORDER BY created_at DESC`, [req.params.studentId]
     );
     const { rows: student } = await db.query(`SELECT login_device_limit FROM students WHERE id=$1`, [req.params.studentId]);
     res.json({ sessions: rows, device_limit: student[0]?.login_device_limit ?? 2 });
@@ -236,7 +247,7 @@ router.post("/refresh", async (req, res) => {
     await db.query("DELETE FROM refresh_tokens WHERE token=$1", [refreshToken]);
     const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(rows[0].payload);
     res.json({ token: accessToken, refreshToken: newRefreshToken });
-  } catch (e) { console.error("Refresh error:", e.message); res.status(500).json({ error: "Token refresh failed" }); }
+  } catch (e) { res.status(500).json({ error: "Token refresh failed" }); }
 });
 
 router.post("/logout", async (req, res) => {
@@ -268,13 +279,14 @@ router.post("/users", auth, superAdmin, async (req, res) => {
       [name, email, hash, role, branch_id||null, req.user.academy_id||null]
     );
     res.json(rows[0]);
-  } catch (e) { console.error("Create user error:", e.message); res.status(500).json({ error: "Failed to create user" }); }
+  } catch (e) { res.status(500).json({ error: "Failed to create user" }); }
 });
 
 router.get("/users", auth, superAdmin, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT u.id,u.name,u.email,u.role,u.branch_id,b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id=u.branch_id WHERE u.academy_id=$1 ORDER BY u.id`,
+      `SELECT u.id,u.name,u.email,u.role,u.branch_id,b.name AS branch_name FROM users u
+       LEFT JOIN branches b ON b.id=u.branch_id WHERE u.academy_id=$1 ORDER BY u.id`,
       [req.user.academy_id||0]
     );
     res.json(rows);
@@ -309,7 +321,7 @@ router.post("/set-student-password", auth, async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     await db.query(`UPDATE students SET login_password=$1, login_enabled=$2 WHERE id=$3`, [hash, enabled!==false, student_id]);
     res.json({ success: true });
-  } catch (e) { console.error("Set student password error:", e.message); res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;
