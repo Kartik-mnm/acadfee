@@ -17,7 +17,6 @@ function getRollPrefix(branchName) {
   return branchName.replace(/[^a-zA-Z]/g, "").substring(0, 2).toUpperCase() || "NA";
 }
 
-// Backfill roll numbers
 router.post("/backfill-roll-numbers", auth, async (req, res) => {
   if (req.user.role !== "super_admin") return res.status(403).json({ error: "Super admin only" });
   try {
@@ -26,8 +25,7 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
     const { rows: students } = await db.query(
       `SELECT s.id, s.branch_id, br.name AS branch_name
        FROM students s JOIN branches br ON br.id = s.branch_id
-       WHERE s.roll_no IS NULL ${aidCond}
-       ORDER BY s.branch_id, s.id ASC`
+       WHERE s.roll_no IS NULL ${aidCond} ORDER BY s.branch_id, s.id ASC`
     );
     const { rows: existing } = await db.query(
       `SELECT branch_id, MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
@@ -57,7 +55,6 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
   }
 });
 
-// List students — scoped to academy
 router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
   try {
     const aid = req.academyId;
@@ -100,7 +97,6 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
   }
 });
 
-// GET single student — scoped to academy
 router.get("/:id", auth, studentSelf, async (req, res) => {
   try {
     const aid = req.academyId;
@@ -120,7 +116,6 @@ router.get("/:id", auth, studentSelf, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to fetch student" }); }
 });
 
-// Create student
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -153,7 +148,6 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// Update student — scoped to academy
 router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -180,7 +174,6 @@ router.put("/:id", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to update student" }); }
 });
 
-// Delete student — scoped to academy
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -193,7 +186,7 @@ router.delete("/:id", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to delete student" }); }
 });
 
-// Send fee summary email — now passes academy info for branding
+// Send fee summary email — passes academy info for dynamic branding
 router.post("/:id/send-email", auth, async (req, res) => {
   if (req.user.role === "student" && req.user.id !== parseInt(req.params.id))
     return res.status(403).json({ error: "Access denied" });
@@ -212,7 +205,6 @@ router.post("/:id/send-email", auth, async (req, res) => {
       db.query(`SELECT p.*, fr.period_label FROM payments p JOIN fee_records fr ON fr.id=p.fee_record_id WHERE p.student_id=$1 ORDER BY p.paid_on DESC`, [req.params.id]),
       db.query("SELECT * FROM attendance WHERE student_id=$1 ORDER BY year DESC, month DESC", [req.params.id]),
       db.query(`SELECT tr.*, t.name AS test_name, t.subject, t.total_marks, t.test_date, ROUND((tr.marks/t.total_marks::numeric)*100,1) AS percentage FROM test_results tr JOIN tests t ON t.id=tr.test_id WHERE tr.student_id=$1 ORDER BY t.test_date DESC`, [req.params.id]),
-      // FIX: fetch academy info for dynamic branding
       aid ? db.query(`SELECT name, phone, primary_color, accent_color FROM academies WHERE id=$1`, [aid]) : Promise.resolve({ rows: [{}] }),
     ]);
     if (!stuRes.rows[0]) return res.status(404).json({ error: "Student not found" });
@@ -223,7 +215,7 @@ router.post("/:id/send-email", auth, async (req, res) => {
       payments:   payRes.rows,
       attendance: attRes.rows,
       tests:      testRes.rows,
-      academy:    acadRes.rows[0] || {}, // pass academy for dynamic name + colors
+      academy:    acadRes.rows[0] || {},
     });
     res.json(result);
   } catch (e) { res.status(500).json({ error: "Failed to send email" }); }

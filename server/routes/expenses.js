@@ -32,10 +32,7 @@ router.get("/summary", auth, branchFilter, async (req, res) => {
       params
     );
     res.json(rows);
-  } catch (e) {
-    console.error("Expenses summary error:", e.message);
-    res.status(500).json({ error: "Failed to fetch summary" });
-  }
+  } catch (e) { res.status(500).json({ error: "Failed to fetch summary" }); }
 });
 
 // GET /api/expenses
@@ -46,67 +43,43 @@ router.get("/", auth, branchFilter, async (req, res) => {
     const aid = req.academyId;
     const bid = req.branchId;
     let conditions = []; let params = []; let idx = 1;
-    if (aid)   { conditions.push(`br.academy_id=$${idx++}`);                    params.push(aid); }
-    if (bid)   { conditions.push(`e.branch_id=$${idx++}`);                      params.push(bid); }
-    if (month) { conditions.push(`EXTRACT(MONTH FROM e.expense_date)=$${idx++}`); params.push(month); }
-    if (year)  { conditions.push(`EXTRACT(YEAR  FROM e.expense_date)=$${idx++}`); params.push(year); }
+    if (aid)   { conditions.push(`br.academy_id=$${idx++}`); params.push(aid); }
+    if (bid)   { conditions.push(`e.branch_id=$${idx++}`);   params.push(bid); }
+    if (month) { conditions.push(`EXTRACT(MONTH FROM e.expense_date) = $${idx++}`); params.push(month); }
+    if (year)  { conditions.push(`EXTRACT(YEAR  FROM e.expense_date) = $${idx++}`); params.push(year); }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
     const { rows } = await db.query(
-      `SELECT e.id, e.branch_id, e.category,
-              COALESCE(e.description, '') AS title,
-              e.amount, e.expense_date,
-              COALESCE(e.paid_to, '') AS notes,
-              br.name AS branch_name
-       FROM expenses e JOIN branches br ON br.id=e.branch_id
+      `SELECT e.*, br.name AS branch_name FROM expenses e JOIN branches br ON br.id=e.branch_id
        ${where} ORDER BY e.expense_date DESC`,
       params
     );
     res.json(rows);
-  } catch (e) {
-    console.error("List expenses error:", e.message);
-    res.status(500).json({ error: "Failed to fetch expenses" });
-  }
+  } catch (e) { res.status(500).json({ error: "Failed to fetch expenses" }); }
 });
 
 // POST /api/expenses
-// Works with both old schema (description, paid_to) and new schema (title, notes)
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { branch_id, category, description, title, amount, expense_date, paid_to, notes } = req.body;
-
-    if (!amount || parseFloat(amount) <= 0)
-      return res.status(400).json({ error: "Amount is required and must be greater than 0" });
-
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Amount is required and must be > 0" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     if (!bid) return res.status(400).json({ error: "Branch is required" });
-
-    // Verify branch belongs to this academy
     const aid = req.academyId;
     if (aid) {
-      const { rows: brRows } = await db.query(
-        `SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]
-      );
+      const { rows: brRows } = await db.query(`SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]);
       if (!brRows[0]) return res.status(403).json({ error: "Branch does not belong to your academy" });
     }
-
-    const finalDesc  = title || description || "Expense";
+    const finalDesc  = title || description || null;
     const finalCat   = category || "Other";
     const finalNotes = notes || paid_to || null;
-    const finalDate  = expense_date || new Date().toISOString().split("T")[0];
-
-    // Always use the safe old-schema columns (description, paid_to) which always exist.
-    // The migrate.js adds title/notes as aliases but we don't depend on them here.
     const { rows } = await db.query(
       `INSERT INTO expenses (branch_id, category, description, amount, expense_date, paid_to)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [bid, finalCat, finalDesc, parseFloat(amount), finalDate, finalNotes]
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [bid, finalCat, finalDesc, amount, expense_date || new Date(), finalNotes]
     );
     res.json(rows[0]);
-  } catch (e) {
-    console.error("Create expense error:", e.message);
-    res.status(500).json({ error: "Failed to create expense: " + e.message });
-  }
+  } catch (e) { res.status(500).json({ error: "Failed to create expense: " + e.message }); }
 });
 
 // PUT /api/expenses/:id
@@ -115,24 +88,18 @@ router.put("/:id", auth, async (req, res) => {
   try {
     const aid = req.academyId;
     const { rows: existing } = await db.query(
-      `SELECT e.*, br.academy_id FROM expenses e JOIN branches br ON br.id=e.branch_id WHERE e.id=$1`,
-      [req.params.id]
+      `SELECT e.*, br.academy_id FROM expenses e JOIN branches br ON br.id=e.branch_id WHERE e.id=$1`, [req.params.id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Expense not found" });
     if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
-      return res.status(403).json({ error: "Access denied" });
+      return res.status(403).json({ error: "Access denied: expense belongs to a different academy" });
     const { category, description, title, amount, expense_date, paid_to, notes } = req.body;
-    const finalDesc  = title || description || existing[0].description;
-    const finalNotes = notes || paid_to || null;
     const { rows } = await db.query(
       `UPDATE expenses SET category=$1, description=$2, amount=$3, expense_date=$4, paid_to=$5 WHERE id=$6 RETURNING *`,
-      [category || "Other", finalDesc, amount, expense_date, finalNotes, req.params.id]
+      [category||"Other", title||description||null, amount, expense_date, notes||paid_to||null, req.params.id]
     );
     res.json(rows[0]);
-  } catch (e) {
-    console.error("Update expense error:", e.message);
-    res.status(500).json({ error: "Failed to update expense" });
-  }
+  } catch (e) { res.status(500).json({ error: "Failed to update expense" }); }
 });
 
 // DELETE /api/expenses/:id
@@ -141,18 +108,14 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const aid = req.academyId;
     const { rows: existing } = await db.query(
-      `SELECT e.*, br.academy_id FROM expenses e JOIN branches br ON br.id=e.branch_id WHERE e.id=$1`,
-      [req.params.id]
+      `SELECT e.*, br.academy_id FROM expenses e JOIN branches br ON br.id=e.branch_id WHERE e.id=$1`, [req.params.id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Expense not found" });
     if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
-      return res.status(403).json({ error: "Access denied" });
+      return res.status(403).json({ error: "Access denied: expense belongs to a different academy" });
     await db.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
     res.json({ success: true });
-  } catch (e) {
-    console.error("Delete expense error:", e.message);
-    res.status(500).json({ error: "Failed to delete expense" });
-  }
+  } catch (e) { res.status(500).json({ error: "Failed to delete expense" }); }
 });
 
 module.exports = router;

@@ -31,23 +31,20 @@ router.get("/", auth, branchFilter, async (req, res) => {
   }
 });
 
-// Create test — FIX: subject is now optional (was required, causing 400)
+// Create test — subject is OPTIONAL (was required before, causing 400)
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { branch_id, batch_id, name, subject, total_marks, test_date } = req.body;
-    // FIX: only name, total_marks, test_date are required — subject is optional
     if (!name || !total_marks || !test_date)
       return res.status(400).json({ error: "name, total_marks and test_date are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     if (!bid) return res.status(400).json({ error: "branch_id is required" });
     const aid = req.academyId;
-
     if (aid) {
       const { rows: brRows } = await db.query(`SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]);
       if (!brRows[0]) return res.status(403).json({ error: "Branch does not belong to your academy" });
     }
-
     const { rows } = await db.query(
       `INSERT INTO tests (branch_id, batch_id, name, subject, total_marks, test_date)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
@@ -66,8 +63,7 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const aid = req.academyId;
     const { rows: existing } = await db.query(
-      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`,
-      [req.params.id]
+      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`, [req.params.id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Test not found" });
     if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
@@ -86,8 +82,7 @@ router.get("/:id/results", auth, async (req, res) => {
   try {
     const aid = req.academyId;
     const { rows: testRows } = await db.query(
-      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`,
-      [req.params.id]
+      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`, [req.params.id]
     );
     if (!testRows[0]) return res.status(404).json({ error: "Test not found" });
     if (aid && testRows[0].academy_id && testRows[0].academy_id !== aid)
@@ -101,7 +96,6 @@ router.get("/:id/results", auth, async (req, res) => {
        WHERE tr.test_id=$1 ORDER BY tr.marks DESC`,
       [req.params.id]
     );
-    // Return as { data: [...] } so frontend can destructure correctly
     res.json({ data: rows });
   } catch (e) {
     console.error("Get results error:", e.message);
@@ -109,7 +103,7 @@ router.get("/:id/results", auth, async (req, res) => {
   }
 });
 
-// Save bulk results — verify test belongs to this academy
+// Save bulk results
 router.post("/:id/results", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   const { results } = req.body;
@@ -118,8 +112,7 @@ router.post("/:id/results", auth, async (req, res) => {
   try {
     const aid = req.academyId;
     const { rows: testRows } = await db.query(
-      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`,
-      [req.params.id]
+      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`, [req.params.id]
     );
     if (!testRows[0]) return res.status(404).json({ error: "Test not found" });
     if (aid && testRows[0].academy_id && testRows[0].academy_id !== aid)
