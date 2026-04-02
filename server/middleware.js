@@ -25,11 +25,17 @@ async function auth(req, res, next) {
       if (parseInt(rows[0].active_sessions) === 0)
         return res.status(401).json({ error: "Session revoked by admin. Please log in again.", code: "SESSION_REVOKED" });
     }
-    // academy_id from JWT — used to scope all queries to this academy
     req.academyId = req.user.academy_id || null;
     next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
+  } catch (err) {
+    // BUG FIX: was a bare catch{} which swallowed the JWT error name/message entirely,
+    // making it impossible to distinguish expired vs tampered vs wrong-secret tokens in logs.
+    const isExpired = err.name === "TokenExpiredError";
+    console.warn(`[auth] JWT verification failed: ${err.name} — ${err.message}`);
+    res.status(401).json({
+      error: isExpired ? "Token expired. Please log in again." : "Invalid token",
+      code:  isExpired ? "TOKEN_EXPIRED" : "INVALID_TOKEN",
+    });
   }
 }
 
@@ -42,8 +48,12 @@ function authenticatePlatformOwner(req, res, next) {
       return res.status(403).json({ error: "Access denied. Platform owner only." });
     req.platformAdmin = decoded;
     next();
-  } catch {
-    res.status(401).json({ error: "Invalid or expired token" });
+  } catch (err) {
+    const isExpired = err.name === "TokenExpiredError";
+    res.status(401).json({
+      error: isExpired ? "Token expired. Please log in again." : "Invalid or expired token",
+      code:  isExpired ? "TOKEN_EXPIRED" : "INVALID_TOKEN",
+    });
   }
 }
 
@@ -52,7 +62,6 @@ function superAdmin(req, res, next) {
   next();
 }
 
-// Scope by branch AND academy
 function branchFilter(req, res, next) {
   if (req.user.role === "super_admin") {
     req.branchId = req.query.branch_id ? parseInt(req.query.branch_id) : null;

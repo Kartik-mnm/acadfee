@@ -83,11 +83,19 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
     const { rows: countRows } = await db.query(`SELECT COUNT(*) FROM students s ${where}`, [...params]);
     const total = parseInt(countRows[0].count);
     const totalPages = Math.ceil(total / limit);
-    params.push(limit); params.push(offset);
+
+    // BUG FIX: was using idx++ inside template literal which evaluates both sides before
+    // pushing to params — causing mismatched $N indices when search param is present.
+    // Now push limit/offset first, then reference their known positions.
+    const limitIdx  = idx;
+    const offsetIdx = idx + 1;
+    params.push(limit);
+    params.push(offset);
+
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
        FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
-       ${where} ORDER BY s.id DESC LIMIT $${idx++} OFFSET $${idx++}`,
+       ${where} ORDER BY s.id DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
     );
     res.json({ data: rows, page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 });

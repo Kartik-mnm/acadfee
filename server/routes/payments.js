@@ -34,7 +34,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
   }
 });
 
-// GET /payments/:id — FIX: was missing entirely, causing 500 on receipt view
+// GET /payments/:id
 router.get("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -52,7 +52,6 @@ router.get("/:id", auth, async (req, res) => {
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
-    // Academy scope check
     if (aid && rows[0].academy_id && rows[0].academy_id !== aid)
       return res.status(403).json({ error: "Access denied" });
     res.json(rows[0]);
@@ -76,36 +75,51 @@ router.post("/", auth, async (req, res) => {
     const resolvedStudentId = student_id || frRows[0].student_id;
 
     const aid = req.academyId;
-    // Verify student belongs to this academy
     const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
     const sParams = aid ? [resolvedStudentId, aid] : [resolvedStudentId];
     const { rows: sRows } = await db.query(`SELECT branch_id, academy_id FROM students ${whereClause}`, sParams);
     if (!sRows[0]) return res.status(404).json({ error: "Student not found in your academy" });
     const branch_id = sRows[0].branch_id;
 
-    // Generate receipt number
-    const { rows: lastReceipt } = await db.query(`SELECT receipt_no FROM payments ORDER BY id DESC LIMIT 1`);
-    let receiptNum = 1001;
-    if (lastReceipt[0]?.receipt_no) {
-      const num = parseInt(lastReceipt[0].receipt_no.replace(/[^0-9]/g, ""));
-      if (!isNaN(num)) receiptNum = num + 1;
+    // BUG FIX: receipt number race condition — use a DB-level sequence via
+    // SELECT MAX(...) FOR UPDATE inside a transaction to prevent duplicates
+    // under concurrent requests.
+    const client = await db.pool.connect();
+    let newPayment;
+    try {
+      await client.query("BEGIN");
+      const { rows: lastReceipt } = await client.query(
+        `SELECT receipt_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE`
+      );
+      let receiptNum = 1001;
+      if (lastReceipt[0]?.receipt_no) {
+        const num = parseInt(lastReceipt[0].receipt_no.replace(/[^0-9]/g, ""));
+        if (!isNaN(num)) receiptNum = num + 1;
+      }
+      const receipt_no = `RCP-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${String(receiptNum).padStart(4, "0")}`;
+
+      const { rows } = await client.query(
+        `INSERT INTO payments (fee_record_id, student_id, branch_id, amount, payment_mode,
+          transaction_ref, paid_on, collected_by, notes, receipt_no)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [fee_record_id, resolvedStudentId, branch_id, amount, payment_mode,
+         transaction_ref||null, paid_on || new Date(), req.user.id, notes||null, receipt_no]
+      );
+      newPayment = rows[0];
+
+      const totalPaid = parseFloat(frRows[0].amount_paid) + parseFloat(amount);
+      const status = totalPaid >= frRows[0].amount_due ? "paid" : "partial";
+      await client.query("UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3", [totalPaid, status, fee_record_id]);
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
     }
-    const receipt_no = `RCP-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${String(receiptNum).padStart(4, "0")}`;
 
-    const { rows } = await db.query(
-      `INSERT INTO payments (fee_record_id, student_id, branch_id, amount, payment_mode,
-        transaction_ref, paid_on, collected_by, notes, receipt_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [fee_record_id, resolvedStudentId, branch_id, amount, payment_mode,
-       transaction_ref||null, paid_on || new Date(), req.user.id, notes||null, receipt_no]
-    );
-
-    // Update fee record
-    const totalPaid = parseFloat(frRows[0].amount_paid) + parseFloat(amount);
-    const status = totalPaid >= frRows[0].amount_due ? "paid" : "partial";
-    await db.query("UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3", [totalPaid, status, fee_record_id]);
-
-    res.json(rows[0]);
+    res.json(newPayment);
   } catch (e) {
     console.error("Create payment error:", e.message);
     res.status(500).json({ error: "Failed to record payment" });

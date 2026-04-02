@@ -25,6 +25,15 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
     const fc = buildCond("fr", "fr.status IN ('pending','partial','overdue')");
     const oc = buildCond("fr", "fr.status='overdue'");
 
+    // BUG FIX: was using string interpolation for aid/bid in recentPayments query
+    // — replaced with parameterized placeholders to prevent SQL injection
+    const recentParams = [];
+    const recentParts = [];
+    let ri = 1;
+    if (aid) { recentParts.push(`s.academy_id=$${ri++}`); recentParams.push(aid); }
+    if (bid) { recentParts.push(`p.branch_id=$${ri++}`);  recentParams.push(bid); }
+    const recentWhere = recentParts.length ? "AND " + recentParts.join(" AND ") : "";
+
     const [students, collected, due, overdue, recentPayments, branchPerf] = await Promise.all([
       db.query(`SELECT COUNT(*) FROM students s ${sc.where}`, sc.params),
       db.query(`SELECT COALESCE(SUM(amount),0) AS total FROM payments p ${pc.where}`, pc.params),
@@ -36,10 +45,9 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
          FROM payments p
          JOIN students s ON s.id=p.student_id
          JOIN branches br ON br.id=p.branch_id
-         WHERE 1=1
-           ${aid ? `AND s.academy_id=${parseInt(aid)}` : ""}
-           ${bid ? `AND p.branch_id=${parseInt(bid)}` : ""}
-         ORDER BY p.paid_on DESC LIMIT 8`
+         WHERE 1=1 ${recentWhere}
+         ORDER BY p.paid_on DESC LIMIT 8`,
+        recentParams
       ),
       // Branch performance — only branches of this academy
       db.query(

@@ -9,7 +9,6 @@ let lastFiredDate = "";
 
 // ── Keep-alive ───────────────────────────────────────────────────────────────────
 function startKeepAlive() {
-  // Ping both old Render URLs AND new custom domain URLs
   const targets = [
     "https://acadfee.onrender.com/health",
     "https://acadfee-app.onrender.com/health",
@@ -184,10 +183,15 @@ async function runNightlyJob() {
 function startAbsentCron() {
   console.log("\u2705 Nightly cron started — fires at 10:00 PM IST");
   setInterval(() => {
-    const nowIST = new Date().toLocaleString("en-US", {
-      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
-    });
-    if (nowIST === "22:00") runNightlyJob();
+    // BUG FIX: toLocaleString with hour12:false can return "24:00" instead of "00:00"
+    // on some Node/V8 versions, and may include invisible Unicode chars or spaces.
+    // Use explicit UTC offset arithmetic instead — IST = UTC+5:30.
+    const now = new Date();
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffsetMs);
+    const istHour   = istDate.getUTCHours();
+    const istMinute = istDate.getUTCMinutes();
+    if (istHour === 22 && istMinute === 0) runNightlyJob();
   }, 60 * 1000);
 }
 
