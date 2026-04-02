@@ -26,7 +26,7 @@ function startKeepAlive() {
   };
   ping();
   setInterval(ping, 10 * 60 * 1000);
-  console.log("\u2705 Keep-alive started — pinging every 10 min");
+  console.log("\u2705 Keep-alive started \u2014 pinging every 10 min");
 }
 
 // ── Backfill ─────────────────────────────────────────────────────────────────────────
@@ -75,79 +75,10 @@ async function autoGenerateAttendance(month, year) {
   }
 }
 
-// ── Absent notifications ─────────────────────────────────────────────────────────────────────
-async function sendAbsentNotifications(todayIST) {
-  try {
-    // Get all active students with at least one FCM token who had NO completed scan today
-    // A completed scan = entry_time AND exit_time both set.
-    // Students who only scanned entry (no exit) are also considered absent from the academy for the day.
-    const { rows: absentStudents } = await db.query(
-      `SELECT s.id, s.name, s.branch_id, s.fcm_token, s.parent_fcm_token,
-              br.name AS branch_name, a.name AS academy_name
-       FROM students s
-       JOIN branches br ON br.id = s.branch_id
-       LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, br.academy_id)
-       WHERE s.status = 'active'
-         AND (s.parent_fcm_token IS NOT NULL OR s.fcm_token IS NOT NULL)
-         AND s.id NOT IN (
-           SELECT student_id FROM qr_scans
-           WHERE scan_date = $1
-           -- Only consider students who had ANY scan (entry or exit) as scanned
-           -- Students with no row at all = definitely absent
-         )`,
-      [todayIST]
-    );
-
-    // Filter out students whose branch is a holiday today
-    const notifyList = [];
-    for (const s of absentStudents) {
-      const { rows: wd } = await db.query(
-        `SELECT is_working FROM working_days WHERE branch_id=$1 AND date=$2`,
-        [s.branch_id, todayIST]
-      );
-      // If no record = working day (default). If record says is_working=false = holiday, skip.
-      const isHoliday = wd.length > 0 && !wd[0].is_working;
-      if (!isHoliday) notifyList.push(s);
-    }
-
-    console.log(`[Cron] ${notifyList.length} absent student(s) to notify on ${todayIST}`);
-
-    for (const student of notifyList) {
-      const academyName = student.academy_name || "your academy";
-      const dateLabel   = new Date(todayIST).toLocaleDateString("en-IN", {
-        day: "numeric", month: "long", timeZone: "Asia/Kolkata"
-      });
-
-      // Notify student's own device
-      if (student.fcm_token) {
-        await sendNotification(
-          student.fcm_token,
-          `\u26a0\ufe0f You were absent today`,
-          `You did not attend ${academyName} on ${dateLabel}. Please contact your admin if this is a mistake.`,
-          { type: "absent_alert", student_id: String(student.id), date: todayIST }
-        );
-      }
-      // Notify parent
-      if (student.parent_fcm_token) {
-        await sendNotification(
-          student.parent_fcm_token,
-          `\u26a0\ufe0f ${student.name} was absent today`,
-          `${student.name} did not attend ${academyName} on ${dateLabel}.`,
-          { type: "absent_alert", student_id: String(student.id), date: todayIST }
-        );
-      }
-    }
-  } catch (e) {
-    console.error("[Cron] Absent notification error:", e.message);
-  }
-}
-
 // ── Purge stale FCM tokens ───────────────────────────────────────────────────────────────────
+// Students who have logged out (no active refresh token) should not receive FCM notifications.
+// This runs before absent notifications so we don't push to phantom devices.
 async function purgeStaleTokens() {
-  // FCM tokens for logged-out devices: if a student's refresh_token is gone (device logged out)
-  // but their fcm_token is still set, the notification would go to a phantom device.
-  // We identify students with no active refresh tokens for their student role
-  // and clear their fcm_token so they don’t receive ghost notifications.
   try {
     const { rowCount } = await db.query(`
       UPDATE students s
@@ -164,6 +95,73 @@ async function purgeStaleTokens() {
       console.log(`[Cron] Purged stale fcm_token from ${rowCount} logged-out student(s)`);
   } catch (e) {
     console.error("[Cron] Purge stale tokens error:", e.message);
+  }
+}
+
+// ── Absent notifications ─────────────────────────────────────────────────────────────────────
+async function sendAbsentNotifications(todayIST) {
+  try {
+    // A student is considered ABSENT if they have NO completed scan today.
+    // A completed scan = a qr_scans row with exit_time IS NOT NULL.
+    // Students who only scanned entry (no exit) are still absent — they didn't
+    // complete their attendance, so their attendance count was NOT incremented.
+    // BUG FIX: previous version dropped the exit_time IS NOT NULL check, meaning
+    // students who only tapped entry would be excluded from absent notifications
+    // but also have NO attendance credit — the worst of both worlds.
+    const { rows: absentStudents } = await db.query(
+      `SELECT s.id, s.name, s.branch_id, s.fcm_token, s.parent_fcm_token,
+              br.name AS branch_name, a.name AS academy_name
+       FROM students s
+       JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, br.academy_id)
+       WHERE s.status = 'active'
+         AND (s.parent_fcm_token IS NOT NULL OR s.fcm_token IS NOT NULL)
+         AND s.id NOT IN (
+           SELECT student_id FROM qr_scans
+           WHERE scan_date = $1
+             AND exit_time IS NOT NULL
+         )`,
+      [todayIST]
+    );
+
+    // Filter out students whose branch is a holiday today
+    const notifyList = [];
+    for (const s of absentStudents) {
+      const { rows: wd } = await db.query(
+        `SELECT is_working FROM working_days WHERE branch_id=$1 AND date=$2`,
+        [s.branch_id, todayIST]
+      );
+      const isHoliday = wd.length > 0 && !wd[0].is_working;
+      if (!isHoliday) notifyList.push(s);
+    }
+
+    console.log(`[Cron] ${notifyList.length} absent student(s) to notify on ${todayIST}`);
+
+    for (const student of notifyList) {
+      const academyName = student.academy_name || "your academy";
+      const dateLabel   = new Date(todayIST).toLocaleDateString("en-IN", {
+        day: "numeric", month: "long", timeZone: "Asia/Kolkata"
+      });
+
+      if (student.fcm_token) {
+        await sendNotification(
+          student.fcm_token,
+          `\u26a0\ufe0f You were absent today`,
+          `You did not attend ${academyName} on ${dateLabel}. Please contact your admin if this is a mistake.`,
+          { type: "absent_alert", student_id: String(student.id), date: todayIST }
+        );
+      }
+      if (student.parent_fcm_token) {
+        await sendNotification(
+          student.parent_fcm_token,
+          `\u26a0\ufe0f ${student.name} was absent today`,
+          `${student.name} did not attend ${academyName} on ${dateLabel}.`,
+          { type: "absent_alert", student_id: String(student.id), date: todayIST }
+        );
+      }
+    }
+  } catch (e) {
+    console.error("[Cron] Absent notification error:", e.message);
   }
 }
 
@@ -218,11 +216,11 @@ async function emailDailyReports(todayIST) {
 
 // ── Main nightly job ───────────────────────────────────────────────────────────────────────────
 async function runNightlyJob() {
-  // Calculate today's IST date reliably using UTC arithmetic (IST = UTC+5:30)
-  const now        = new Date();
-  const istMs      = now.getTime() + (5.5 * 60 * 60 * 1000);
-  const istDate    = new Date(istMs);
-  const todayIST   = istDate.toISOString().split("T")[0]; // YYYY-MM-DD
+  // Calculate IST date using UTC+5:30 arithmetic — reliable across all Node/V8 versions
+  const now      = new Date();
+  const istMs    = now.getTime() + (5.5 * 60 * 60 * 1000);
+  const istDate  = new Date(istMs);
+  const todayIST = istDate.toISOString().split("T")[0]; // YYYY-MM-DD in IST
 
   if (lastFiredDate === todayIST) {
     console.log(`[Cron] Already ran for ${todayIST}, skipping.`);
@@ -233,25 +231,24 @@ async function runNightlyJob() {
   const [y, m] = todayIST.split("-").map(Number);
   console.log(`\n[Cron] \u23f0 Nightly job starting for ${todayIST}`);
 
-  await purgeStaleTokens();              // Clear FCM tokens for logged-out students first
-  await sendAbsentNotifications(todayIST); // Then send absent alerts
-  await autoGenerateAttendance(m, y);    // Generate/update monthly attendance records
-  await enforceTrialExpiry();            // Suspend expired trials
-  await backfillStudentAcademyIds();     // Fix any missing academy_id values
-  await emailDailyReports(todayIST);     // Email daily summaries to academy owners
+  await purgeStaleTokens();               // 1. Clear FCM tokens for logged-out students
+  await sendAbsentNotifications(todayIST); // 2. Push absent alerts
+  await autoGenerateAttendance(m, y);     // 3. Generate/update monthly attendance records
+  await enforceTrialExpiry();             // 4. Suspend expired trials
+  await backfillStudentAcademyIds();      // 5. Fix any missing academy_id values
+  await emailDailyReports(todayIST);      // 6. Email daily summaries to academy owners
 
   console.log(`[Cron] \u2705 Nightly job complete for ${todayIST}`);
 }
 
 // ── Start scheduler ───────────────────────────────────────────────────────────────────────────
 function startAbsentCron() {
-  console.log("\u2705 Nightly cron started — fires at 10:00 PM IST");
+  console.log("\u2705 Nightly cron started \u2014 fires at 10:00 PM IST");
   setInterval(() => {
-    // Use UTC+5:30 arithmetic to get IST time reliably
-    const now      = new Date();
-    const istDate  = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-    const istHour  = istDate.getUTCHours();
-    const istMin   = istDate.getUTCMinutes();
+    const now     = new Date();
+    const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+    const istHour = istDate.getUTCHours();
+    const istMin  = istDate.getUTCMinutes();
     if (istHour === 22 && istMin === 0) runNightlyJob();
   }, 60 * 1000);
 }
