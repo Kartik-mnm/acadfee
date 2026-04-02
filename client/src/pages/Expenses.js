@@ -8,44 +8,66 @@ const EMPTY = { title: "", amount: "", category: "Other", expense_date: new Date
 
 export default function Expenses() {
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState([]);
-  const [summary, setSummary] = useState([]);
-  const [branches, setBranches] = useState([]);
+  const [expenses,   setExpenses]   = useState([]);
+  const [summary,    setSummary]    = useState([]);
+  const [branches,   setBranches]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year,  setYear]  = useState(new Date().getFullYear());
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState(EMPTY);
+  const [form,   setForm]   = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const load = () => {
     const q = new URLSearchParams({ month, year });
     if (filterBranch) q.set("branch_id", filterBranch);
-    API.get(`/expenses?${q}`).then((r) => setExpenses(r.data));
-    API.get(`/expenses/summary?${q}`).then((r) => setSummary(r.data));
+    API.get(`/expenses?${q}`).then((r) => setExpenses(r.data)).catch(() => {});
+    API.get(`/expenses/summary?${q}`).then((r) => setSummary(r.data)).catch(() => {});
   };
 
   useEffect(() => {
     load();
-    API.get("/expenses/categories").then((r) => setCategories(r.data));
-    if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
+    API.get("/expenses/categories").then((r) => setCategories(r.data)).catch(() => {});
+    if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
   }, [month, year, filterBranch]);
 
   const save = async () => {
+    setSaveError("");
+    // Validate required fields
+    if (!form.title?.trim())  { setSaveError("Title is required"); return; }
+    if (!form.amount || Number(form.amount) <= 0) { setSaveError("Amount must be greater than 0"); return; }
+    if (user.role === "super_admin" && !form.branch_id) { setSaveError("Please select a branch"); return; }
+
     setSaving(true);
     try {
-      await API.post("/expenses", form);
-      setShowModal(false); load();
-    } finally { setSaving(false); }
+      await API.post("/expenses", {
+        ...form,
+        branch_id: form.branch_id ? parseInt(form.branch_id) : undefined,
+        amount: parseFloat(form.amount),
+      });
+      setShowModal(false);
+      setForm(EMPTY);
+      load();
+    } catch (e) {
+      setSaveError(e.response?.data?.error || "Failed to save expense. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const del = async (id) => {
     if (!window.confirm("Delete this expense?")) return;
-    await API.delete(`/expenses/${id}`); load();
+    try {
+      await API.delete(`/expenses/${id}`);
+      load();
+    } catch (e) {
+      alert(e.response?.data?.error || "Failed to delete expense");
+    }
   };
 
-  const total = expenses.reduce((s, e) => s + parseFloat(e.amount), 0);
+  const total = expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   const catColors = { Rent: "badge-red", Salary: "badge-blue", Utilities: "badge-yellow", Stationery: "badge-green", Marketing: "badge-blue", Maintenance: "badge-yellow", Other: "badge-gray" };
@@ -57,7 +79,7 @@ export default function Expenses() {
           <div className="page-title">Expenses</div>
           <div className="page-sub">Track branch-wise expenses</div>
         </div>
-        <button className="btn btn-primary" onClick={() => { setForm(EMPTY); setShowModal(true); }}>+ Add Expense</button>
+        <button className="btn btn-primary" onClick={() => { setForm(EMPTY); setSaveError(""); setShowModal(true); }}>+ Add Expense</button>
       </div>
 
       <div className="filters-bar">
@@ -108,12 +130,12 @@ export default function Expenses() {
               <tbody>
                 {expenses.map((e) => (
                   <tr key={e.id}>
-                    <td style={{ fontWeight: 600 }}>{e.title}</td>
+                    <td style={{ fontWeight: 600 }}>{e.title || e.description || "—"}</td>
                     {user.role === "super_admin" && <td className="text-muted">{e.branch_name}</td>}
                     <td><span className={`badge ${catColors[e.category] || "badge-gray"}`}>{e.category}</span></td>
                     <td className="mono" style={{ color: "var(--red)", fontWeight: 700 }}>{fmt(e.amount)}</td>
                     <td className="text-muted">{new Date(e.expense_date).toLocaleDateString("en-IN")}</td>
-                    <td className="text-muted">{e.notes || "—"}</td>
+                    <td className="text-muted">{e.notes || e.paid_to || "—"}</td>
                     <td>
                       <button className="btn btn-danger btn-sm" onClick={() => del(e.id)}>Del</button>
                     </td>
@@ -141,21 +163,37 @@ export default function Expenses() {
               <div className="form-grid">
                 <div className="form-group full">
                   <label>Title *</label>
-                  <input value={form.title} onChange={(e) => f("title", e.target.value)} placeholder="e.g. Monthly Rent" />
+                  <input
+                    value={form.title}
+                    onChange={(e) => f("title", e.target.value)}
+                    placeholder="e.g. Monthly Rent"
+                  />
                 </div>
                 <div className="form-group">
                   <label>Amount (₹) *</label>
-                  <input type="number" value={form.amount} onChange={(e) => f("amount", e.target.value)} />
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.amount}
+                    onChange={(e) => f("amount", e.target.value)}
+                    placeholder="0"
+                  />
                 </div>
                 <div className="form-group">
                   <label>Category</label>
                   <select value={form.category} onChange={(e) => f("category", e.target.value)}>
-                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {(categories.length ? categories : ["Rent","Salary","Utilities","Stationery","Marketing","Maintenance","Other"]).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="form-group">
                   <label>Date</label>
-                  <input type="date" value={form.expense_date} onChange={(e) => f("expense_date", e.target.value)} />
+                  <input
+                    type="date"
+                    value={form.expense_date}
+                    onChange={(e) => f("expense_date", e.target.value)}
+                  />
                 </div>
                 {user.role === "super_admin" && (
                   <div className="form-group">
@@ -168,13 +206,25 @@ export default function Expenses() {
                 )}
                 <div className="form-group full">
                   <label>Notes</label>
-                  <textarea value={form.notes} onChange={(e) => f("notes", e.target.value)} placeholder="Optional details..." />
+                  <textarea
+                    value={form.notes}
+                    onChange={(e) => f("notes", e.target.value)}
+                    placeholder="Optional details..."
+                    rows={3}
+                  />
                 </div>
               </div>
+              {saveError && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--bg3)", borderRadius: 6, fontSize: 13, color: "var(--red)", border: "1px solid var(--red)" }}>
+                  ⚠ {saveError}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Add Expense"}</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>
+                {saving ? "Saving…" : "Add Expense"}
+              </button>
             </div>
           </div>
         </div>

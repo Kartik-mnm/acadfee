@@ -4,9 +4,19 @@ import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
-const API_BASE = "https://acadfee.onrender.com";
 
-// ── WhatsApp reminder — uses academy name dynamically ──────────────────────────
+// Always use the same base URL that axios API uses — no hardcoding
+const API_BASE = (() => {
+  const base = process.env.REACT_APP_API_URL || "";
+  if (base) return base.replace(/\/$/, "");
+  // Derive from current hostname at runtime
+  const host = window.location.hostname;
+  if (host === "app.exponentgrow.in")   return "https://api.exponentgrow.in";
+  if (host === "acadfee-app.onrender.com") return "https://acadfee.onrender.com";
+  return "http://localhost:5000";
+})();
+
+// ── WhatsApp reminder ──────────────────────────────────────────────────────────
 function sendWhatsApp(phone, studentName, balance, period, dueDate, branchName, academyName) {
   const cleanPhone = phone?.replace(/\D/g, "");
   if (!cleanPhone) { alert("No phone number available for this student!"); return; }
@@ -33,11 +43,11 @@ export default function Reports() {
   const [branchStats,   setBranchStats]   = useState([]);
   const [tab,           setTab]           = useState("daily");
 
-  // Always default to today in IST
   const todayIST = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const [reportDate,    setReportDate]    = useState(todayIST);
   const [reportData,    setReportData]    = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportError,   setReportError]   = useState("");
   const [emailSending,  setEmailSending]  = useState(false);
   const [emailMsg,      setEmailMsg]      = useState("");
 
@@ -46,18 +56,18 @@ export default function Reports() {
     if (user.role === "super_admin") API.get("/reports/by-branch").then((r) => setBranchStats(r.data)).catch(() => {});
   }, []);
 
-  // Reload report whenever date changes OR tab switches to daily
   useEffect(() => {
     if (tab !== "daily") return;
     setReportLoading(true);
     setReportData(null);
+    setReportError("");
     API.get(`/daily-report/data?date=${reportDate}`)
       .then((r) => setReportData(r.data))
-      .catch(() => setReportData(null))
+      .catch((e) => setReportError(e.response?.data?.error || "Failed to load report"))
       .finally(() => setReportLoading(false));
   }, [tab, reportDate]);
 
-  // ── Download Excel via fetch+blob (passes auth header) ─────────────────────
+  // ── Download Excel ─────────────────────────────────────────────────────────
   const downloadExcel = async () => {
     const token = localStorage.getItem("token");
     try {
@@ -74,7 +84,7 @@ export default function Reports() {
     } catch { alert("Download failed. Please try again."); }
   };
 
-  // ── Open printable HTML in new tab ──────────────────────────────────────────
+  // ── Print view ─────────────────────────────────────────────────────────────
   const openPrintView = async () => {
     const token = localStorage.getItem("token");
     try {
@@ -148,7 +158,7 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* ── DAILY REPORT ───────────────────────────────────────────────────────── */}
+      {/* ── DAILY REPORT ──────────────────────────────────────────────────────── */}
       {tab === "daily" && (
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
@@ -182,17 +192,25 @@ export default function Reports() {
 
           {reportLoading ? (
             <div className="card"><div className="loading">Loading report…</div></div>
+          ) : reportError ? (
+            <div className="card">
+              <div className="empty-state">
+                <div className="empty-icon">⚠️</div>
+                <div className="empty-text">Failed to load report</div>
+                <div className="empty-sub" style={{ color: "var(--red)", fontSize: 12, marginTop: 4 }}>{reportError}</div>
+              </div>
+            </div>
           ) : reportData ? (
             <>
               {/* Summary cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
                 {[
-                  { label: "Collected",       val: fmt(s.total_collected),  color: "var(--green)"  },
-                  { label: "Expenses",         val: fmt(s.total_expenses),   color: "var(--red)"    },
-                  { label: "Net Cash Flow",    val: fmt(s.net_cash_flow),    color: "var(--accent)" },
-                  { label: "Payments",         val: s.payments_count,        color: "var(--accent)" },
-                  { label: "New Students",     val: s.new_students,          color: "var(--green)"  },
-                  { label: "Present / Total",  val: `${s.present_count}/${s.total_attendance}`, color: "var(--cyan)" },
+                  { label: "Collected",      val: fmt(s.total_collected),  color: "var(--green)"  },
+                  { label: "Expenses",        val: fmt(s.total_expenses),   color: "var(--red)"    },
+                  { label: "Net Cash Flow",   val: fmt(s.net_cash_flow),    color: "var(--accent)" },
+                  { label: "Payments",        val: s.payments_count,        color: "var(--accent)" },
+                  { label: "New Students",    val: s.new_students,          color: "var(--green)"  },
+                  { label: "QR Scans",        val: s.total_attendance || 0, color: "var(--cyan)"   },
                 ].map(c => (
                   <div key={c.label} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: c.color }}>{c.val}</div>
@@ -201,7 +219,7 @@ export default function Reports() {
                 ))}
               </div>
 
-              {/* Payments table */}
+              {/* Payments */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-title">💰 Payments ({reportData.payments.length})</div>
                 {reportData.payments.length === 0
@@ -277,7 +295,7 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── OVERDUE LIST ───────────────────────────────────────────────────────── */}
+      {/* ── OVERDUE LIST ──────────────────────────────────────────────────────── */}
       {tab === "overdue" && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -342,7 +360,7 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── DEFAULTERS LIST ────────────────────────────────────────────────────── */}
+      {/* ── DEFAULTERS LIST ───────────────────────────────────────────────────── */}
       {tab === "defaulters" && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -401,7 +419,7 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── BRANCH SUMMARY ─────────────────────────────────────────────────────── */}
+      {/* ── BRANCH SUMMARY ────────────────────────────────────────────────────── */}
       {tab === "branches" && user.role === "super_admin" && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
