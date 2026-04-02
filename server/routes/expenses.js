@@ -16,7 +16,10 @@ router.get("/summary", auth, branchFilter, async (req, res) => {
     const { month, year } = req.query;
     const aid = req.academyId;
     const bid = req.branchId;
-    let conditions = [`EXTRACT(MONTH FROM e.expense_date) = $1`, `EXTRACT(YEAR FROM e.expense_date) = $2`];
+    let conditions = [
+      `EXTRACT(MONTH FROM e.expense_date) = $1`,
+      `EXTRACT(YEAR  FROM e.expense_date) = $2`,
+    ];
     let params = [month || new Date().getMonth() + 1, year || new Date().getFullYear()];
     let idx = 3;
     if (aid) { conditions.push(`br.academy_id=$${idx++}`); params.push(aid); }
@@ -43,16 +46,16 @@ router.get("/", auth, branchFilter, async (req, res) => {
     const aid = req.academyId;
     const bid = req.branchId;
     let conditions = []; let params = []; let idx = 1;
-    if (aid)   { conditions.push(`br.academy_id=$${idx++}`); params.push(aid); }
-    if (bid)   { conditions.push(`e.branch_id=$${idx++}`);   params.push(bid); }
-    if (month) { conditions.push(`EXTRACT(MONTH FROM e.expense_date) = $${idx++}`); params.push(month); }
-    if (year)  { conditions.push(`EXTRACT(YEAR  FROM e.expense_date) = $${idx++}`); params.push(year); }
+    if (aid)   { conditions.push(`br.academy_id=$${idx++}`);                    params.push(aid); }
+    if (bid)   { conditions.push(`e.branch_id=$${idx++}`);                      params.push(bid); }
+    if (month) { conditions.push(`EXTRACT(MONTH FROM e.expense_date)=$${idx++}`); params.push(month); }
+    if (year)  { conditions.push(`EXTRACT(YEAR  FROM e.expense_date)=$${idx++}`); params.push(year); }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
     const { rows } = await db.query(
       `SELECT e.id, e.branch_id, e.category,
-              COALESCE(e.title, e.description) AS title,
+              COALESCE(e.description, '') AS title,
               e.amount, e.expense_date,
-              COALESCE(e.notes, e.paid_to) AS notes,
+              COALESCE(e.paid_to, '') AS notes,
               br.name AS branch_name
        FROM expenses e JOIN branches br ON br.id=e.branch_id
        ${where} ORDER BY e.expense_date DESC`,
@@ -66,6 +69,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
 });
 
 // POST /api/expenses
+// Works with both old schema (description, paid_to) and new schema (title, notes)
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -80,7 +84,9 @@ router.post("/", auth, async (req, res) => {
     // Verify branch belongs to this academy
     const aid = req.academyId;
     if (aid) {
-      const { rows: brRows } = await db.query(`SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]);
+      const { rows: brRows } = await db.query(
+        `SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]
+      );
       if (!brRows[0]) return res.status(403).json({ error: "Branch does not belong to your academy" });
     }
 
@@ -89,28 +95,13 @@ router.post("/", auth, async (req, res) => {
     const finalNotes = notes || paid_to || null;
     const finalDate  = expense_date || new Date().toISOString().split("T")[0];
 
-    // Try inserting with title column first (new schema), fall back to description (old schema)
-    let rows;
-    try {
-      const result = await db.query(
-        `INSERT INTO expenses (branch_id, category, title, description, amount, expense_date, notes, paid_to)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [bid, finalCat, finalDesc, finalDesc, parseFloat(amount), finalDate, finalNotes, finalNotes]
-      );
-      rows = result.rows;
-    } catch (insertErr) {
-      // If title/notes columns don't exist yet, fall back to old schema
-      if (insertErr.message?.includes('column') && insertErr.message?.includes('does not exist')) {
-        const result = await db.query(
-          `INSERT INTO expenses (branch_id, category, description, amount, expense_date, paid_to)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [bid, finalCat, finalDesc, parseFloat(amount), finalDate, finalNotes]
-        );
-        rows = result.rows;
-      } else {
-        throw insertErr;
-      }
-    }
+    // Always use the safe old-schema columns (description, paid_to) which always exist.
+    // The migrate.js adds title/notes as aliases but we don't depend on them here.
+    const { rows } = await db.query(
+      `INSERT INTO expenses (branch_id, category, description, amount, expense_date, paid_to)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [bid, finalCat, finalDesc, parseFloat(amount), finalDate, finalNotes]
+    );
     res.json(rows[0]);
   } catch (e) {
     console.error("Create expense error:", e.message);
