@@ -1,4 +1,4 @@
-// ── Platform API Routes ─────────────────────────────────────────────────────
+// ── Platform API Routes ───────────────────────────────────────────────────
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db");
@@ -17,7 +17,7 @@ async function audit(adminName, action, target, details = {}) {
   ).catch(() => {});
 }
 
-// ── Revenue log table (auto-create) ────────────────────────────────────────────
+// ── Revenue log table (auto-create) ──────────────────────────────────────────────
 db.query(`
   CREATE TABLE IF NOT EXISTS platform_revenue (
     id          SERIAL PRIMARY KEY,
@@ -31,7 +31,7 @@ db.query(`
   )
 `).catch(() => {});
 
-// GET /platform/academies  (exclude pure leads from main list)
+// GET /platform/academies
 router.get("/academies", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(`
@@ -55,14 +55,12 @@ router.get("/academies", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// GET /platform/leads  (only lead entries)
+// GET /platform/leads
 router.get("/leads", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT id, name, phone, email, created_at, is_active, plan, slug
-      FROM academies
-      WHERE plan = 'lead'
-      ORDER BY created_at DESC
+      FROM academies WHERE plan = 'lead' ORDER BY created_at DESC
     `);
     res.json(rows);
   } catch (err) {
@@ -70,7 +68,7 @@ router.get("/leads", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// PATCH /platform/leads/:id/convert  — promote a lead to a real trial academy
+// PATCH /platform/leads/:id/convert
 router.patch("/leads/:id/convert", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows: lead } = await db.query("SELECT * FROM academies WHERE id=$1 AND plan='lead'", [req.params.id]);
@@ -87,7 +85,7 @@ router.patch("/leads/:id/convert", authenticatePlatformOwner, async (req, res) =
   }
 });
 
-// DELETE /platform/leads/:id  — discard a lead
+// DELETE /platform/leads/:id
 router.delete("/leads/:id", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query("SELECT name FROM academies WHERE id=$1 AND plan='lead'", [req.params.id]);
@@ -172,13 +170,12 @@ router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// PATCH /platform/academies/:id/extend  — quick extend trial by N days
+// PATCH /platform/academies/:id/extend
 router.patch("/academies/:id/extend", authenticatePlatformOwner, async (req, res) => {
   const days = parseInt(req.body.days) || 30;
   try {
     const { rows: cur } = await db.query("SELECT name, trial_ends_at FROM academies WHERE id=$1", [req.params.id]);
     if (!cur[0]) return res.status(404).json({ error: "Academy not found" });
-    // Extend from today if expired, or from current end date if still valid
     const base = cur[0].trial_ends_at && new Date(cur[0].trial_ends_at) > new Date()
       ? new Date(cur[0].trial_ends_at)
       : new Date();
@@ -194,17 +191,63 @@ router.patch("/academies/:id/extend", authenticatePlatformOwner, async (req, res
   }
 });
 
-// DELETE /platform/academies/:id/hard
+// DELETE /platform/academies/:id/hard — FIX: delete all child records first to avoid FK violation
 router.delete("/academies/:id/hard", authenticatePlatformOwner, async (req, res) => {
+  const aid = req.params.id;
+  const client = await db.pool.connect();
   try {
-    const { rows } = await db.query("SELECT name FROM academies WHERE id=$1", [req.params.id]);
+    const { rows } = await client.query("SELECT name FROM academies WHERE id=$1", [aid]);
     if (!rows[0]) return res.status(404).json({ error: "Academy not found" });
-    await db.query("DELETE FROM academies WHERE id=$1", [req.params.id]);
-    audit(req.platformAdmin?.name, "DELETE_ACADEMY_PERMANENT", rows[0].name, { id: req.params.id });
-    res.json({ message: `Academy "${rows[0].name}" permanently deleted.` });
+    const name = rows[0].name;
+
+    await client.query("BEGIN");
+
+    // 1. Get all branches for this academy
+    const { rows: branches } = await client.query("SELECT id FROM branches WHERE academy_id=$1", [aid]);
+    const bids = branches.map(b => b.id);
+
+    // 2. Get all students for this academy
+    const { rows: students } = await client.query("SELECT id FROM students WHERE academy_id=$1", [aid]);
+    const sids = students.map(s => s.id);
+
+    if (sids.length > 0) {
+      const sidList = sids.join(",");
+      // Delete all student-related data
+      await client.query(`DELETE FROM payments        WHERE student_id        = ANY(ARRAY[${sidList}]::int[])`);
+      await client.query(`DELETE FROM fee_records     WHERE student_id        = ANY(ARRAY[${sidList}]::int[])`);
+      await client.query(`DELETE FROM attendance      WHERE student_id        = ANY(ARRAY[${sidList}]::int[])`);
+      await client.query(`DELETE FROM qr_scans        WHERE student_id        = ANY(ARRAY[${sidList}]::int[])`);
+      await client.query(`DELETE FROM refresh_tokens  WHERE (payload->>'id')::int = ANY(ARRAY[${sidList}]::int[]) AND payload->>'role'='student'`);
+      await client.query(`DELETE FROM test_results    WHERE student_id        = ANY(ARRAY[${sidList}]::int[])`).catch(() => {});
+      await client.query(`DELETE FROM students        WHERE id               = ANY(ARRAY[${sidList}]::int[])`);
+    }
+
+    if (bids.length > 0) {
+      const bidList = bids.join(",");
+      await client.query(`DELETE FROM expenses        WHERE branch_id        = ANY(ARRAY[${bidList}]::int[])`);
+      await client.query(`DELETE FROM working_days    WHERE branch_id        = ANY(ARRAY[${bidList}]::int[])`).catch(() => {});
+      await client.query(`DELETE FROM batches         WHERE branch_id        = ANY(ARRAY[${bidList}]::int[])`);
+      await client.query(`DELETE FROM tests           WHERE branch_id        = ANY(ARRAY[${bidList}]::int[])`).catch(() => {});
+    }
+
+    // Delete users (admins) for this academy
+    await client.query(`DELETE FROM users WHERE academy_id=$1`, [aid]);
+    // Delete admission enquiries
+    await client.query(`DELETE FROM admission_enquiries WHERE academy_id=$1`, [aid]).catch(() => {});
+    // Delete branches
+    await client.query(`DELETE FROM branches WHERE academy_id=$1`, [aid]);
+    // Finally delete the academy itself
+    await client.query(`DELETE FROM academies WHERE id=$1`, [aid]);
+
+    await client.query("COMMIT");
+    audit(req.platformAdmin?.name, "DELETE_ACADEMY_PERMANENT", name, { id: aid });
+    res.json({ message: `Academy "${name}" and all its data permanently deleted.` });
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     console.error("Hard delete error:", err.message);
     res.status(500).json({ error: "Failed to delete academy: " + err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -278,15 +321,13 @@ router.get("/stats", authenticatePlatformOwner, async (req, res) => {
       db.query(`SELECT COALESCE(SUM(amount),0) AS total_all_time, COALESCE(SUM(amount) FILTER (WHERE paid_on >= date_trunc('month', CURRENT_DATE)),0) AS this_month FROM platform_revenue`),
     ]);
     res.json({
-      academies:        acad.rows[0],
-      total_students:   students.rows[0].count,
-      revenue_all_time: parseFloat(revenue.rows[0].total_all_time),
+      academies:          acad.rows[0],
+      total_students:     students.rows[0].count,
+      revenue_all_time:   parseFloat(revenue.rows[0].total_all_time),
       revenue_this_month: parseFloat(revenue.rows[0].this_month),
     });
   } catch (err) { res.status(500).json({ error: "Failed to fetch platform stats" }); }
 });
-
-// ── Revenue log endpoints ──────────────────────────────────────────────────────
 
 // GET /platform/revenue
 router.get("/revenue", authenticatePlatformOwner, async (req, res) => {
@@ -295,19 +336,17 @@ router.get("/revenue", authenticatePlatformOwner, async (req, res) => {
       SELECT r.*, a.name AS current_academy_name
       FROM platform_revenue r
       LEFT JOIN academies a ON a.id = r.academy_id
-      ORDER BY r.paid_on DESC, r.created_at DESC
-      LIMIT 200
+      ORDER BY r.paid_on DESC, r.created_at DESC LIMIT 200
     `);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: "Failed to fetch revenue" }); }
 });
 
-// POST /platform/revenue  — manually log a payment received
+// POST /platform/revenue
 router.post("/revenue", authenticatePlatformOwner, async (req, res) => {
   const { academy_id, academy_name, amount, plan, note, paid_on } = req.body;
   if (!amount || amount <= 0) return res.status(400).json({ error: "amount is required and must be > 0" });
   try {
-    // Look up academy name if id provided
     let name = academy_name || "—";
     if (academy_id && !academy_name) {
       const { rows } = await db.query("SELECT name FROM academies WHERE id=$1", [academy_id]);

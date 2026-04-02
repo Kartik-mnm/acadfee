@@ -12,30 +12,68 @@ if (cloudinary && process.env.CLOUDINARY_CLOUD_NAME) {
   });
 }
 
-// ── List students ─────────────────────────────────────────────────────────────────
+// ── Helper: generate academy prefix from academy name ───────────────────────────────
+// e.g. "Kavita's Kitchen" → "KK", "Nishchay Academy" → "NA"
+function academyPrefix(name) {
+  if (!name) return "";
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) return words[0].substring(0, 2).toUpperCase();
+  return words.slice(0, 3).map(w => w[0]).join("").toUpperCase();
+}
+
+// ── List students (with server-side pagination) ──────────────────────────────────────
 router.get("/", auth, branchFilter, async (req, res) => {
   try {
-    // Students can only see themselves
     if (req.user.role === "student") {
       const { rows } = await db.query(
         `SELECT s.*, b.name AS batch_name, br.name AS branch_name
          FROM students s
          LEFT JOIN batches  b  ON b.id  = s.batch_id
          LEFT JOIN branches br ON br.id = s.branch_id
-         WHERE s.id = $1`,
-        [req.user.id]
+         WHERE s.id = $1`, [req.user.id]
       );
       return res.json(rows);
     }
-    const { status, batch_id, search, limit } = req.query;
+
+    const { status, batch_id, search, limit, page } = req.query;
     const aid = req.academyId;
     let conditions = []; let params = []; let idx = 1;
     if (aid)          { conditions.push(`s.academy_id=$${idx++}`);  params.push(aid); }
     if (req.branchId) { conditions.push(`s.branch_id=$${idx++}`);   params.push(req.branchId); }
     if (status)       { conditions.push(`s.status=$${idx++}`);      params.push(status); }
     if (batch_id)     { conditions.push(`s.batch_id=$${idx++}`);    params.push(batch_id); }
-    if (search)       { conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR s.roll_no ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
+    if (search)       {
+      conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR COALESCE(s.roll_no,'') ILIKE $${idx} OR COALESCE(s.email,'') ILIKE $${idx})`);
+      params.push(`%${search}%`); idx++;
+    }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+
+    // FIX (Issue 5): Server-side pagination. If page is provided return paginated result.
+    // If no page param (legacy usage with limit), fall back to simple LIMIT.
+    if (page) {
+      const pageNum  = Math.max(1, parseInt(page) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(limit) || 20));
+      const offset   = (pageNum - 1) * pageSize;
+
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*)::int AS total FROM students s ${where}`, params
+      );
+      const total      = countRows[0].total;
+      const totalPages = Math.ceil(total / pageSize);
+
+      const { rows } = await db.query(
+        `SELECT s.*, b.name AS batch_name, br.name AS branch_name
+         FROM students s
+         LEFT JOIN batches  b  ON b.id  = s.batch_id
+         LEFT JOIN branches br ON br.id = s.branch_id
+         ${where} ORDER BY s.name
+         LIMIT $${idx} OFFSET $${idx + 1}`,
+        [...params, pageSize, offset]
+      );
+      return res.json({ data: rows, page: pageNum, totalPages, total, limit: pageSize });
+    }
+
+    // Legacy: no pagination (used by ID cards, attendance, etc.)
     const limitClause = limit ? `LIMIT ${parseInt(limit)}` : "";
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
@@ -94,7 +132,8 @@ router.post("/", auth, async (req, res) => {
           fee_type, discount, due_day, roll_no)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [name, email||null, phone, parent_phone||null, parent_name||null,
-       batch_id||null, bid, aid||null, status||"active", admission_date||new Date().toISOString().split("T")[0],
+       batch_id||null, bid, aid||null, status||"active",
+       admission_date||new Date().toISOString().split("T")[0],
        fee_type||"monthly", discount||0, due_day||10, roll_no||null]
     );
     res.json(rows[0]);
@@ -174,14 +213,13 @@ router.post("/:id/photo", auth, async (req, res) => {
   }
 });
 
-// ── Update FCM token (student registers their device for push notifications) ──────────────────
+// ── Update FCM token ─────────────────────────────────────────────────────────────────
 router.post("/:id/fcm-token", auth, async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
-    // Students can only update their own token; admins can update any
     if (req.user.role === "student" && req.user.id !== targetId)
       return res.status(403).json({ error: "Access denied" });
-    const { token, type } = req.body; // type: "student" | "parent"
+    const { token, type } = req.body;
     if (!token) return res.status(400).json({ error: "token is required" });
     const col = type === "parent" ? "parent_fcm_token" : "fcm_token";
     await db.query(`UPDATE students SET ${col}=$1 WHERE id=$2`, [token, targetId]);
@@ -209,15 +247,12 @@ router.post("/:id/send-email", auth, async (req, res) => {
     const student = sRows[0];
     if (!student.email) return res.status(400).json({ error: "Student has no email address" });
     const { rows: feeRows } = await db.query(
-      `SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC LIMIT 10`,
-      [req.params.id]
+      `SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC LIMIT 10`, [req.params.id]
     );
     const { sendFeeSummaryEmail } = require("./email");
     await sendFeeSummaryEmail(student, feeRows, {
-      name:          student.academy_name,
-      primary_color: student.primary_color,
-      accent_color:  student.accent_color,
-      phone:         student.academy_phone,
+      name: student.academy_name, primary_color: student.primary_color,
+      accent_color: student.accent_color, phone: student.academy_phone,
     });
     res.json({ message: `Fee summary sent to ${student.email}` });
   } catch (e) {
@@ -227,41 +262,56 @@ router.post("/:id/send-email", auth, async (req, res) => {
 });
 
 // ── Backfill roll numbers ───────────────────────────────────────────────────────────────
+// FIX (Issue 4): Roll numbers now include academy initials prefix
+// e.g. Nishchay Academy → NA0001, Kavita's Kitchen → KK0001
+// Existing roll numbers that are already prefixed are left alone.
 router.post("/backfill-roll-numbers", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    // Get all students without roll numbers, ordered by id (admission order)
-    const whereAcademy = aid ? "AND s.academy_id = $1" : "";
-    const params       = aid ? [aid] : [];
+
+    // Get academy name for prefix generation
+    let prefix = "";
+    if (aid) {
+      const { rows: acadRows } = await db.query("SELECT name FROM academies WHERE id=$1", [aid]);
+      if (acadRows[0]) prefix = academyPrefix(acadRows[0].name);
+    }
+
+    // Get all students WITHOUT roll numbers, ordered by admission date then id
     const { rows: students } = await db.query(
-      `SELECT s.id, s.branch_id, br.name AS branch_name
-       FROM students s
-       JOIN branches br ON br.id = s.branch_id
-       WHERE s.roll_no IS NULL ${whereAcademy}
-       ORDER BY s.id ASC`,
-      params
+      `SELECT s.id FROM students s
+       WHERE s.roll_no IS NULL ${aid ? "AND s.academy_id=$1" : ""}
+       ORDER BY s.admission_date ASC NULLS LAST, s.id ASC`,
+      aid ? [aid] : []
     );
     if (students.length === 0)
       return res.json({ message: "All students already have roll numbers.", updated: 0 });
 
-    // Find the current highest roll number for this academy to continue the sequence
+    // Find the highest existing sequential number for this academy (strips any prefix)
     const { rows: maxRow } = await db.query(
       `SELECT roll_no FROM students
-       WHERE roll_no ~ '^[0-9]+$' ${aid ? "AND academy_id=$1" : ""}
-       ORDER BY CAST(roll_no AS INT) DESC LIMIT 1`,
+       WHERE roll_no ~ '[0-9]+$' ${aid ? "AND academy_id=$1" : ""}
+       ORDER BY CAST(regexp_replace(roll_no, '^[^0-9]*', '') AS INT) DESC LIMIT 1`,
       aid ? [aid] : []
     );
-    let seq = maxRow[0] ? parseInt(maxRow[0].roll_no) + 1 : 1;
+    let seq = 1;
+    if (maxRow[0]?.roll_no) {
+      const digits = maxRow[0].roll_no.replace(/^[^0-9]*/, "");
+      const n = parseInt(digits);
+      if (!isNaN(n)) seq = n + 1;
+    }
 
     let updated = 0;
     for (const s of students) {
-      const roll = String(seq).padStart(4, "0");
+      const roll = `${prefix}${String(seq).padStart(4, "0")}`;
       await db.query("UPDATE students SET roll_no=$1 WHERE id=$2", [roll, s.id]);
-      seq++;
-      updated++;
+      seq++; updated++;
     }
-    res.json({ message: `Assigned roll numbers to ${updated} student(s).`, updated });
+    res.json({
+      message: `Assigned roll numbers to ${updated} student(s). Format: ${prefix}0001`,
+      updated,
+      prefix,
+    });
   } catch (e) {
     console.error("Backfill roll numbers error:", e.message);
     res.status(500).json({ error: "Failed to assign roll numbers" });
