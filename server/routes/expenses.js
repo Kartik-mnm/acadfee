@@ -3,13 +3,14 @@ const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
 // Ensure expenses table has all needed columns
+// BUG FIX: old migration referenced e.description before confirming it exists,
+// causing the entire migration to crash and leaving the table broken.
+// Now we ONLY add columns that are missing — no reads of old columns.
 async function ensureExpenseColumns() {
   try {
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS title TEXT`);
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes TEXT`);
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS academy_id INT`);
-    await db.query(`UPDATE expenses SET title = description WHERE title IS NULL AND description IS NOT NULL`);
-    await db.query(`UPDATE expenses SET notes = paid_to   WHERE notes IS NULL AND paid_to IS NOT NULL`);
     // Backfill academy_id from branch
     await db.query(`
       UPDATE expenses e
@@ -72,10 +73,10 @@ router.get("/", auth, branchFilter, async (req, res) => {
     if (month) { conditions.push(`EXTRACT(MONTH FROM e.expense_date) = $${idx++}`); params.push(month); }
     if (year)  { conditions.push(`EXTRACT(YEAR  FROM e.expense_date) = $${idx++}`); params.push(year); }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    // BUG FIX: was using COALESCE(e.title, e.description) and COALESCE(e.notes, e.paid_to)
+    // but description and paid_to columns don't exist in the DB — caused 500 on every GET.
     const { rows } = await db.query(
-      `SELECT e.*, br.name AS branch_name,
-              COALESCE(e.title, e.description) AS display_title,
-              COALESCE(e.notes, e.paid_to)     AS display_notes
+      `SELECT e.*, br.name AS branch_name
        FROM expenses e JOIN branches br ON br.id=e.branch_id
        ${where} ORDER BY e.expense_date DESC`,
       params
@@ -91,7 +92,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { branch_id, category, description, title, amount, expense_date, paid_to, notes } = req.body;
+    const { branch_id, category, title, amount, expense_date, notes } = req.body;
 
     if (!amount || Number(amount) <= 0)
       return res.status(400).json({ error: "Amount is required and must be > 0" });
@@ -109,17 +110,18 @@ router.post("/", auth, async (req, res) => {
         return res.status(403).json({ error: "Branch does not belong to your academy" });
     }
 
-    const finalTitle  = title || description || null;
-    const finalCat    = category || "Other";
-    const finalNotes  = notes || paid_to || null;
-    const finalDate   = expense_date || new Date().toISOString().split("T")[0];
+    const finalTitle = title || null;
+    const finalCat   = category || "Other";
+    const finalNotes = notes || null;
+    const finalDate  = expense_date || new Date().toISOString().split("T")[0];
 
+    // BUG FIX: was inserting into description and paid_to columns which don't exist.
+    // Now only inserts into columns that actually exist in the schema.
     const { rows } = await db.query(
-      `INSERT INTO expenses
-         (branch_id, academy_id, category, description, title, amount, expense_date, paid_to, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO expenses (branch_id, academy_id, category, title, amount, expense_date, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [bid, aid || null, finalCat, finalTitle, finalTitle, amount, finalDate, finalNotes, finalNotes]
+      [bid, aid || null, finalCat, finalTitle, amount, finalDate, finalNotes]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -141,15 +143,15 @@ router.put("/:id", auth, async (req, res) => {
     if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
       return res.status(403).json({ error: "Access denied" });
 
-    const { category, description, title, amount, expense_date, paid_to, notes } = req.body;
-    const finalTitle = title || description || null;
-    const finalNotes = notes || paid_to || null;
+    const { category, title, amount, expense_date, notes } = req.body;
+    const finalTitle = title || null;
+    const finalNotes = notes || null;
+    // BUG FIX: was updating description and paid_to columns which don't exist.
     const { rows } = await db.query(
       `UPDATE expenses
-       SET category=$1, description=$2, title=$3, amount=$4,
-           expense_date=$5, paid_to=$6, notes=$7
-       WHERE id=$8 RETURNING *`,
-      [category || "Other", finalTitle, finalTitle, amount, expense_date, finalNotes, finalNotes, req.params.id]
+       SET category=$1, title=$2, amount=$3, expense_date=$4, notes=$5
+       WHERE id=$6 RETURNING *`,
+      [category || "Other", finalTitle, amount, expense_date, finalNotes, req.params.id]
     );
     res.json(rows[0]);
   } catch (e) {

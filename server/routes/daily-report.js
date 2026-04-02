@@ -45,8 +45,7 @@ async function fetchDayData(academyId, date) {
       ORDER BY s.created_at DESC
     `, [academyId, d]),
 
-    // QR scans that day (entry + exit) — uses qr_scans table NOT attendance table
-    // The attendance table stores monthly aggregates, not daily rows with status
+    // QR scans that day
     db.query(`
       SELECT
         COUNT(*) FILTER (WHERE qs.exit_time IS NOT NULL) AS present_count,
@@ -59,10 +58,12 @@ async function fetchDayData(academyId, date) {
         AND qs.scan_date = $2::date
     `, [academyId, d]),
 
-    // Expenses created that day
+    // BUG FIX: was using COALESCE(e.title, e.description) AS description
+    // but the 'description' column does not exist in the expenses table.
+    // The expenses table only has 'title' and 'notes'. Fixed to use e.title directly.
     db.query(`
       SELECT
-        COALESCE(e.title, e.description) AS description,
+        e.title AS description,
         e.amount, e.category,
         br.name AS branch_name,
         e.created_at
@@ -374,7 +375,7 @@ router.post("/email", auth, async (req, res) => {
   <div style="background:#1a1f35;padding:14px 32px;text-align:center;font-size:11px;color:rgba(255,255,255,0.5);">Exponent Platform · Daily Report · ${data.date}</div>
 </div></body></html>`;
     await resend.emails.send({
-      from:    "Exponent Reports <onboarding@resend.dev>",
+      from:    "Exponent Reports <noreply@exponentgrow.in>",
       to:      adminEmail,
       subject: `Daily Report ${data.date} — ${academy}`,
       html,
