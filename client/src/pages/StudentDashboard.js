@@ -20,7 +20,6 @@ export default function StudentDashboard() {
   const [tab,        setTab]        = useState("overview");
   const [loading,    setLoading]    = useState(true);
   const [qrDataUrl,  setQrDataUrl]  = useState("");
-  // null = loading, "active" = scannable, "expired" = batch ended, "inactive" = manually deactivated
   const [qrStatus,   setQrStatus]   = useState(null);
 
   useEffect(() => {
@@ -45,8 +44,6 @@ export default function StudentDashboard() {
     load();
   }, []);
 
-  // Generate QR code — always render a QR image.
-  // If the student is inactive, still show a QR but mark it as disabled with the reason.
   useEffect(() => {
     if (!user?.id) return;
     API.get(`/qrscan/token/${user.id}`)
@@ -61,13 +58,12 @@ export default function StudentDashboard() {
       })
       .catch(async (err) => {
         const reason = err.response?.data?.reason || "inactive";
-        // Generate a dummy/placeholder QR (encodes the error message) so the card still looks good
         const dummyText = reason === "expired" ? "SESSION EXPIRED" : "STUDENT INACTIVE";
         try {
           const url = await QRCode.toDataURL(dummyText, {
             width: 180, margin: 1,
             errorCorrectionLevel: "L",
-            color: { dark: "#94a3b8", light: "#f1f5f9" },  // greyed-out palette
+            color: { dark: "#94a3b8", light: "#f1f5f9" },
           });
           setQrDataUrl(url);
         } catch { /* ignore */ }
@@ -88,7 +84,11 @@ export default function StudentDashboard() {
   const avgAtt      = attendance.length ? Math.round(attendance.reduce((s, a) => s + parseFloat(a.percentage || 0), 0) / attendance.length) : null;
   const avgScore    = tests.length      ? Math.round(tests.reduce((s, t)      => s + parseFloat(t.percentage || 0), 0) / tests.length)      : null;
 
-  const rollDisplay = student?.roll_no || `NA-${String(user.id).padStart(5, "0")}`;
+  // FIX (Issue 3): Roll number display — use the actual DB roll_no.
+  // Only fall back to the padded ID if roll_no is truly empty.
+  // The previous fallback `NA-${user.id padded}` was misleading because
+  // it generated a fake roll number matching no branch prefix convention.
+  const rollDisplay = student?.roll_no || "—";
 
   const tabs = [
     { id: "overview",    label: "🏠 Overview" },
@@ -99,7 +99,6 @@ export default function StudentDashboard() {
     { id: "performance", label: "📊 Tests" },
   ];
 
-  // QR overlay content based on status
   const QrStatusOverlay = () => {
     if (qrStatus === "active" || qrStatus === null) return null;
     const isExpired = qrStatus === "expired";
@@ -152,7 +151,8 @@ export default function StudentDashboard() {
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{user.name}</div>
-            <div style={{ fontSize: 11, color: "var(--text3)" }}>Student · {user.branch_name}</div>
+            {/* FIX: show academy name + branch, not hardcoded "Nishchay Academy" */}
+            <div style={{ fontSize: 11, color: "var(--text3)" }}>Student · {student?.branch_name || user.branch_name}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -160,7 +160,7 @@ export default function StudentDashboard() {
             fontSize: 12, fontWeight: 700, color: "var(--cyan-300)",
             fontFamily: "JetBrains Mono, monospace", letterSpacing: 0.5,
           }}>
-            {rollDisplay}
+            {rollDisplay !== "—" ? rollDisplay : ""}
           </div>
           <button className="btn btn-secondary btn-sm" onClick={logout}>Logout</button>
         </div>
@@ -180,8 +180,9 @@ export default function StudentDashboard() {
         }}>
           <div style={{ position: "relative", zIndex: 1 }}>
             <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>Welcome, {user.name.split(" ")[0]}! 👋</div>
+            {/* FIX: use student batch_name and branch_name from DB, not hardcoded academy name */}
             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
-              {student?.batch_name || "No batch"} · Nishchay Academy · {user.branch_name}
+              {student?.batch_name || "No batch"} · {student?.branch_name || user.branch_name}
             </div>
           </div>
           {balance > 0 && (
@@ -204,7 +205,6 @@ export default function StudentDashboard() {
             <div key={s.label} style={{
               background: "var(--glass)", backdropFilter: "blur(16px)",
               border: "1px solid var(--border)", borderRadius: 12, padding: "16px",
-              transition: "transform 0.2s",
             }}>
               <div style={{ fontSize: 20, marginBottom: 6 }}>{s.icon}</div>
               <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 4 }}>{s.label}</div>
@@ -225,7 +225,6 @@ export default function StudentDashboard() {
         {/* ── ID Card Tab ── */}
         {tab === "idcard" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
-            {/* Roll number + info card */}
             <div className="card">
               <div className="card-title">Student Info</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -236,30 +235,36 @@ export default function StudentDashboard() {
                       : "👤"}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: 16 }}>{student?.name}</div>
+                    <div style={{ fontWeight: 800, fontSize: 16 }}>{student?.name || user.name}</div>
                     <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{student?.batch_name || "No batch"}</div>
                   </div>
                 </div>
                 {[
-                  ["Roll Number",  rollDisplay],
-                  ["Branch",       user.branch_name],
+                  ["Roll Number",  student?.roll_no || "Not assigned"],
+                  ["Branch",       student?.branch_name || user.branch_name || "—"],
                   ["Phone",        student?.phone || "—"],
-                  ["Admission",    student?.admission_date ? new Date(student.admission_date).toLocaleDateString("en-IN") : "—"],
+                  ["Admission",    student?.admission_date
+                                    ? new Date(student.admission_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                                    : "—"],
                   ["Email",        student?.email || "—"],
+                  ["Gender",       student?.gender || "—"],
                 ].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border2)", fontSize: 13 }}>
                     <span style={{ color: "var(--text3)" }}>{l}</span>
-                    <span style={{ fontWeight: 600, color: l === "Roll Number" ? "var(--cyan-300)" : "var(--text)", fontFamily: l === "Roll Number" ? "JetBrains Mono, monospace" : "inherit" }}>{v}</span>
+                    <span style={{
+                      fontWeight: 600,
+                      color: l === "Roll Number" ? "var(--cyan-300)" : "var(--text)",
+                      fontFamily: l === "Roll Number" ? "JetBrains Mono, monospace" : "inherit",
+                      maxWidth: "60%", textAlign: "right", wordBreak: "break-word"
+                    }}>{v}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* QR Code card — always visible, overlaid with error if inactive */}
+            {/* QR Code card */}
             <div className="card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
               <div className="card-title" style={{ alignSelf: "flex-start" }}>Attendance QR Code</div>
-
-              {/* QR wrapper — always show QR image, overlay if disabled */}
               <div style={{ position: "relative", display: "inline-block" }}>
                 <div style={{
                   background: "white", padding: 14, borderRadius: 12,
@@ -273,16 +278,16 @@ export default function StudentDashboard() {
                     : <div style={{ width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 12 }}>Loading…</div>
                   }
                 </div>
-                {/* Status overlay (sits on top of QR) */}
                 <QrStatusOverlay />
               </div>
-
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 13 }}>{student?.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{student?.name || user.name}</div>
                 {qrStatus === "active" && (
                   <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>Show this QR at entry/exit to mark attendance</div>
                 )}
-                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--cyan-300)", marginTop: 4 }}>{rollDisplay}</div>
+                {student?.roll_no && (
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--cyan-300)", marginTop: 4 }}>{student.roll_no}</div>
+                )}
               </div>
             </div>
           </div>
@@ -409,7 +414,7 @@ export default function StudentDashboard() {
                     <td>{a.year}</td>
                     <td>{a.total_days}</td>
                     <td style={{ color: "var(--green)", fontWeight: 600 }}>{a.present}</td>
-                    <td style={{ color: "var(--red)", fontWeight: 600 }}>{a.total_days - a.present}</td>
+                    <td style={{ color: "var(--red)", fontWeight: 600 }}>{Math.max(0, a.total_days - a.present)}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ flex: 1, background: "var(--bg3)", borderRadius: 4, height: 5 }}>
