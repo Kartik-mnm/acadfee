@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { AcademyProvider, useAcademy } from "./context/AcademyContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
@@ -19,6 +20,7 @@ import AdmissionForm from "./pages/AdmissionForm";
 import StudentDashboard from "./pages/StudentDashboard";
 import AcademySignup from "./pages/AcademySignup";
 import AcademySettings from "./pages/AcademySettings";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import "./App.css";
 
 const NAV_ICONS = {
@@ -79,9 +81,9 @@ function TrialBanner({ academy, onSettings }) {
 function Layout() {
   const { user, logout }     = useAuth();
   const { academy, loading } = useAcademy();
-  const [page, setPage]             = useState("dashboard");
+  const [page, setPage]               = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme]           = useState(() => localStorage.getItem("theme") || "dark");
+  const [theme, setTheme]             = useState(() => localStorage.getItem("theme") || "dark");
   const mainRef = useRef(null);
 
   useEffect(() => {
@@ -109,7 +111,11 @@ function Layout() {
   }
 
   if (!user) return <Login />;
-  if (user.role === "student") return <StudentDashboard />;
+  if (user.role === "student") return (
+    <ErrorBoundary page="Student Dashboard">
+      <StudentDashboard />
+    </ErrorBoundary>
+  );
 
   const f = academy?.features || {};
   const nav = [
@@ -132,11 +138,20 @@ function Layout() {
   ].filter((n) => n.show);
 
   const pages = {
-    dashboard: Dashboard, students: Students, admissions: Admissions,
-    batches: Batches, attendance: Attendance, performance: Performance,
-    fees: Fees, payments: Payments, expenses: Expenses,
-    reports: Reports, idcards: IDCards, qrscanner: QRScanner,
-    users: Users, settings: AcademySettings,
+    dashboard:   Dashboard,
+    students:    Students,
+    admissions:  Admissions,
+    batches:     Batches,
+    attendance:  Attendance,
+    performance: Performance,
+    fees:        Fees,
+    payments:    Payments,
+    expenses:    Expenses,
+    reports:     Reports,
+    idcards:     IDCards,
+    qrscanner:   QRScanner,
+    users:       Users,
+    settings:    AcademySettings,
   };
   const Page = pages[page] || Dashboard;
   const goTo = (id) => { setPage(id); setSidebarOpen(false); };
@@ -220,17 +235,21 @@ function Layout() {
       </aside>
 
       <main className="main-content" ref={mainRef}>
-        {/* Trial expiry banner — shown at the top of every page */}
         <TrialBanner academy={academy} onSettings={() => goTo("settings")} />
-        <Page onNavigate={goTo} />
+        {/* Each page is wrapped in its own ErrorBoundary so a crash on one page
+            doesn't take down the whole app or the sidebar navigation */}
+        <ErrorBoundary page={page} onNavigate={goTo}>
+          <Page onNavigate={goTo} />
+        </ErrorBoundary>
       </main>
     </div>
   );
 }
 
 export default function App() {
-  if (window.location.pathname === "/apply")  return <AdmissionForm />;
-  if (window.location.pathname === "/signup") return <AcademySignup />;
+  if (window.location.pathname === "/apply")   return <AdmissionForm />;
+  if (window.location.pathname === "/signup")  return <AcademySignup />;
+  if (window.location.pathname === "/privacy") return <PrivacyPolicy />;
   return (
     <AcademyProvider>
       <AuthProvider>
