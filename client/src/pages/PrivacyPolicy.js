@@ -10,6 +10,8 @@ export default function PrivacyPolicy() {
       color: "#1a1a2e",
       lineHeight: 1.75,
       fontSize: 15,
+      background: "#fff",
+      minHeight: "100vh",
     },
     logo: {
       display: "flex", alignItems: "center", gap: 10,
@@ -48,7 +50,7 @@ export default function PrivacyPolicy() {
       <div style={s.updated}>Last updated: {updated}</div>
 
       <p style={s.p}>
-        Exponent Platform ("we", "us", or "our") is an academy management software operated by
+        Exponent Platform (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is an academy management software operated by
         Kartik Ninawe, Nagpur, Maharashtra, India. This Privacy Policy explains how we collect,
         use, store, and protect information when you use our platform at{" "}
         <a href="https://app.exponentgrow.in" style={s.a}>app.exponentgrow.in</a> and the
@@ -61,7 +63,7 @@ export default function PrivacyPolicy() {
         <li style={s.li}><strong>Academy administrators:</strong> name, email address, password (hashed), academy name, branch details.</li>
         <li style={s.li}><strong>Students:</strong> name, phone number, email address, batch/branch enrollment, attendance records, fee and payment history, test scores, parent name, and optional profile photo.</li>
         <li style={s.li}><strong>Device tokens:</strong> Firebase Cloud Messaging (FCM) tokens for push notification delivery to students and parents.</li>
-        <li style={s.li}><strong>Usage data:</strong> server logs including IP addresses, timestamps, and API endpoint access — retained for up to 30 days.</li>
+        <li style={s.li}><strong>Usage data:</strong> server logs including IP addresses, timestamps, and API endpoint access &mdash; retained for up to 30 days.</li>
       </ul>
 
       <h2 style={s.h2}>2. How we use your information</h2>
@@ -77,14 +79,13 @@ export default function PrivacyPolicy() {
 
       <h2 style={s.h2}>3. Data storage and security</h2>
       <p style={s.p}>
-        All data is stored in a PostgreSQL database hosted on Neon (or Supabase). Connections
-        are encrypted via TLS. Passwords are hashed using bcrypt and are never stored in plain text.
+        All data is stored in a PostgreSQL database. Connections are encrypted via TLS.
+        Passwords are hashed using bcrypt and are never stored in plain text.
         Authentication tokens expire after 12 hours (access) and 30 days (refresh).
       </p>
       <p style={s.p}>
         We follow industry-standard security practices; however, no system is completely secure.
-        We recommend academy administrators use strong passwords and keep their login credentials
-        confidential.
+        We recommend academy administrators use strong passwords and keep their login credentials confidential.
       </p>
 
       <h2 style={s.h2}>4. Data retention</h2>
@@ -97,11 +98,11 @@ export default function PrivacyPolicy() {
       <h2 style={s.h2}>5. Third-party services</h2>
       <p style={s.p}>We use the following third-party services to operate the platform:</p>
       <ul style={s.ul}>
-        <li style={s.li}><strong>Render</strong> — application hosting (render.com)</li>
-        <li style={s.li}><strong>Neon / Supabase</strong> — PostgreSQL database hosting</li>
-        <li style={s.li}><strong>Firebase / Google</strong> — push notification delivery (FCM)</li>
-        <li style={s.li}><strong>Resend</strong> — transactional email delivery</li>
-        <li style={s.li}><strong>Cloudinary</strong> — student photo and logo storage (if enabled)</li>
+        <li style={s.li}><strong>Render</strong> &mdash; application hosting (render.com)</li>
+        <li style={s.li}><strong>Neon / Supabase</strong> &mdash; PostgreSQL database hosting</li>
+        <li style={s.li}><strong>Firebase / Google</strong> &mdash; push notification delivery (FCM)</li>
+        <li style={s.li}><strong>Resend</strong> &mdash; transactional email delivery</li>
+        <li style={s.li}><strong>Cloudinary</strong> &mdash; student photo and logo storage (if enabled)</li>
       </ul>
       <p style={s.p}>
         Each of these services has its own privacy policy. We only share the minimum data necessary
@@ -111,11 +112,10 @@ export default function PrivacyPolicy() {
       <h2 style={s.h2}>6. Cookies and local storage</h2>
       <p style={s.p}>
         We use browser <code>localStorage</code> to store authentication tokens and user
-        preferences (such as theme). We do not use advertising cookies or third-party tracking
-        pixels.
+        preferences (such as theme). We do not use advertising cookies or third-party tracking pixels.
       </p>
 
-      <h2 style={s.h2}>7. Children's privacy</h2>
+      <h2 style={s.h2}>7. Children&rsquo;s privacy</h2>
       <p style={s.p}>
         Our platform is used by educational institutions to manage student records, which may
         include minors. Academy administrators are responsible for obtaining appropriate consent
@@ -152,6 +152,10 @@ export default function PrivacyPolicy() {
             <a href="mailto:kartik@exponentgrow.in" style={s.a}>kartik@exponentgrow.in</a>
           </div>
           <div>
+            Phone / WhatsApp:{" "}
+            <a href="tel:+918956419453" style={s.a}>+91 89564 19453</a>
+          </div>
+          <div>
             Website:{" "}
             <a href="https://exponentgrow.in" style={s.a}>exponentgrow.in</a>
           </div>
@@ -159,10 +163,10 @@ export default function PrivacyPolicy() {
       </div>
 
       <div style={s.footer}>
-        &copy; {new Date().getFullYear()} Exponent Platform &nbsp;·&nbsp;
+        &copy; {new Date().getFullYear()} Exponent Platform &nbsp;&middot;&nbsp;
         <a href="/" style={{ ...s.a, color: "#94a3b8" }}>Back to app</a>
-        &nbsp;·&nbsp;
-        <a href="https://wa.me/91XXXXXXXXXX" style={{ ...s.a, color: "#94a3b8" }}>WhatsApp support</a>
+        &nbsp;&middot;&nbsp;
+        <a href="https://wa.me/918956419453" style={{ ...s.a, color: "#94a3b8" }}>WhatsApp support</a>
       </div>
     </div>
   );

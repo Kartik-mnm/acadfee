@@ -1,1 +1,5 @@
-/*    /index.html    200
+# Netlify SPA redirect rule
+# All routes that don't match a static file are served index.html
+# so React Router / window.location.pathname routing works correctly
+# for /privacy, /apply, /signup and any future client-side routes.
+/*    /index.html   200
