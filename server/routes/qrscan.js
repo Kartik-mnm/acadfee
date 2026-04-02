@@ -4,11 +4,11 @@ const { auth, getJwtSecret } = require("../middleware");
 const jwt     = require("jsonwebtoken");
 const { sendAttendanceNotification } = require("../fcm");
 
-const toIST = (date) => new Date(date).toLocaleString("en-IN", {
+const toIST = (date) => new Date(date).toLocaleTimeString("en-IN", {
   timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
 });
 
-// ── Generate QR token ────────────────────────────────────────────────────────────
+// ── Generate QR token ─────────────────────────────────────────────────────────────
 router.get("/token/:student_id", auth, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -32,8 +32,6 @@ router.get("/token/:student_id", auth, async (req, res) => {
       });
     }
 
-    // Always embed academy_id so cross-academy check works even for old students
-    // If student.academy_id is null, resolve from their branch
     let academyId = student.academy_id;
     if (!academyId) {
       const { rows: brRows } = await db.query(
@@ -46,11 +44,10 @@ router.get("/token/:student_id", auth, async (req, res) => {
       {
         student_id: student.id,
         branch_id:  student.branch_id,
-        academy_id: academyId,   // always set
+        academy_id: academyId,
         type: "qr_attendance"
       },
       getJwtSecret()
-      // No expiry — QR is valid as long as student is active (checked live in /scan)
     );
     res.json({ token, student: { ...student, academy_id: academyId } });
   } catch (e) {
@@ -59,7 +56,7 @@ router.get("/token/:student_id", auth, async (req, res) => {
   }
 });
 
-// ── Register FCM token ───────────────────────────────────────────────────────────
+// ── Register FCM token ────────────────────────────────────────────────────────────
 router.post("/register-token", auth, async (req, res) => {
   try {
     const { student_id, token, type } = req.body;
@@ -69,6 +66,7 @@ router.post("/register-token", auth, async (req, res) => {
       return res.status(403).json({ error: "Cannot register token for another student" });
     const col = type === "student" ? "fcm_token" : "parent_fcm_token";
     await db.query(`UPDATE students SET ${col}=$1 WHERE id=$2`, [token, student_id]);
+    console.log(`[FCM] Registered ${type} token for student ${student_id}`);
     res.json({ success: true });
   } catch (e) {
     console.error("Register token error:", e.message);
@@ -76,7 +74,7 @@ router.post("/register-token", auth, async (req, res) => {
   }
 });
 
-// ── Process QR scan ──────────────────────────────────────────────────────────────
+// ── Process QR scan ─────────────────────────────────────────────────────────────
 router.post("/scan", auth, async (req, res) => {
   if (!["super_admin", "branch_manager"].includes(req.user.role))
     return res.status(403).json({ error: "Access denied" });
@@ -95,9 +93,9 @@ router.post("/scan", auth, async (req, res) => {
     }
 
     const { student_id, branch_id } = payload;
-    const tokenAcademyId   = payload.academy_id || null;
+    const tokenAcademyId = payload.academy_id || null;
 
-    // Resolve the scanner's academy_id — from JWT first, then from DB via their branch
+    // Resolve scanner's academy_id
     let scannerAcademyId = req.academyId || null;
     if (!scannerAcademyId && req.user.branch_id) {
       const { rows: brRows } = await db.query(
@@ -106,7 +104,7 @@ router.post("/scan", auth, async (req, res) => {
       scannerAcademyId = brRows[0]?.academy_id || null;
     }
 
-    // Resolve the student's academy_id — from token first, then live from DB
+    // Resolve student's academy_id
     let studentAcademyId = tokenAcademyId;
     if (!studentAcademyId) {
       const { rows: stRows } = await db.query(
@@ -117,27 +115,21 @@ router.post("/scan", auth, async (req, res) => {
       studentAcademyId = stRows[0]?.academy_id || null;
     }
 
-    // ── HARD BLOCK: cross-academy scan ──────────────────────────────────────────
-    // If we can determine EITHER academy, enforce the match.
-    // This means: Academy B admin CANNOT scan Academy A student, period.
+    // HARD BLOCK: cross-academy scan
     if (scannerAcademyId && studentAcademyId && scannerAcademyId !== studentAcademyId) {
-      console.warn(`[QR] BLOCKED cross-academy: scanner=${scannerAcademyId} student=${studentAcademyId} student_id=${student_id}`);
+      console.warn(`[QR] BLOCKED cross-academy: scanner=${scannerAcademyId} student=${studentAcademyId}`);
       return res.status(403).json({
         error: "\u26d4 This student belongs to a different academy. You cannot scan their QR.",
         reason: "wrong_academy",
       });
     }
-
-    // If scanner has academy_id but token doesn't (old QR) — verify via DB
     if (scannerAcademyId && !studentAcademyId) {
       const { rows: crossCheck } = await db.query(
-        `SELECT s.id FROM students s
-         JOIN branches br ON br.id = s.branch_id
+        `SELECT s.id FROM students s JOIN branches br ON br.id = s.branch_id
          WHERE s.id = $1 AND (s.academy_id = $2 OR br.academy_id = $2)`,
         [student_id, scannerAcademyId]
       );
       if (!crossCheck[0]) {
-        console.warn(`[QR] BLOCKED via DB fallback: student_id=${student_id} scanner_academy=${scannerAcademyId}`);
         return res.status(403).json({
           error: "\u26d4 This student does not belong to your academy.",
           reason: "wrong_academy",
@@ -145,15 +137,17 @@ router.post("/scan", auth, async (req, res) => {
       }
     }
 
-    // Re-fetch student live from DB
+    // Fetch student + academy name in one query
     const { rows: sRows } = await db.query(
       `SELECT s.name, s.phone, LOWER(s.status) AS status,
               s.fcm_token, s.parent_fcm_token,
               b.name AS batch_name, b.end_date AS batch_end_date,
-              br.name AS branch_name
+              br.name AS branch_name,
+              a.name AS academy_name
        FROM students s
        LEFT JOIN batches b ON b.id = s.batch_id
        JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, br.academy_id)
        WHERE s.id = $1`,
       [student_id]
     );
@@ -190,6 +184,7 @@ router.post("/scan", auth, async (req, res) => {
 
     let scanType, result;
     if (scanRows.length === 0) {
+      // First scan of the day = Entry
       const { rows } = await db.query(
         `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, scanned_by)
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
@@ -197,12 +192,14 @@ router.post("/scan", auth, async (req, res) => {
       );
       scanType = "entry"; result = rows[0];
     } else if (!scanRows[0].exit_time) {
+      // Second scan = Exit
       const { rows } = await db.query(
         `UPDATE qr_scans SET exit_time=$1, scanned_by=$2
          WHERE student_id=$3 AND scan_date=$4 RETURNING *`,
         [now, req.user.id, student_id, today]
       );
       scanType = "exit"; result = rows[0];
+      // Only increment attendance on working days
       if (isWorkingDay) {
         await db.query(
           `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
@@ -224,11 +221,15 @@ router.post("/scan", auth, async (req, res) => {
       });
     }
 
+    // FIX: pass academy_name so notifications say the correct academy name
     sendAttendanceNotification({
-      studentName: student.name, scanType,
-      time: now, timeIST: toIST(now),
+      studentName:  student.name,
+      scanType,
+      time:         now,
+      timeIST:      toIST(now),
       studentToken: student.fcm_token,
       parentToken:  student.parent_fcm_token,
+      academyName:  student.academy_name,  // <-- now dynamic
     }).catch(console.error);
 
     res.json({
@@ -243,12 +244,12 @@ router.post("/scan", auth, async (req, res) => {
   }
 });
 
-// ── Today's scans ────────────────────────────────────────────────────────────────
+// ── Today's scans ──────────────────────────────────────────────────────────────────────
 router.get("/today", auth, async (req, res) => {
   if (!["super_admin", "branch_manager"].includes(req.user.role))
     return res.status(403).json({ error: "Access denied" });
   try {
-    const todayIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0].trim();
+    const todayIST  = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0].trim();
     const academyId = req.academyId;
     let query, params;
     if (req.user.role === "branch_manager") {

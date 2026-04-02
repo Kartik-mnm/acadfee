@@ -1,11 +1,12 @@
 const admin = require("firebase-admin");
+const db    = require("./db");
 
 let initialized = false;
 
 function initFCM() {
   if (initialized) return;
   if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
-    console.log("Firebase env vars not set — FCM disabled");
+    console.log("[FCM] Firebase env vars not set — FCM disabled");
     return;
   }
   try {
@@ -17,22 +18,23 @@ function initFCM() {
       }),
     });
     initialized = true;
-    console.log("✅ Firebase Admin initialized");
+    console.log("\u2705 Firebase Admin initialized");
   } catch (e) {
     console.error("Firebase init error:", e.message);
   }
 }
 
-// Absolute URL to the academy logo hosted on the frontend
-// APP_URL is set in Render env: https://acadfee-app.onrender.com
-function getIconUrl() {
-  const base = (process.env.APP_URL || "https://acadfee-app.onrender.com").replace(/\/$/, "");
-  return `${base}/nishchay-logo.png`;
+function getAppUrl() {
+  return (process.env.APP_URL || "https://app.exponentgrow.in").replace(/\/$/, "");
 }
 
+/**
+ * Core send function.
+ * If FCM rejects the token as invalid/unregistered, we automatically
+ * clear it from the DB so it is never retried.
+ */
 async function sendNotification(token, title, body, data = {}) {
   if (!initialized || !token) return { skipped: true };
-  const iconUrl = getIconUrl();
   try {
     const result = await admin.messaging().send({
       token,
@@ -44,53 +46,87 @@ async function sendNotification(token, title, body, data = {}) {
         notification: {
           title,
           body,
-          // icon  → large image on the RIGHT of the Android notification (working correctly)
-          // badge → omitted intentionally:
-          //          Android requires a white-on-transparent monochrome PNG for the left slot.
-          //          Passing a full-colour logo causes Android to show Chrome's blue square
-          //          as a fallback, which looks worse than no badge at all.
-          icon:    iconUrl,
+          // Use a generic Exponent icon hosted at the app URL
+          icon:    `${getAppUrl()}/logo192.png`,
           vibrate: [200, 100, 200],
           requireInteraction: false,
-          tag:      "nishchay-attendance",
+          tag:      "exponent-attendance",
           renotify: true,
         },
         fcmOptions: {
-          link: process.env.APP_URL || "https://acadfee-app.onrender.com",
+          link: getAppUrl(),
         },
       },
     });
-    console.log(`✅ FCM sent: ${title}`);
+    console.log(`[FCM] \u2705 Sent: "${title}"`);
     return { success: true, result };
   } catch (e) {
-    console.error("FCM send error:", e.message);
+    // Automatically purge stale / unregistered FCM tokens from DB
+    const isStale = e.code === "messaging/invalid-registration-token"
+                 || e.code === "messaging/registration-token-not-registered"
+                 || e.message?.includes("not-registered")
+                 || e.message?.includes("invalid-registration-token");
+    if (isStale) {
+      console.warn(`[FCM] Stale token detected — purging from DB: ${token.substring(0, 20)}...`);
+      try {
+        // Clear from both student columns (fcm_token and parent_fcm_token)
+        await db.query(
+          `UPDATE students SET fcm_token = NULL WHERE fcm_token = $1`, [token]
+        );
+        await db.query(
+          `UPDATE students SET parent_fcm_token = NULL WHERE parent_fcm_token = $1`, [token]
+        );
+      } catch (dbErr) {
+        console.error("[FCM] Failed to purge token from DB:", dbErr.message);
+      }
+    } else {
+      console.error("[FCM] Send error:", e.message);
+    }
     return { error: e.message };
   }
 }
 
-async function sendAttendanceNotification({ studentName, scanType, time, timeIST, studentToken, parentToken }) {
+/**
+ * Send entry/exit attendance notification to student and parent.
+ * academyName is passed from the QR scan route so each academy
+ * shows its own name instead of a hardcoded one.
+ */
+async function sendAttendanceNotification({
+  studentName, scanType, time, timeIST,
+  studentToken, parentToken,
+  academyName   // <-- new param: academy's actual name
+}) {
+  const academy  = academyName || "your academy";
   const displayTime = timeIST || new Date(time).toLocaleTimeString("en-IN", {
     timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
   });
 
-  const studentTitle = scanType === "entry"
-    ? `✅ Entry Marked — ${studentName}`
-    : `🚶 Exit Marked — ${studentName}`;
-  const studentBody = scanType === "entry"
-    ? `Welcome! You arrived at Nishchay Academy at ${displayTime} IST`
-    : `Goodbye! You left Nishchay Academy at ${displayTime} IST`;
+  const isEntry = scanType === "entry";
 
-  const parentTitle = scanType === "entry"
-    ? `✅ ${studentName} has arrived`
-    : `🚶 ${studentName} has left`;
-  const parentBody = scanType === "entry"
-    ? `Your child ${studentName} arrived at Nishchay Academy at ${displayTime} IST`
-    : `Your child ${studentName} left Nishchay Academy at ${displayTime} IST`;
+  const studentTitle = isEntry
+    ? `\u2705 Entry Marked \u2014 ${studentName}`
+    : `\ud83d\udeb6 Exit Marked \u2014 ${studentName}`;
+  const studentBody = isEntry
+    ? `Welcome! You arrived at ${academy} at ${displayTime}`
+    : `Goodbye! You left ${academy} at ${displayTime}`;
 
-  const results = await Promise.allSettled([
-    sendNotification(studentToken, studentTitle, studentBody, { scan_type: scanType, student_name: studentName }),
-    sendNotification(parentToken,  parentTitle,  parentBody,  { scan_type: scanType, student_name: studentName }),
-  ]);
+  const parentTitle = isEntry
+    ? `\u2705 ${studentName} has arrived`
+    : `\ud83d\udeb6 ${studentName} has left`;
+  const parentBody = isEntry
+    ? `${studentName} arrived at ${academy} at ${displayTime}`
+    : `${studentName} left ${academy} at ${displayTime}`;
+
+  const promises = [];
+  if (studentToken)
+    promises.push(sendNotification(studentToken, studentTitle, studentBody,
+      { type: "attendance", scan_type: scanType, student_name: studentName }));
+  if (parentToken)
+    promises.push(sendNotification(parentToken, parentTitle, parentBody,
+      { type: "attendance", scan_type: scanType, student_name: studentName }));
+
+  if (promises.length === 0) return [{ skipped: true }];
+  const results = await Promise.allSettled(promises);
   return results;
 }
 
