@@ -82,12 +82,19 @@ async function runMigration() {
       [hash]
     );
 
-    // expenses — add title and notes columns if they don't exist (new schema)
+    // expenses — safely add new columns (title, notes, academy_id)
+    // FIX: removed UPDATE using description/paid_to columns which never existed in DB.
+    // Those columns don't exist, causing "column does not exist" crash every deploy.
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS title TEXT`);
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes TEXT`);
-    // Backfill title from description for existing rows
-    await db.query(`UPDATE expenses SET title = description WHERE title IS NULL AND description IS NOT NULL`);
-    await db.query(`UPDATE expenses SET notes = paid_to WHERE notes IS NULL AND paid_to IS NOT NULL`);
+    await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE SET NULL`);
+    // Backfill academy_id for existing expense rows from their branch
+    await db.query(`
+      UPDATE expenses e
+      SET academy_id = br.academy_id
+      FROM branches br
+      WHERE br.id = e.branch_id AND e.academy_id IS NULL
+    `);
 
     // admission_enquiries
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url TEXT`);
