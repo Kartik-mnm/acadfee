@@ -1,74 +1,92 @@
-// ── Platform Owner Auth Routes ───────────────────────────────────────────────────
-const express = require("express");
-const router  = express.Router();
-const bcrypt  = require("bcryptjs");
-const jwt     = require("jsonwebtoken");
-const db      = require("../db");
-const { authenticatePlatformOwner } = require("../middleware");
+// ── Platform Auth Routes ──────────────────────────────────────────────────────────
+const express  = require(\"express\");
+const router   = express.Router();
+const bcrypt   = require(\"bcryptjs\");
+const jwt      = require(\"jsonwebtoken\");
+const db       = require(\"../db\");
+const { authenticatePlatformOwner } = require(\"../middleware\");
 
-function getJwtSecret() { return process.env.JWT_SECRET; }
+function getPlatformSecret() {
+  return process.env.JWT_SECRET || \"fallback_secret\";
+}
 
 // POST /platform/auth/login
-router.post("/login", async (req, res) => {
+router.post(\"/login\", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
-    return res.status(400).json({ error: "Email and password are required" });
+    return res.status(400).json({ error: \"Email and password required\" });
   try {
     const { rows } = await db.query(
-      "SELECT * FROM platform_admins WHERE email = $1 AND is_active = true", [email]
+      \"SELECT * FROM platform_admins WHERE email = $1\", [email.toLowerCase().trim()]
     );
-    if (!rows[0]) return res.status(401).json({ error: "Invalid credentials" });
-
-    const valid = await bcrypt.compare(password, rows[0].password_hash);
-    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
-
-    await db.query("UPDATE platform_admins SET last_login_at = NOW() WHERE id = $1", [rows[0].id]);
-
+    const admin = rows[0];
+    if (!admin || !(await bcrypt.compare(password, admin.password_hash)))
+      return res.status(401).json({ error: \"Invalid email or password\" });
     const token = jwt.sign(
-      { id: rows[0].id, email: rows[0].email, name: rows[0].name, role: "platform_owner", academy_id: null },
-      getJwtSecret(),
-      { expiresIn: "24h" }
+      { id: admin.id, email: admin.email, name: admin.name, role: \"platform_owner\" },
+      getPlatformSecret(),
+      { expiresIn: \"7d\" }
     );
-    res.json({ token, admin: { id: rows[0].id, email: rows[0].email, name: rows[0].name } });
-  } catch (err) {
-    console.error("Platform login error:", err.message);
-    res.status(500).json({ error: "Login failed" });
-  }
-});
-
-// GET /platform/auth/me
-router.get("/me", async (req, res) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "No token" });
-  try {
-    const decoded = jwt.verify(token, getJwtSecret());
-    if (decoded.role !== "platform_owner")
-      return res.status(403).json({ error: "Not a platform owner" });
-    const { rows } = await db.query(
-      "SELECT id, email, name, last_login_at FROM platform_admins WHERE id = $1", [decoded.id]
-    );
-    res.json(rows[0]);
-  } catch {
-    res.status(401).json({ error: "Invalid or expired token" });
+    res.json({ token, admin: { id: admin.id, name: admin.name, email: admin.email } });
+  } catch (e) {
+    console.error(\"Platform login error:\", e.message);
+    res.status(500).json({ error: \"Login failed\" });
   }
 });
 
 // POST /platform/auth/change-password
-router.post("/change-password", authenticatePlatformOwner, async (req, res) => {
+router.post(\"/change-password\", authenticatePlatformOwner, async (req, res) => {
   const { current, newPassword } = req.body;
-  if (!current || !newPassword) return res.status(400).json({ error: "Both current and newPassword required" });
-  if (newPassword.length < 8) return res.status(400).json({ error: "New password must be at least 8 characters" });
+  if (!current || !newPassword)
+    return res.status(400).json({ error: \"current and newPassword are required\" });
+  if (newPassword.length < 8)
+    return res.status(400).json({ error: \"Password must be at least 8 characters\" });
   try {
-    const { rows } = await db.query("SELECT password_hash FROM platform_admins WHERE id=$1", [req.platformAdmin.id]);
-    if (!rows[0]) return res.status(404).json({ error: "Admin not found" });
-    const valid = await bcrypt.compare(current, rows[0].password_hash);
-    if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+    const { rows } = await db.query(
+      \"SELECT * FROM platform_admins WHERE id = $1\", [req.platformAdmin.id]
+    );
+    if (!rows[0] || !(await bcrypt.compare(current, rows[0].password_hash)))
+      return res.status(401).json({ error: \"Current password is incorrect\" });
     const hash = await bcrypt.hash(newPassword, 10);
-    await db.query("UPDATE platform_admins SET password_hash=$1 WHERE id=$2", [hash, req.platformAdmin.id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Change password error:", err.message);
-    res.status(500).json({ error: "Failed to update password" });
+    await db.query(\"UPDATE platform_admins SET password_hash=$1 WHERE id=$2\", [hash, req.platformAdmin.id]);
+    res.json({ message: \"Password updated successfully\" });
+  } catch (e) {
+    console.error(\"Change password error:\", e.message);
+    res.status(500).json({ error: \"Failed to update password\" });
+  }
+});
+
+// ── Platform branding (favicon + logo stored in DB) ───────────────────────────
+// These are stored on the platform_admins row itself for simplicity.
+// Ensure the columns exist via migration.
+db.query(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT`).catch(() => {});
+db.query(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT`).catch(() => {});
+
+// GET /platform/auth/branding  (mapped at /platform/branding from index.js)
+router.get(\"/branding\", authenticatePlatformOwner, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      \"SELECT favicon_url, logo_url FROM platform_admins WHERE id=$1\",
+      [req.platformAdmin.id]
+    );
+    res.json(rows[0] || { favicon_url: null, logo_url: null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /platform/auth/branding  (mapped at /platform/branding from index.js)
+router.put(\"/branding\", authenticatePlatformOwner, async (req, res) => {
+  const { favicon_url, logo_url } = req.body;
+  try {
+    await db.query(
+      \"UPDATE platform_admins SET favicon_url=$1, logo_url=$2 WHERE id=$3\",
+      [favicon_url || null, logo_url || null, req.platformAdmin.id]
+    );
+    res.json({ message: \"Branding saved\", favicon_url, logo_url });
+  } catch (e) {
+    console.error(\"Save branding error:\", e.message);
+    res.status(500).json({ error: \"Failed to save branding\" });
   }
 });
 
