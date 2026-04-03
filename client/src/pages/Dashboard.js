@@ -6,7 +6,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 
 const fmt = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
 
-// Key to persist the "dismissed" state across sessions
 const ONBOARDING_DISMISSED_KEY = "onboarding_checklist_dismissed";
 
 function ChartTooltip({ active, payload, label }) {
@@ -29,7 +28,6 @@ export default function Dashboard({ onNavigate }) {
   const [isNewAcademy, setIsNewAcademy] = useState(false);
   const [completedSteps, setCompletedSteps] = useState([]);
 
-  // Check if onboarding was dismissed. Stored per-user so each admin gets their own state.
   const dismissedKey = `${ONBOARDING_DISMISSED_KEY}_${user?.id}`;
   const [checklistDismissed, setChecklistDismissed] = useState(
     () => localStorage.getItem(dismissedKey) === "1"
@@ -51,7 +49,6 @@ export default function Dashboard({ onNavigate }) {
           if (hasBatches)  steps.push("batch");
           if (hasStudents) steps.push("student");
           setCompletedSteps(steps);
-          // Show checklist only if the academy is brand new (no students yet)
           setIsNewAcademy(!hasStudents);
         }).catch(() => setIsNewAcademy(false));
       }).catch(() => {});
@@ -92,43 +89,32 @@ export default function Dashboard({ onNavigate }) {
         )}
       </div>
 
-      {/* Onboarding checklist — dismissible */}
+      {/* Onboarding checklist — dismiss button sits BELOW the card, right-aligned */}
       {showChecklist && (
-        <div style={{ position: "relative" }}>
+        <div style={{ marginBottom: 24 }}>
           <OnboardingChecklist onNavigate={onNavigate} completedSteps={completedSteps} />
-          {/* Dismiss button — sits in the top-right corner of the checklist card */}
-          <button
-            onClick={dismissChecklist}
-            title="Hide this checklist"
-            style={{
-              position: "absolute",
-              top: 16,
-              right: 16,
-              background: "rgba(148,163,184,0.1)",
-              border: "1px solid rgba(148,163,184,0.15)",
-              borderRadius: 8,
-              padding: "5px 14px",
-              fontSize: 12,
-              color: "var(--text3)",
-              cursor: "pointer",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              transition: "all 0.15s",
-              zIndex: 10,
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = "rgba(148,163,184,0.18)";
-              e.currentTarget.style.color = "var(--text2)";
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = "rgba(148,163,184,0.1)";
-              e.currentTarget.style.color = "var(--text3)";
-            }}
-          >
-            <span style={{ fontSize: 14 }}>✕</span> I'll do it later
-          </button>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <button
+              onClick={dismissChecklist}
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(148,163,184,0.2)",
+                borderRadius: 8,
+                padding: "5px 16px",
+                fontSize: 12,
+                color: "var(--text3)",
+                cursor: "pointer",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = "var(--text2)"; e.currentTarget.style.borderColor = "rgba(148,163,184,0.4)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "var(--text3)"; e.currentTarget.style.borderColor = "rgba(148,163,184,0.2)"; }}
+            >
+              ✕ I'll do it later
+            </button>
+          </div>
         </div>
       )}
 
