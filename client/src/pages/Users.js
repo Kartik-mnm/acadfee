@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import API from "../api";
 
 const EMPTY_USER   = { name: "", email: "", password: "", role: "branch_manager", branch_id: "" };
-const EMPTY_BRANCH = { name: "", address: "", phone: "" };
+const EMPTY_BRANCH = { name: "", address: "", phone: "", roll_prefix: "" };
 
 export default function Users() {
   const [users,    setUsers]    = useState([]);
@@ -32,7 +32,7 @@ export default function Users() {
   };
   useEffect(load, []);
 
-  // ── User actions ─────────────────────────────────────────────────────────────
+  // ── User actions ──────────────────────────────────────────────────────────
   const saveUser = async () => {
     setSavingUser(true); setUserError("");
     try {
@@ -60,9 +60,24 @@ export default function Users() {
     } catch { flash("\u26a0 Failed to update password"); }
   };
 
-  // ── Branch actions ────────────────────────────────────────────────────────────
-  const openAddBranch  = ()  => { setBranchForm(EMPTY_BRANCH); setEditingBranch(null); setBranchError(""); setShowBranchModal(true); };
-  const openEditBranch = (b) => { setBranchForm({ name: b.name, address: b.address || "", phone: b.phone || "" }); setEditingBranch(b); setBranchError(""); setShowBranchModal(true); };
+  // ── Branch actions ────────────────────────────────────────────────────────
+  const openAddBranch  = ()  => {
+    setBranchForm(EMPTY_BRANCH);
+    setEditingBranch(null);
+    setBranchError("");
+    setShowBranchModal(true);
+  };
+  const openEditBranch = (b) => {
+    setBranchForm({
+      name:        b.name        || "",
+      address:     b.address     || "",
+      phone:       b.phone       || "",
+      roll_prefix: b.roll_prefix || "",
+    });
+    setEditingBranch(b);
+    setBranchError("");
+    setShowBranchModal(true);
+  };
 
   const saveBranch = async () => {
     if (!branchForm.name.trim()) { setBranchError("Branch name is required"); return; }
@@ -91,6 +106,11 @@ export default function Users() {
   const f  = (k, v) => setUserForm((p)   => ({ ...p, [k]: v }));
   const bf = (k, v) => setBranchForm((p) => ({ ...p, [k]: v }));
 
+  // Roll preview: combine academy prefix (not available here) + branch prefix
+  const rollPreview = branchForm.roll_prefix
+    ? `${branchForm.roll_prefix.toUpperCase()}0001`
+    : null;
+
   return (
     <div>
       <div className="page-header">
@@ -112,7 +132,6 @@ export default function Users() {
         </div>
       </div>
 
-      {/* Tabs — emoji as JS expressions, NOT string literals */}
       <div className="gap-row" style={{ marginBottom: 20 }}>
         <button
           className={`btn ${tab === "users" ? "btn-primary" : "btn-secondary"}`}
@@ -132,7 +151,7 @@ export default function Users() {
         <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>{msg}</div>
       )}
 
-      {/* ── USERS TAB ──────────────────────────────────────────────────────────── */}
+      {/* ── USERS TAB ──────────────────────────────────────────────────────── */}
       {tab === "users" && (
         <div className="card">
           {users.length === 0 ? (
@@ -179,7 +198,7 @@ export default function Users() {
         </div>
       )}
 
-      {/* ── BRANCHES TAB ───────────────────────────────────────────────────────── */}
+      {/* ── BRANCHES TAB ───────────────────────────────────────────────────── */}
       {tab === "branches" && (
         <div className="card">
           {branches.length === 0 ? (
@@ -193,12 +212,24 @@ export default function Users() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Branch Name</th><th>Address</th><th>Phone</th><th>Actions</th></tr>
+                  <tr>
+                    <th>Branch Name</th>
+                    <th>Roll Prefix</th>
+                    <th>Address</th>
+                    <th>Phone</th>
+                    <th>Actions</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {branches.map((b) => (
                     <tr key={b.id}>
                       <td style={{ fontWeight: 600 }}>{"\uD83C\uDFEB"} {b.name}</td>
+                      <td>
+                        {b.roll_prefix
+                          ? <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 13, background: "var(--bg3)", padding: "2px 8px", borderRadius: 6, letterSpacing: 1 }}>{b.roll_prefix}</span>
+                          : <span className="text-muted" style={{ fontSize: 12 }}>Not set</span>
+                        }
+                      </td>
                       <td className="text-muted">{b.address || "\u2014"}</td>
                       <td className="mono text-muted">{b.phone || "\u2014"}</td>
                       <td>
@@ -216,7 +247,7 @@ export default function Users() {
         </div>
       )}
 
-      {/* ── ADD/EDIT USER MODAL ─────────────────────────────────────────────────── */}
+      {/* ── ADD/EDIT USER MODAL ──────────────────────────────────────────────── */}
       {showUserModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowUserModal(false)}>
           <div className="modal">
@@ -267,7 +298,7 @@ export default function Users() {
         </div>
       )}
 
-      {/* ── RESET PASSWORD MODAL ────────────────────────────────────────────────── */}
+      {/* ── RESET PASSWORD MODAL ─────────────────────────────────────────────── */}
       {showPassModal && selectedUser && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowPassModal(false)}>
           <div className="modal" style={{ maxWidth: 400 }}>
@@ -298,10 +329,10 @@ export default function Users() {
         </div>
       )}
 
-      {/* ── ADD/EDIT BRANCH MODAL ───────────────────────────────────────────────── */}
+      {/* ── ADD/EDIT BRANCH MODAL ────────────────────────────────────────────── */}
       {showBranchModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowBranchModal(false)}>
-          <div className="modal" style={{ maxWidth: 440 }}>
+          <div className="modal" style={{ maxWidth: 480 }}>
             <div className="modal-header">
               <div className="modal-title">{editingBranch ? "Edit Branch" : "+ Add New Branch"}</div>
               <button className="modal-close" onClick={() => setShowBranchModal(false)}>{"\u2715"}</button>
@@ -313,10 +344,47 @@ export default function Users() {
                   <input
                     value={branchForm.name}
                     onChange={(e) => bf("name", e.target.value)}
-                    placeholder="e.g. Main Branch, North Campus"
+                    placeholder="e.g. Dattawadi Branch, Ravinagar Branch"
                     autoFocus
                   />
                 </div>
+
+                {/* Roll number prefix — the key new field */}
+                <div className="form-group full">
+                  <label>
+                    Roll Number Prefix
+                    <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)", marginLeft: 6 }}>
+                      (branch-level, max 4 letters)
+                    </span>
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <input
+                      value={branchForm.roll_prefix}
+                      onChange={(e) => bf("roll_prefix", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").substring(0, 4))}
+                      placeholder="e.g. DW"
+                      maxLength={4}
+                      style={{
+                        width: 100,
+                        fontFamily: "monospace",
+                        fontWeight: 700,
+                        fontSize: 16,
+                        letterSpacing: 3,
+                        textTransform: "uppercase",
+                      }}
+                    />
+                    {rollPreview && (
+                      <div style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.5 }}>
+                        Students in this branch will get roll numbers like{" "}
+                        <strong style={{ fontFamily: "monospace", color: "var(--cyan-300, #22d3ee)", fontSize: 13 }}>
+                          {rollPreview}
+                        </strong>
+                        <br />
+                        <span style={{ fontSize: 11 }}>(academy prefix + this prefix + serial)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="form-group full">
                   <label>Address</label>
                   <input
