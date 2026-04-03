@@ -5,49 +5,29 @@ import QRCode from "qrcode";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
-// ⚠️  IMPORTANT: Replace this with your REAL VAPID key from Firebase Console:
-// Firebase Console → Project Settings → Cloud Messaging → Web Push certificates → Key pair
-// It looks like: BNt9J3w... (starts with B, ~88 chars)
-const VAPID_KEY = process.env.REACT_APP_VAPID_KEY || "";
-
 // ── Firebase push notification helper ──────────────────────────────────
+// FIX: removed hard VAPID_KEY guard — it blocked ALL notification registration.
+// The VAPID key is read from the env but we attempt registration even without it,
+// letting Firebase's getToken() fail gracefully if not configured.
 async function requestAndSaveFCMToken(studentId) {
   try {
-    if (!("Notification" in window)) {
-      console.warn("[FCM] Browser does not support notifications");
-      return false;
-    }
-    if (!window.firebase) {
-      console.warn("[FCM] Firebase SDK not loaded");
-      return false;
-    }
-    if (!("serviceWorker" in navigator)) {
-      console.warn("[FCM] Service workers not supported");
-      return false;
-    }
-    if (!VAPID_KEY) {
-      console.warn("[FCM] VAPID key not set — set REACT_APP_VAPID_KEY in your .env");
-      return false;
-    }
+    if (!("Notification" in window)) return false;
+    if (!window.firebase?.messaging) return false;
+    if (!("serviceWorker" in navigator)) return false;
 
     const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     const messaging = window.firebase.messaging();
 
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") {
-      console.warn("[FCM] Permission denied");
-      return false;
-    }
+    if (permission !== "granted") return false;
 
-    const token = await messaging.getToken({
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: swReg,
-    });
+    // getToken works even without an explicit VAPID key for basic setups
+    const tokenOptions = { serviceWorkerRegistration: swReg };
+    const vapidKey = process.env.REACT_APP_VAPID_KEY;
+    if (vapidKey) tokenOptions.vapidKey = vapidKey;
 
-    if (!token) {
-      console.warn("[FCM] No token received");
-      return false;
-    }
+    const token = await messaging.getToken(tokenOptions);
+    if (!token) return false;
 
     await API.post(`/students/${studentId}/fcm-token`, { token, type: "student" });
     localStorage.setItem("fcm_token", token);
@@ -72,59 +52,54 @@ function NotificationPrompt({ studentId, onDismiss }) {
       setResult("success");
       setTimeout(onDismiss, 2000);
     } else {
-      if (Notification.permission === "denied") {
-        setResult("denied");
-      } else {
-        onDismiss();
-      }
+      if (Notification.permission === "denied") setResult("denied");
+      else onDismiss();
     }
   };
 
-  if (result === "success") {
-    return (
-      <div style={{ marginBottom: 16, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ fontSize: 24 }}>✅</span>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text1)" }}>Notifications enabled! You'll be notified for attendance &amp; fees.</div>
-      </div>
-    );
-  }
+  if (result === "success") return (
+    <div style={{ marginBottom:16, background:"rgba(16,185,129,0.1)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"center", gap:12 }}>
+      <span style={{ fontSize:24 }}>✅</span>
+      <div style={{ fontWeight:700, fontSize:14, color:"var(--text1)" }}>Notifications enabled!</div>
+    </div>
+  );
 
-  if (result === "denied") {
-    return (
-      <div style={{ marginBottom: 16, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ fontSize: 24 }}>⚠️</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text1)", marginBottom: 2 }}>Notifications blocked</div>
-          <div style={{ fontSize: 12, color: "var(--text3)" }}>To enable: tap the lock icon in your browser bar → allow notifications → reload.</div>
-        </div>
-        <button className="btn btn-secondary btn-sm" onClick={onDismiss}>OK</button>
+  if (result === "denied") return (
+    <div style={{ marginBottom:16, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.2)", borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"center", gap:12 }}>
+      <span style={{ fontSize:24 }}>⚠️</span>
+      <div style={{ flex:1 }}>
+        <div style={{ fontWeight:700, fontSize:13, color:"var(--text1)", marginBottom:2 }}>Notifications blocked</div>
+        <div style={{ fontSize:12, color:"var(--text3)" }}>Enable in browser settings → reload.</div>
       </div>
-    );
-  }
+      <button className="btn btn-secondary btn-sm" onClick={onDismiss}>OK</button>
+    </div>
+  );
 
   return (
-    <div style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08))", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 24 }}>🔔</span>
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text1)", marginBottom: 3 }}>Enable Attendance Notifications</div>
-        <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>Get notified when your attendance is marked or fees are due.</div>
+    <div style={{ marginBottom:16, background:"linear-gradient(135deg,rgba(99,102,241,0.12),rgba(168,85,247,0.08))", border:"1px solid rgba(99,102,241,0.3)", borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+      <span style={{ fontSize:24 }}>🔔</span>
+      <div style={{ flex:1, minWidth:200 }}>
+        <div style={{ fontWeight:700, fontSize:14, color:"var(--text1)", marginBottom:3 }}>Enable Attendance Notifications</div>
+        <div style={{ fontSize:12, color:"var(--text2)", lineHeight:1.5 }}>Get notified when your attendance is marked or fees are due.</div>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={enable} disabled={requesting} style={{ whiteSpace: "nowrap" }}>
+      <div style={{ display:"flex", gap:8 }}>
+        <button className="btn btn-primary btn-sm" onClick={enable} disabled={requesting} style={{ whiteSpace:"nowrap" }}>
           {requesting ? "Enabling..." : "🔔 Enable"}
         </button>
-        <button className="btn btn-secondary btn-sm" onClick={onDismiss} style={{ whiteSpace: "nowrap" }}>Not now</button>
+        <button className="btn btn-secondary btn-sm" onClick={onDismiss}>Not now</button>
       </div>
     </div>
   );
 }
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 export default function StudentDashboard() {
   const { user, logout } = useAuth();
   const [tab,             setTab]             = useState("overview");
   const [fees,            setFees]            = useState([]);
   const [payments,        setPayments]        = useState([]);
-  const [attendance,      setAttendance]      = useState([]);
+  const [attendance,      setAttendance]      = useState([]); // monthly summary rows
   const [tests,           setTests]           = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [qrDataUrl,       setQrDataUrl]       = useState("");
@@ -134,12 +109,12 @@ export default function StudentDashboard() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        // FIX: students must call /tests/student/:id — the GET / route blocks students with 403
         const [feesRes, paymentsRes, attRes, testsRes] = await Promise.allSettled([
           API.get("/fees"),
           API.get(`/payments?student_id=${user.id}`),
-          API.get(`/attendance?student_id=${user.id}&limit=60`),
-          API.get(`/tests/student/${user.id}`),  // ← fixed: was /tests?student_id= which gives 403
+          // Attendance returns monthly summary rows: {month, year, total_days, present, percentage}
+          API.get(`/attendance?student_id=${user.id}`),
+          API.get(`/tests/student/${user.id}`),
         ]);
         if (feesRes.status     === "fulfilled") setFees(feesRes.value.data);
         if (paymentsRes.status === "fulfilled") setPayments(paymentsRes.value.data);
@@ -154,17 +129,18 @@ export default function StudentDashboard() {
     API.get(`/qrscan/token/${user.id}`)
       .then(async (r) => {
         const url = await QRCode.toDataURL(r.data.token, {
-          width: 220, margin: 1, errorCorrectionLevel: "L",
-          color: { dark: "#0a1628", light: "#ffffff" },
+          width:220, margin:1, errorCorrectionLevel:"L",
+          color:{ dark:"#0a1628", light:"#ffffff" },
         });
         setQrDataUrl(url);
       })
       .catch(() => {});
 
+    // Show notification prompt if not dismissed and not already enabled
     const dismissed   = localStorage.getItem("notif_dismissed");
     const hasFcmToken = localStorage.getItem("fcm_token");
     const supported   = ("Notification" in window) && Notification.permission !== "denied";
-    if (!dismissed && !hasFcmToken && supported && VAPID_KEY) {
+    if (!dismissed && !hasFcmToken && supported) {
       setTimeout(() => setShowNotifPrompt(true), 1200);
     }
   }, [user.id]);
@@ -174,31 +150,35 @@ export default function StudentDashboard() {
     setShowNotifPrompt(false);
   };
 
+  // Fee stats
   const totalFees   = fees.reduce((s, f) => s + parseFloat(f.amount_due  || 0), 0);
   const totalPaid   = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
   const balance     = totalFees - totalPaid;
   const pendingFees = fees.filter((f) => f.status !== "paid");
 
-  const presentDays   = attendance.filter((a) => a.status === "present" || a.status === "late").length;
-  const totalDays     = attendance.length;
-  const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
+  // FIX: Attendance is monthly summary — compute totals from present/total_days fields
+  const totalPresentDays = attendance.reduce((s, a) => s + parseInt(a.present  || 0), 0);
+  const totalWorkingDays = attendance.reduce((s, a) => s + parseInt(a.total_days || 0), 0);
+  const attendancePct = totalWorkingDays > 0
+    ? Math.round((totalPresentDays / totalWorkingDays) * 100)
+    : null;
 
-  const testScores = tests.filter((t) => t.score != null || t.marks != null);
+  // Latest month's percentage for header card
+  const latestAtt = attendance.length > 0 ? attendance[0] : null;
+  const latestPct = latestAtt ? parseFloat(latestAtt.percentage || 0) : null;
+
+  const testScores = tests.filter((t) => t.marks != null || t.score != null);
   const avgScore   = testScores.length > 0
-    ? (testScores.reduce((s, t) => s + parseFloat(t.score || t.marks || 0), 0) / testScores.length).toFixed(1)
+    ? (testScores.reduce((s, t) => s + parseFloat(t.marks || t.score || 0), 0) / testScores.length).toFixed(1)
     : null;
 
   const statusBadge = (s) => {
-    const map = { paid: ["var(--green)","Paid"], partial:["var(--yellow)","Partial"], overdue:["var(--red)","Overdue"], pending:["var(--text3)","Pending"] };
+    const map = { paid:["var(--green)","Paid"], partial:["var(--yellow)","Partial"], overdue:["var(--red)","Overdue"], pending:["var(--text3)","Pending"] };
     const [c, l] = map[s] || ["var(--text3)", s];
     return <span style={{ fontSize:11, padding:"2px 8px", borderRadius:10, background:`${c}18`, color:c, fontWeight:700 }}>{l}</span>;
   };
 
-  const attBadge = (s) => {
-    const map = { present:["var(--green)","P"], absent:["var(--red)","A"], late:["var(--yellow)","L"], holiday:["var(--text3)","H"] };
-    const [c, l] = map[s] || ["var(--text3)","?"];
-    return <span style={{ display:"inline-block", width:24, height:24, borderRadius:"50%", background:`${c}22`, color:c, fontSize:10, fontWeight:800, lineHeight:"24px", textAlign:"center" }}>{l}</span>;
-  };
+  const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 
   if (loading) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
@@ -216,7 +196,7 @@ export default function StudentDashboard() {
       <div style={{ background:"linear-gradient(135deg,#1a237e,#0d47a1,#006064)", padding:"20px 20px 40px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
           <div style={{ fontSize:13, color:"rgba(255,255,255,0.7)" }}>
-            {user.branch_name && `${user.academy_name || ""} – ${user.branch_name}`}
+            {user.branch_name && `– ${user.branch_name}`}
           </div>
           <button onClick={logout} style={{ background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Logout</button>
         </div>
@@ -226,14 +206,14 @@ export default function StudentDashboard() {
 
       <div style={{ padding:"0 16px", marginTop:-24 }}>
 
-        {/* Stats */}
+        {/* Stats cards */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:10, marginBottom:16 }}>
           {[
-            { icon:"📋", label:"Total Fees",    val:fmt(totalFees),  color:"var(--text1)" },
-            { icon:"✅",  label:"Total Paid",   val:fmt(totalPaid),  color:"var(--green)" },
+            { icon:"📋", label:"Total Fees",   val:fmt(totalFees),  color:"var(--text1)" },
+            { icon:"✅",  label:"Total Paid",  val:fmt(totalPaid),  color:"var(--green)" },
             { icon:"💰", label:"Balance Due",  val:fmt(balance),    color:balance>0?"var(--red)":"var(--green)" },
-            { icon:"📅", label:"Attendance",   val:attendancePct!=null?`${attendancePct}%`:"—", color:"var(--cyan)" },
-            { icon:"📊", label:"Avg Score",    val:avgScore!=null?avgScore:"—", color:"var(--accent)" },
+            { icon:"📅", label:"Attendance",   val:attendancePct!=null?`${attendancePct}%`:"—", color:attendancePct!=null?pctColor(attendancePct):"var(--text3)" },
+            { icon:"📊", label:"Avg Score",    val:avgScore!=null?`${avgScore}`:"—", color:"var(--accent)" },
           ].map((c) => (
             <div key={c.label} style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:"12px 14px" }}>
               <div style={{ fontSize:20, marginBottom:4 }}>{c.icon}</div>
@@ -252,7 +232,7 @@ export default function StudentDashboard() {
             { id:"idcard",     label:"🪪 ID Card"     },
             { id:"fees",       label:"💳 Fees"        },
             { id:"payments",   label:"💸 Payments"    },
-            { id:"attendance", label:"✅ Attendance"   },
+            { id:"attendance", label:"✅ Attendance"  },
             { id:"tests",      label:"📊 Tests"       },
           ].map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ padding:"7px 14px", borderRadius:20, fontSize:12, fontWeight:600, border:"1px solid var(--border)", cursor:"pointer", whiteSpace:"nowrap", background:tab===t.id?"var(--accent)":"var(--bg2)", color:tab===t.id?"#fff":"var(--text2)" }}>{t.label}</button>
@@ -262,6 +242,7 @@ export default function StudentDashboard() {
         {/* OVERVIEW */}
         {tab === "overview" && (
           <div style={{ display:"grid", gap:14 }}>
+            {/* Pending fees */}
             <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:16 }}>
               <div style={{ fontSize:11, fontWeight:700, color:"var(--yellow)", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.06em" }}>⚠ Pending Fees</div>
               {pendingFees.length === 0
@@ -281,6 +262,7 @@ export default function StudentDashboard() {
               }
             </div>
 
+            {/* Recent payments */}
             <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:16 }}>
               <div style={{ fontSize:11, fontWeight:700, color:"var(--green)", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.06em" }}>💸 Recent Payments</div>
               {payments.length === 0
@@ -297,25 +279,35 @@ export default function StudentDashboard() {
               }
             </div>
 
+            {/* Attendance summary — FIX: now uses monthly summary correctly */}
             <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:16 }}>
               <div style={{ fontSize:11, fontWeight:700, color:"var(--cyan)", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.06em" }}>📅 Attendance Summary</div>
               {attendance.length === 0
-                ? <div style={{ color:"var(--text3)", fontSize:13 }}>No records</div>
+                ? <div style={{ color:"var(--text3)", fontSize:13 }}>No records yet</div>
                 : (
                   <>
-                    <div style={{ marginBottom:10, fontSize:13 }}>
-                      <span style={{ fontWeight:700, color:"var(--green)" }}>{presentDays}</span>
-                      <span style={{ color:"var(--text3)" }}> / {totalDays} days present</span>
-                      {attendancePct != null && <span style={{ marginLeft:8, fontWeight:700, color:attendancePct>=75?"var(--green)":"var(--red)" }}>({attendancePct}%)</span>}
+                    <div style={{ marginBottom:12, fontSize:13 }}>
+                      <span style={{ fontWeight:700, color:"var(--green)" }}>{totalPresentDays}</span>
+                      <span style={{ color:"var(--text3)" }}> / {totalWorkingDays} days present</span>
+                      {attendancePct != null && (
+                        <span style={{ marginLeft:8, fontWeight:700, color:pctColor(attendancePct) }}>({attendancePct}%)</span>
+                      )}
                     </div>
-                    <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-                      {attendance.slice(0,30).map((a,i) => <div key={i} title={`${a.date}: ${a.status}`}>{attBadge(a.status)}</div>)}
-                    </div>
+                    {attendance.slice(0,6).map((a) => (
+                      <div key={`${a.month}-${a.year}`} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px solid var(--border)" }}>
+                        <div style={{ fontSize:13, fontWeight:600 }}>{MONTHS[(a.month||1)-1]} {a.year}</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span style={{ fontSize:12, color:"var(--text3)" }}>{a.present}/{a.total_days} days</span>
+                          <span style={{ fontSize:12, fontWeight:700, color:pctColor(parseFloat(a.percentage||0)) }}>{Math.round(a.percentage||0)}%</span>
+                        </div>
+                      </div>
+                    ))}
                   </>
                 )
               }
             </div>
 
+            {/* Recent tests */}
             <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:16 }}>
               <div style={{ fontSize:11, fontWeight:700, color:"var(--accent)", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.06em" }}>📊 Recent Tests</div>
               {tests.length === 0
@@ -404,12 +396,18 @@ export default function StudentDashboard() {
           </div>
         )}
 
-        {/* ATTENDANCE */}
+        {/* ATTENDANCE — monthly summary table */}
         {tab === "attendance" && (
           <div>
+            {/* Summary bar */}
             <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:14, marginBottom:14 }}>
-              <div style={{ display:"flex", gap:20 }}>
-                {[{l:"Present",v:presentDays,c:"var(--green)"},{l:"Absent",v:attendance.filter(a=>a.status==="absent").length,c:"var(--red)"},{l:"Late",v:attendance.filter(a=>a.status==="late").length,c:"var(--yellow)"},{l:"Total",v:totalDays,c:"var(--text1)"}].map(x=>(
+              <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+                {[
+                  { l:"Total Present", v:totalPresentDays, c:"var(--green)" },
+                  { l:"Working Days",  v:totalWorkingDays, c:"var(--text1)" },
+                  { l:"Absent Days",   v:Math.max(0, totalWorkingDays - totalPresentDays), c:"var(--red)" },
+                  { l:"Overall %",     v:attendancePct!=null?`${attendancePct}%`:"—", c:attendancePct!=null?pctColor(attendancePct):"var(--text3)" },
+                ].map(x => (
                   <div key={x.l} style={{ textAlign:"center" }}>
                     <div style={{ fontSize:22, fontWeight:900, color:x.c }}>{x.v}</div>
                     <div style={{ fontSize:10, color:"var(--text3)" }}>{x.l}</div>
@@ -417,14 +415,29 @@ export default function StudentDashboard() {
                 ))}
               </div>
             </div>
+
             {attendance.length === 0
-              ? <div style={{ textAlign:"center", color:"var(--text3)", padding:32 }}>No attendance records</div>
-              : attendance.map((a,i) => (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 14px", background:"var(--bg2)", borderRadius:8, marginBottom:6, border:"1px solid var(--border)" }}>
-                    <div style={{ fontSize:13 }}>{new Date(a.date).toLocaleDateString("en-IN",{ weekday:"short", day:"numeric", month:"short" })}</div>
-                    {attBadge(a.status)}
-                  </div>
-                ))
+              ? <div style={{ textAlign:"center", color:"var(--text3)", padding:32 }}>No attendance records yet</div>
+              : attendance.map((a) => {
+                  const pct = parseFloat(a.percentage || 0);
+                  return (
+                    <div key={`${a.month}-${a.year}`} style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", marginBottom:8 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                        <div style={{ fontWeight:700, fontSize:14 }}>{MONTHS[(a.month||1)-1]} {a.year}</div>
+                        <span style={{ fontSize:13, fontWeight:800, color:pctColor(pct) }}>{Math.round(pct)}%</span>
+                      </div>
+                      <div style={{ display:"flex", gap:16, fontSize:12, color:"var(--text3)", marginBottom:8 }}>
+                        <span>✅ Present: <strong style={{ color:"var(--green)" }}>{a.present}</strong></span>
+                        <span>📅 Total: <strong>{a.total_days}</strong></span>
+                        <span>❌ Absent: <strong style={{ color:"var(--red)" }}>{Math.max(0, (a.total_days||0)-(a.present||0))}</strong></span>
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{ background:"var(--bg3)", borderRadius:4, height:6 }}>
+                        <div style={{ width:`${Math.min(100,pct)}%`, height:"100%", borderRadius:4, background:pctColor(pct), transition:"width 0.5s" }} />
+                      </div>
+                    </div>
+                  );
+                })
             }
           </div>
         )}
