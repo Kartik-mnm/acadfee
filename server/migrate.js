@@ -26,14 +26,17 @@ async function runMigration() {
     await db.query(`ALTER TABLE academies ADD COLUMN IF NOT EXISTS max_students INT DEFAULT 100`);
     await db.query(`ALTER TABLE academies ADD COLUMN IF NOT EXISTS max_branches INT DEFAULT 2`);
     await db.query(`ALTER TABLE academies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+    // academy roll_prefix (academy-level prefix e.g. "NA" for Nishchay)
+    await db.query(`ALTER TABLE academies ADD COLUMN IF NOT EXISTS roll_prefix TEXT DEFAULT ''`);
 
     // users
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE CASCADE`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_users_academy ON users(academy_id)`);
 
-    // branches
+    // branches — add roll_prefix column (branch-level e.g. "DW" for Dattwadi)
     await db.query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE CASCADE`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_branches_academy ON branches(academy_id)`);
+    await db.query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS roll_prefix TEXT DEFAULT ''`);
 
     // students
     await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE CASCADE`);
@@ -82,13 +85,10 @@ async function runMigration() {
       [hash]
     );
 
-    // expenses — safely add new columns (title, notes, academy_id)
-    // FIX: removed UPDATE using description/paid_to columns which never existed in DB.
-    // Those columns don't exist, causing "column does not exist" crash every deploy.
+    // expenses
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS title TEXT`);
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes TEXT`);
     await db.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE SET NULL`);
-    // Backfill academy_id for existing expense rows from their branch
     await db.query(`
       UPDATE expenses e
       SET academy_id = br.academy_id

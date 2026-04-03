@@ -1,6 +1,5 @@
 // ── Academy Settings Page ─────────────────────────────────────────────────────
-// Lets the academy owner update their name, logo, favicon, colors, contact info
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAcademy } from "../context/AcademyContext";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
@@ -27,8 +26,6 @@ function ImageUploader({ label, currentUrl, onUploaded }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setError("");
-
-    // Validate file type client-side before uploading
     const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"];
     if (!allowedTypes.includes(file.type)) {
       setError("Invalid file type. Please upload JPEG, PNG, WebP, GIF, SVG, or ICO.");
@@ -38,21 +35,18 @@ function ImageUploader({ label, currentUrl, onUploaded }) {
       setError("File too large. Maximum size is 5MB.");
       return;
     }
-
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const base64 = ev.target.result;
       setPreview(base64);
       setUploading(true);
       try {
-        // Use /upload/platform so the image goes to the academy_branding folder
-        // This avoids the "Display name cannot contain slashes" Cloudinary error
         const res = await API.post("/upload/platform", { image: base64 });
         onUploaded(res.data.url);
       } catch (err) {
         const msg = err.response?.data?.error || "Upload failed. Please try again.";
         setError(msg);
-        setPreview(currentUrl || null); // revert preview on error
+        setPreview(currentUrl || null);
       } finally { setUploading(false); }
     };
     reader.onerror = () => setError("Could not read file. Please try again.");
@@ -98,10 +92,18 @@ export default function AcademySettings() {
     accent_color:  academy?.accent_color  || "38BDF8",
     logo_url:      academy?.logo_url || "",
     favicon_url:   academy?.favicon_url || "",
+    roll_prefix:   academy?.roll_prefix || "",
   });
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState("");
+
+  // Apply favicon from DB whenever it changes
+  useEffect(() => {
+    if (academy?.favicon_url) {
+      applyFavicon(academy.favicon_url);
+    }
+  }, [academy?.favicon_url]);
 
   if (user?.role !== "super_admin") {
     return (
@@ -121,7 +123,6 @@ export default function AcademySettings() {
       await API.put(`/academy/settings`, form);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-      // Refresh the page so AcademyContext reloads new branding
       setTimeout(() => window.location.reload(), 1200);
     } catch (e) {
       setError(e.response?.data?.error || "Failed to save settings.");
@@ -149,10 +150,10 @@ export default function AcademySettings() {
         </Field>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-          <Field label="Logo">
+          <Field label="Logo" hint="Shown in sidebar. Upload PNG or SVG.">
             <ImageUploader label="Logo" currentUrl={form.logo_url} onUploaded={url => set("logo_url", url)} />
           </Field>
-          <Field label="Favicon">
+          <Field label="Favicon" hint="Browser tab icon. Saved to DB — works on all browsers/devices.">
             <ImageUploader label="Favicon" currentUrl={form.favicon_url} onUploaded={url => set("favicon_url", url)} />
           </Field>
         </div>
@@ -179,6 +180,26 @@ export default function AcademySettings() {
             </div>
           </Field>
         </div>
+
+        {/* ── Roll Number Prefix ── */}
+        <div style={SECTION}>Roll Number Settings</div>
+        <Field
+          label="Academy Roll Prefix"
+          hint={`Academy-level prefix for all roll numbers. e.g. "NA" for Nishchay Academy. Branch admins add their own prefix on top of this. Result: NA + DW = NADW0001`}
+        >
+          <input
+            value={form.roll_prefix}
+            onChange={e => set("roll_prefix", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").substring(0, 4))}
+            placeholder="e.g. NA"
+            maxLength={4}
+            style={{ width: 120, fontFamily: "monospace", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase" }}
+          />
+        </Field>
+        {form.roll_prefix && (
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: -8, marginBottom: 16, padding: "8px 12px", background: "var(--bg3)", borderRadius: 8 }}>
+            Example roll number: <strong style={{ fontFamily: "monospace", color: "var(--cyan-300)" }}>{form.roll_prefix}DW0001</strong> (if branch prefix is DW)
+          </div>
+        )}
 
         {/* ── Contact ── */}
         <div style={SECTION}>Contact Information</div>
@@ -218,4 +239,15 @@ export default function AcademySettings() {
       </div>
     </div>
   );
+}
+
+function applyFavicon(url) {
+  if (!url) return;
+  const existing = document.querySelectorAll("link[rel~='icon'], link[rel='shortcut icon']");
+  existing.forEach(el => el.parentNode.removeChild(el));
+  const link = document.createElement("link");
+  link.rel  = "icon";
+  link.type = url.endsWith(".ico") ? "image/x-icon" : "image/png";
+  link.href = url + "?v=" + Date.now();
+  document.head.appendChild(link);
 }

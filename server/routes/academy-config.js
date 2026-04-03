@@ -11,7 +11,7 @@ router.get("/config", async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT id, name, slug, logo_url, favicon_url, tagline,
-             primary_color, accent_color,
+             primary_color, accent_color, roll_prefix,
              address, phone, phone2, email, website, city, state,
              features, plan, is_active, trial_ends_at
       FROM academies WHERE slug = $1
@@ -32,7 +32,7 @@ router.get("/config-by-id", async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT id, name, slug, logo_url, favicon_url, tagline,
-             primary_color, accent_color,
+             primary_color, accent_color, roll_prefix,
              address, phone, phone2, email, website, city, state,
              features, plan, is_active, trial_ends_at
       FROM academies WHERE id = $1
@@ -47,7 +47,6 @@ router.get("/config-by-id", async (req, res) => {
 });
 
 // PUT /api/academy/settings  (authenticated — super_admin only)
-// Lets the academy owner update their own academy branding/contact info
 router.put("/settings", auth, async (req, res) => {
   if (req.user.role !== "super_admin")
     return res.status(403).json({ error: "Only super admins can update academy settings." });
@@ -56,10 +55,16 @@ router.put("/settings", auth, async (req, res) => {
 
   const {
     name, tagline, email, phone, website, address, city, state,
-    primary_color, accent_color, logo_url, favicon_url
+    primary_color, accent_color, logo_url, favicon_url, roll_prefix
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: "Academy name is required." });
+
+  // Sanitise roll_prefix: uppercase letters/digits, max 4 chars
+  const cleanPrefix = (roll_prefix || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .substring(0, 4);
 
   try {
     const { rows } = await db.query(`
@@ -76,15 +81,16 @@ router.put("/settings", auth, async (req, res) => {
         accent_color  = $10,
         logo_url      = $11,
         favicon_url   = $12,
+        roll_prefix   = $13,
         updated_at    = NOW()
-      WHERE id = $13
+      WHERE id = $14
       RETURNING id, name, slug, logo_url, favicon_url, tagline,
-                primary_color, accent_color, city, plan, trial_ends_at
+                primary_color, accent_color, roll_prefix, city, plan, trial_ends_at
     `, [
       name.trim(), tagline || null, email || null, phone || null,
       website || null, address || null, city || null, state || null,
       primary_color || "2563EB", accent_color || "38BDF8",
-      logo_url || null, favicon_url || null,
+      logo_url || null, favicon_url || null, cleanPrefix,
       aid
     ]);
     if (!rows[0]) return res.status(404).json({ error: "Academy not found." });
