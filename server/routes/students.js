@@ -12,8 +12,6 @@ if (cloudinary && process.env.CLOUDINARY_CLOUD_NAME) {
   });
 }
 
-// ── Helper: generate academy prefix from academy name ───────────────────────────────
-// e.g. "Kavita's Kitchen" → "KK", "Nishchay Academy" → "NA"
 function academyPrefix(name) {
   if (!name) return "";
   const words = name.trim().split(/\s+/);
@@ -21,7 +19,7 @@ function academyPrefix(name) {
   return words.slice(0, 3).map(w => w[0]).join("").toUpperCase();
 }
 
-// ── List students (with server-side pagination) ──────────────────────────────────────
+// ── List students (paginated) ──────────────────────────────────────────────────────────
 router.get("/", auth, branchFilter, async (req, res) => {
   try {
     if (req.user.role === "student") {
@@ -34,7 +32,6 @@ router.get("/", auth, branchFilter, async (req, res) => {
       );
       return res.json(rows);
     }
-
     const { status, batch_id, search, limit, page } = req.query;
     const aid = req.academyId;
     let conditions = []; let params = []; let idx = 1;
@@ -42,25 +39,21 @@ router.get("/", auth, branchFilter, async (req, res) => {
     if (req.branchId) { conditions.push(`s.branch_id=$${idx++}`);   params.push(req.branchId); }
     if (status)       { conditions.push(`s.status=$${idx++}`);      params.push(status); }
     if (batch_id)     { conditions.push(`s.batch_id=$${idx++}`);    params.push(batch_id); }
-    if (search)       {
+    if (search) {
       conditions.push(`(s.name ILIKE $${idx} OR s.phone ILIKE $${idx} OR COALESCE(s.roll_no,'') ILIKE $${idx} OR COALESCE(s.email,'') ILIKE $${idx})`);
       params.push(`%${search}%`); idx++;
     }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
 
-    // FIX (Issue 5): Server-side pagination. If page is provided return paginated result.
-    // If no page param (legacy usage with limit), fall back to simple LIMIT.
     if (page) {
       const pageNum  = Math.max(1, parseInt(page) || 1);
       const pageSize = Math.min(100, Math.max(1, parseInt(limit) || 20));
       const offset   = (pageNum - 1) * pageSize;
-
       const { rows: countRows } = await db.query(
         `SELECT COUNT(*)::int AS total FROM students s ${where}`, params
       );
       const total      = countRows[0].total;
       const totalPages = Math.ceil(total / pageSize);
-
       const { rows } = await db.query(
         `SELECT s.*, b.name AS batch_name, br.name AS branch_name
          FROM students s
@@ -73,7 +66,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
       return res.json({ data: rows, page: pageNum, totalPages, total, limit: pageSize });
     }
 
-    // Legacy: no pagination (used by ID cards, attendance, etc.)
+    // Legacy: no pagination
     const limitClause = limit ? `LIMIT ${parseInt(limit)}` : "";
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
@@ -90,7 +83,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
   }
 });
 
-// ── Get one student ─────────────────────────────────────────────────────────────────
+// ── Get one student ───────────────────────────────────────────────────────────────
 router.get("/:id", auth, async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
@@ -113,14 +106,14 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-// ── Create student ─────────────────────────────────────────────────────────────────
+// ── Create student ───────────────────────────────────────────────────────────────
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const {
       name, email, phone, parent_phone, parent_name,
       batch_id, branch_id, status, admission_date,
-      fee_type, discount, due_day, roll_no,
+      fee_type, discount, due_day, roll_no, photo_url,
     } = req.body;
     if (!name || !phone) return res.status(400).json({ error: "name and phone are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
@@ -129,12 +122,12 @@ router.post("/", auth, async (req, res) => {
       `INSERT INTO students
          (name, email, phone, parent_phone, parent_name,
           batch_id, branch_id, academy_id, status, admission_date,
-          fee_type, discount, due_day, roll_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+          fee_type, discount, due_day, roll_no, photo_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [name, email||null, phone, parent_phone||null, parent_name||null,
        batch_id||null, bid, aid||null, status||"active",
        admission_date||new Date().toISOString().split("T")[0],
-       fee_type||"monthly", discount||0, due_day||10, roll_no||null]
+       fee_type||"monthly", discount||0, due_day||10, roll_no||null, photo_url||null]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -143,7 +136,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// ── Update student ─────────────────────────────────────────────────────────────────
+// ── Update student — FIX: now saves photo_url ───────────────────────────────────────────
 router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -156,17 +149,20 @@ router.put("/:id", auth, async (req, res) => {
     const {
       name, email, phone, parent_phone, parent_name,
       batch_id, branch_id, status, admission_date,
-      fee_type, discount, due_day, roll_no,
+      fee_type, discount, due_day, roll_no, photo_url,
     } = req.body;
+    // FIX: added photo_url to the UPDATE so profile photos are saved to DB
     const { rows } = await db.query(
       `UPDATE students SET
          name=$1, email=$2, phone=$3, parent_phone=$4, parent_name=$5,
          batch_id=$6, branch_id=$7, status=$8, admission_date=$9,
-         fee_type=$10, discount=$11, due_day=$12, roll_no=$13
-       WHERE id=$14 RETURNING *`,
+         fee_type=$10, discount=$11, due_day=$12, roll_no=$13, photo_url=$14
+       WHERE id=$15 RETURNING *`,
       [name, email||null, phone, parent_phone||null, parent_name||null,
        batch_id||null, branch_id, status||"active", admission_date,
-       fee_type||"monthly", discount||0, due_day||10, roll_no||null, req.params.id]
+       fee_type||"monthly", discount||0, due_day||10, roll_no||null,
+       photo_url||null,  // <-- now saved!
+       req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Student not found" });
     res.json(rows[0]);
@@ -176,7 +172,7 @@ router.put("/:id", auth, async (req, res) => {
   }
 });
 
-// ── Delete student ─────────────────────────────────────────────────────────────────
+// ── Delete student ───────────────────────────────────────────────────────────────
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -194,7 +190,7 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
-// ── Upload photo ─────────────────────────────────────────────────────────────────
+// ── Upload photo (legacy route, kept for compatibility) ────────────────────────────
 router.post("/:id/photo", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -213,7 +209,7 @@ router.post("/:id/photo", auth, async (req, res) => {
   }
 });
 
-// ── Update FCM token ─────────────────────────────────────────────────────────────────
+// ── Update FCM token ───────────────────────────────────────────────────────────────
 router.post("/:id/fcm-token", auth, async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
@@ -230,7 +226,7 @@ router.post("/:id/fcm-token", auth, async (req, res) => {
   }
 });
 
-// ── Send fee summary email ────────────────────────────────────────────────────────────
+// ── Send fee summary email ───────────────────────────────────────────────────────────────
 router.post("/:id/send-email", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -261,23 +257,16 @@ router.post("/:id/send-email", auth, async (req, res) => {
   }
 });
 
-// ── Backfill roll numbers ───────────────────────────────────────────────────────────────
-// FIX (Issue 4): Roll numbers now include academy initials prefix
-// e.g. Nishchay Academy → NA0001, Kavita's Kitchen → KK0001
-// Existing roll numbers that are already prefixed are left alone.
+// ── Backfill roll numbers with academy prefix ───────────────────────────────────────────
 router.post("/backfill-roll-numbers", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-
-    // Get academy name for prefix generation
     let prefix = "";
     if (aid) {
       const { rows: acadRows } = await db.query("SELECT name FROM academies WHERE id=$1", [aid]);
       if (acadRows[0]) prefix = academyPrefix(acadRows[0].name);
     }
-
-    // Get all students WITHOUT roll numbers, ordered by admission date then id
     const { rows: students } = await db.query(
       `SELECT s.id FROM students s
        WHERE s.roll_no IS NULL ${aid ? "AND s.academy_id=$1" : ""}
@@ -286,8 +275,6 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
     );
     if (students.length === 0)
       return res.json({ message: "All students already have roll numbers.", updated: 0 });
-
-    // Find the highest existing sequential number for this academy (strips any prefix)
     const { rows: maxRow } = await db.query(
       `SELECT roll_no FROM students
        WHERE roll_no ~ '[0-9]+$' ${aid ? "AND academy_id=$1" : ""}
@@ -300,18 +287,13 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
       const n = parseInt(digits);
       if (!isNaN(n)) seq = n + 1;
     }
-
     let updated = 0;
     for (const s of students) {
       const roll = `${prefix}${String(seq).padStart(4, "0")}`;
       await db.query("UPDATE students SET roll_no=$1 WHERE id=$2", [roll, s.id]);
       seq++; updated++;
     }
-    res.json({
-      message: `Assigned roll numbers to ${updated} student(s). Format: ${prefix}0001`,
-      updated,
-      prefix,
-    });
+    res.json({ message: `Assigned roll numbers to ${updated} student(s). Format: ${prefix}0001`, updated, prefix });
   } catch (e) {
     console.error("Backfill roll numbers error:", e.message);
     res.status(500).json({ error: "Failed to assign roll numbers" });
