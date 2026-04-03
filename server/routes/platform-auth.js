@@ -1,72 +1,69 @@
-// ── Platform Auth Routes ──────────────────────────────────────────────────────────
-const express  = require(\"express\");
+const express  = require("express");
 const router   = express.Router();
-const bcrypt   = require(\"bcryptjs\");
-const jwt      = require(\"jsonwebtoken\");
-const db       = require(\"../db\");
-const { authenticatePlatformOwner } = require(\"../middleware\");
+const bcrypt   = require("bcryptjs");
+const jwt      = require("jsonwebtoken");
+const db       = require("../db");
+const { authenticatePlatformOwner } = require("../middleware");
 
 function getPlatformSecret() {
-  return process.env.JWT_SECRET || \"fallback_secret\";
+  return process.env.JWT_SECRET || "fallback_secret";
 }
 
 // POST /platform/auth/login
-router.post(\"/login\", async (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
-    return res.status(400).json({ error: \"Email and password required\" });
+    return res.status(400).json({ error: "Email and password required" });
   try {
     const { rows } = await db.query(
-      \"SELECT * FROM platform_admins WHERE email = $1\", [email.toLowerCase().trim()]
+      "SELECT * FROM platform_admins WHERE email = $1", [email.toLowerCase().trim()]
     );
     const admin = rows[0];
     if (!admin || !(await bcrypt.compare(password, admin.password_hash)))
-      return res.status(401).json({ error: \"Invalid email or password\" });
+      return res.status(401).json({ error: "Invalid email or password" });
     const token = jwt.sign(
-      { id: admin.id, email: admin.email, name: admin.name, role: \"platform_owner\" },
+      { id: admin.id, email: admin.email, name: admin.name, role: "platform_owner" },
       getPlatformSecret(),
-      { expiresIn: \"7d\" }
+      { expiresIn: "7d" }
     );
     res.json({ token, admin: { id: admin.id, name: admin.name, email: admin.email } });
   } catch (e) {
-    console.error(\"Platform login error:\", e.message);
-    res.status(500).json({ error: \"Login failed\" });
+    console.error("Platform login error:", e.message);
+    res.status(500).json({ error: "Login failed" });
   }
 });
 
 // POST /platform/auth/change-password
-router.post(\"/change-password\", authenticatePlatformOwner, async (req, res) => {
+router.post("/change-password", authenticatePlatformOwner, async (req, res) => {
   const { current, newPassword } = req.body;
   if (!current || !newPassword)
-    return res.status(400).json({ error: \"current and newPassword are required\" });
+    return res.status(400).json({ error: "current and newPassword are required" });
   if (newPassword.length < 8)
-    return res.status(400).json({ error: \"Password must be at least 8 characters\" });
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
   try {
     const { rows } = await db.query(
-      \"SELECT * FROM platform_admins WHERE id = $1\", [req.platformAdmin.id]
+      "SELECT * FROM platform_admins WHERE id = $1", [req.platformAdmin.id]
     );
     if (!rows[0] || !(await bcrypt.compare(current, rows[0].password_hash)))
-      return res.status(401).json({ error: \"Current password is incorrect\" });
+      return res.status(401).json({ error: "Current password is incorrect" });
     const hash = await bcrypt.hash(newPassword, 10);
-    await db.query(\"UPDATE platform_admins SET password_hash=$1 WHERE id=$2\", [hash, req.platformAdmin.id]);
-    res.json({ message: \"Password updated successfully\" });
+    await db.query("UPDATE platform_admins SET password_hash=$1 WHERE id=$2", [hash, req.platformAdmin.id]);
+    res.json({ message: "Password updated successfully" });
   } catch (e) {
-    console.error(\"Change password error:\", e.message);
-    res.status(500).json({ error: \"Failed to update password\" });
+    console.error("Change password error:", e.message);
+    res.status(500).json({ error: "Failed to update password" });
   }
 });
 
-// ── Platform branding (favicon + logo stored in DB) ───────────────────────────
-// These are stored on the platform_admins row itself for simplicity.
-// Ensure the columns exist via migration.
-db.query(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT`).catch(() => {});
-db.query(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT`).catch(() => {});
+// Add favicon_url and logo_url columns to platform_admins if they don't exist
+db.query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT").catch(() => {});
+db.query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT").catch(() => {});
 
-// GET /platform/auth/branding  (mapped at /platform/branding from index.js)
-router.get(\"/branding\", authenticatePlatformOwner, async (req, res) => {
+// GET /platform/auth/branding
+router.get("/branding", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(
-      \"SELECT favicon_url, logo_url FROM platform_admins WHERE id=$1\",
+      "SELECT favicon_url, logo_url FROM platform_admins WHERE id=$1",
       [req.platformAdmin.id]
     );
     res.json(rows[0] || { favicon_url: null, logo_url: null });
@@ -75,18 +72,18 @@ router.get(\"/branding\", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// PUT /platform/auth/branding  (mapped at /platform/branding from index.js)
-router.put(\"/branding\", authenticatePlatformOwner, async (req, res) => {
+// PUT /platform/auth/branding
+router.put("/branding", authenticatePlatformOwner, async (req, res) => {
   const { favicon_url, logo_url } = req.body;
   try {
     await db.query(
-      \"UPDATE platform_admins SET favicon_url=$1, logo_url=$2 WHERE id=$3\",
+      "UPDATE platform_admins SET favicon_url=$1, logo_url=$2 WHERE id=$3",
       [favicon_url || null, logo_url || null, req.platformAdmin.id]
     );
-    res.json({ message: \"Branding saved\", favicon_url, logo_url });
+    res.json({ message: "Branding saved", favicon_url, logo_url });
   } catch (e) {
-    console.error(\"Save branding error:\", e.message);
-    res.status(500).json({ error: \"Failed to save branding\" });
+    console.error("Save branding error:", e.message);
+    res.status(500).json({ error: "Failed to save branding" });
   }
 });
 
