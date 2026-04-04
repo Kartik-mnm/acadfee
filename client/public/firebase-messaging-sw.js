@@ -1,4 +1,5 @@
 // Firebase Service Worker — handles background push notifications
+// When the app is not open or not in focus, FCM delivers messages here.
 importScripts("https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js");
 
@@ -13,47 +14,53 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Handle background messages (when browser/tab is not in focus)
+// Handle background messages (app is closed or tab not focused)
 messaging.onBackgroundMessage((payload) => {
-  console.log("[FCM SW] Background message received:", payload);
-  const notification = payload.notification || {};
-  const title = notification.title || "Nishchay Academy";
-  const body  = notification.body  || "";
+  console.log("[FCM SW] Background message received:", JSON.stringify(payload));
 
-  // Android Web Push notification icon slots:
-  //
-  //   icon  → large square image on the RIGHT  (full-colour, any PNG)
-  //            ✅ nishchay-logo.png — academy logo, already working
-  //
-  //   badge → tiny icon on the LEFT in the status bar / notification shade
-  //            ⚠️  MUST be white-on-transparent monochrome PNG (96×96)
-  //            ✅ badge-icon.png — white version of the logo (upload to /public first)
-  //            If this file is missing, Android falls back to Chrome's blue square
-  //
-  //   image → optional wide banner shown BELOW notification text
+  const notification = payload.notification || {};
+  const data         = payload.data         || {};
+
+  const title = notification.title || data.title || "Exponent";
+  const body  = notification.body  || data.body  || "";
+
+  // BUG FIX: static tag "nishchay-attendance" was causing every background
+  // notification to REPLACE the previous one. User would only ever see the
+  // latest notification, missing all earlier ones.
+  // Fix: use a unique tag per notification using timestamp + type.
+  const notifType = data.type || "alert";
+  const tag       = `exponent-${notifType}-${Date.now()}`;
 
   self.registration.showNotification(title, {
     body,
-    icon:    "/nishchay-logo.png",  // ← full-colour logo, RIGHT side
-    badge:   "/badge-icon.png",     // ← white monochrome logo, LEFT side / status bar
-    vibrate: [200, 100, 200],
-    data:    payload.data || {},
-    tag:     "nishchay-attendance", // replaces previous notification instead of stacking
-    renotify: true,
+    icon:    "/nishchay-logo.png",
+    badge:   "/badge-icon.png",
+    vibrate: [200, 100, 200, 100, 200],
+    data:    data,
+    tag,            // unique per notification — no replacement
+    renotify: true, // still vibrate/sound even if a previous one exists
+    requireInteraction: true, // stays visible until user taps it
   });
 });
 
-// When user taps the notification, open/focus the app
+// When user taps the notification, open or focus the app
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const targetUrl = event.notification.data?.link || self.location.origin + "/";
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      // If app is already open, focus it
       for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && "focus" in client) {
+        if (client.url.startsWith(self.location.origin) && "focus" in client) {
           return client.focus();
         }
       }
-      if (clients.openWindow) return clients.openWindow("/");
+      // Otherwise open a new window
+      if (clients.openWindow) return clients.openWindow(targetUrl);
     })
   );
 });
+
+// Activate immediately without waiting for old SW to die
+self.addEventListener("install",  () => self.skipWaiting());
+self.addEventListener("activate", () => clients.claim());
