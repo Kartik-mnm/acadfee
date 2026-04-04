@@ -2,13 +2,12 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
-// ── List payments ────────────────────────────────────────────────────────────────
+// ── List payments ───────────────────────────────────────────────────────────────
 router.get("/", auth, branchFilter, async (req, res) => {
   try {
     const { student_id, from, to } = req.query;
     const aid = req.academyId;
 
-    // ── Student: can only see their own payments ───────────────────────────────────
     if (req.user.role === "student") {
       const { rows } = await db.query(
         `SELECT p.*, s.name AS student_name, s.phone,
@@ -18,14 +17,12 @@ router.get("/", auth, branchFilter, async (req, res) => {
          LEFT JOIN fee_records fr ON fr.id = p.fee_record_id
          LEFT JOIN batches b      ON b.id  = s.batch_id
          JOIN branches br         ON br.id = p.branch_id
-         WHERE p.student_id = $1
-         ORDER BY p.paid_on DESC, p.id DESC`,
+         WHERE p.student_id = $1 ORDER BY p.paid_on DESC, p.id DESC`,
         [req.user.id]
       );
       return res.json(rows);
     }
 
-    // ── Admin / manager: scoped to academy ──────────────────────────────────────
     let conditions = []; let params = []; let idx = 1;
     if (aid)          { conditions.push(`s.academy_id=$${idx++}`);  params.push(aid); }
     if (req.branchId) { conditions.push(`p.branch_id=$${idx++}`);   params.push(req.branchId); }
@@ -51,7 +48,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
   }
 });
 
-// ── Get single payment (for receipt reprint) ──────────────────────────────────
+// ── Get single payment (for receipt) ─────────────────────────────────────────────
 router.get("/:id", auth, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -68,16 +65,10 @@ router.get("/:id", auth, async (req, res) => {
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
-
-    // Students can only see their own payment
     if (req.user.role === "student" && rows[0].student_id !== req.user.id)
       return res.status(403).json({ error: "Access denied" });
-
-    // Admins scoped to academy
     if (req.academyId && req.user.role !== "student") {
-      const { rows: check } = await db.query(
-        `SELECT academy_id FROM students WHERE id=$1`, [rows[0].student_id]
-      );
+      const { rows: check } = await db.query(`SELECT academy_id FROM students WHERE id=$1`, [rows[0].student_id]);
       if (check[0]?.academy_id && check[0].academy_id !== req.academyId)
         return res.status(403).json({ error: "Access denied" });
     }
@@ -88,7 +79,7 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-// ── Record payment ─────────────────────────────────────────────────────────────────
+// ── Record payment — sends push notification to student + parent ────────────────────
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
@@ -96,9 +87,14 @@ router.post("/", auth, async (req, res) => {
     if (!fee_record_id || !amount || !payment_mode)
       return res.status(400).json({ error: "fee_record_id, amount and payment_mode are required" });
 
+    // Fetch fee record + student info (including FCM tokens) + academy name
     const { rows: frRows } = await db.query(
-      `SELECT fr.*, s.branch_id, s.academy_id AS student_academy_id
-       FROM fee_records fr JOIN students s ON s.id = fr.student_id
+      `SELECT fr.*, s.branch_id, s.academy_id AS student_academy_id,
+              s.fcm_token, s.parent_fcm_token, s.name AS student_name,
+              a.name AS academy_name
+       FROM fee_records fr
+       JOIN students s ON s.id = fr.student_id
+       LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, (SELECT academy_id FROM branches WHERE id = s.branch_id))
        WHERE fr.id = $1`, [fee_record_id]
     );
     if (!frRows[0]) return res.status(404).json({ error: "Fee record not found" });
@@ -144,6 +140,21 @@ router.post("/", auth, async (req, res) => {
       "UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3",
       [totalPaid, status, fee_record_id]
     );
+
+    // Send push notification to student and parent
+    if (fr.fcm_token || fr.parent_fcm_token) {
+      const { sendPaymentNotification } = require("../fcm");
+      sendPaymentNotification({
+        studentName:  fr.student_name,
+        studentToken: fr.fcm_token,
+        parentToken:  fr.parent_fcm_token,
+        amount,
+        receiptNo:    receipt_no,
+        periodLabel:  fr.period_label,
+        academyName:  fr.academy_name,
+      }).catch(console.error);
+    }
+
     res.json(rows[0]);
   } catch (e) {
     console.error("Create payment error:", e.message);
@@ -151,7 +162,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// ── Delete payment ───────────────────────────────────────────────────────────────────
+// ── Delete payment ───────────────────────────────────────────────────────────────
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
