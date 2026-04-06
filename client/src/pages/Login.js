@@ -7,7 +7,7 @@ import logo from "../logo.png";
 export default function Login() {
   const { login }    = useAuth();
   const { academy }  = useAcademy();
-  const [panel, setPanel]           = useState(null); // "admin" | "student" | "forgot"
+  const [panel, setPanel]           = useState("student"); // "admin" | "student" | "forgot"
   const [form, setForm]             = useState({ email: "", password: "" });
   const [newPassword, setNewPassword] = useState("");
   const [error, setError]           = useState("");
@@ -96,34 +96,44 @@ export default function Login() {
   );
 
   return (
-    <div className="login-bg">
-      <div className="login-card">
-
-        {/* Logo + Academy Name */}
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 64, height: 64,
-            background: `linear-gradient(135deg, ${primaryColor}26, ${accentColor}1a)`,
-            border: `1px solid ${accentColor}33`,
-            borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 16px",
-            boxShadow: `0 0 32px ${primaryColor}26`,
-          }}>
-            {logoUrl
-              ? <img src={logoUrl} alt={academyName} style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 8 }} />
-              : <DefaultLogo size={42} />
-            }
-          </div>
-          <div style={{
-            fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px",
-            background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-          }}>{academyName}</div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>Management Portal</div>
+    <div className="login-bg" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+      
+      {/* ── HEADER (Outside Card) ── */}
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <div style={{
+          width: 64, height: 64,
+          background: `lineargradient(135deg, ${primaryColor}26, ${accentColor}1a)`,
+          border: `1px solid ${accentColor}33`,
+          borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center",
+          margin: "0 auto 16px",
+          boxShadow: `0 8px 32px ${primaryColor}2a`,
+        }}>
+          {logoUrl
+            ? <img src={logoUrl} alt={academyName} style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 8 }} />
+            : <DefaultLogo size={42} />
+          }
         </div>
+        <div style={{
+          fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px",
+          color: "#ffffff"
+        }}>
+          {academyName}
+        </div>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          background: "rgba(255,255,255,0.06)", padding: "5px 12px",
+          borderRadius: 100, fontSize: 11, color: "var(--text3)", marginTop: 12,
+          border: "1px solid rgba(255,255,255,0.05)"
+        }}>
+          🔒 Authorized Access Only
+        </div>
+      </div>
+
+      {/* ── MAIN CARD ── */}
+      <div className="login-card" style={{ width: "100%", maxWidth: 420,  padding: "32px", boxSizing: "border-box" }}>
 
         {/* ── PASSWORD RESET FORM (when ?reset_token= in URL) ── */}
-        {resetToken && (
+        {resetToken ? (
           <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Set a new password</div>
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 8 }}>Enter your new password below.</div>
@@ -150,12 +160,10 @@ export default function Login() {
               {loading ? "Resetting..." : "Set New Password"}
             </button>
           </form>
-        )}
-
-        {/* ── FORGOT PASSWORD FORM ── */}
-        {!resetToken && panel === "forgot" && (
+        ) : panel === "forgot" ? (
+          // ── FORGOT PASSWORD FORM ── //
           <form onSubmit={handleForgot} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <Back to={null} />
+            <Back to="admin" />
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Forgot your password?</div>
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 8, lineHeight: 1.6 }}>Enter your email address and we'll send you a reset link.</div>
             <div className="form-group">
@@ -167,6 +175,7 @@ export default function Login() {
                 onChange={e => f("email", e.target.value)}
                 required
                 autoFocus
+                style={{ padding: "12px", background: "rgba(0,0,0,0.2)" }}
               />
             </div>
             {error   && <div style={{ padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, color: "var(--red)", fontSize: 12.5 }}>⚠ {error}</div>}
@@ -175,141 +184,125 @@ export default function Login() {
               type="submit"
               className="btn btn-primary"
               disabled={loading}
-              style={{ width: "100%", justifyContent: "center", padding: "11px", background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})` }}
+              style={{ width: "100%", justifyContent: "center", padding: "12px", background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`, boxShadow: `0 4px 14px ${primaryColor}40` }}
             >
               {loading ? "Sending..." : "Send Reset Link"}
             </button>
           </form>
-        )}
-
-        {/* ── PORTAL CHOOSER ── */}
-        {!resetToken && !panel && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <p style={{ fontSize: 12, color: "var(--text3)", textAlign: "center", marginBottom: 4 }}>
-              Select your portal to continue
-            </p>
-            {[
-              { id: "admin",   icon: "🔑", label: "Admin Panel",    sub: "Super admin & branch managers", grad: `linear-gradient(135deg,${primaryColor},${accentColor})`, bg: `${primaryColor}14`, border: `${primaryColor}33` },
-              { id: "student", icon: "🎓", label: "Student Portal", sub: "View fees, attendance & scores",  grad: "linear-gradient(135deg,#059669,#10d9a0)", bg: "rgba(16,217,160,0.08)", border: "rgba(16,217,160,0.15)" }
-            ].map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => { setPanel(p.id); setError(""); setSuccess(""); }}
-                style={{ background: p.bg, border: `1px solid ${p.border}`, borderRadius: 14, padding: "16px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, textAlign: "left", width: "100%", transition: "all 0.2s" }}
-              >
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: p.grad, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{p.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{p.label}</div>
-                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>{p.sub}</div>
-                </div>
-                <div style={{ color: "var(--text3)", fontSize: 16 }}>→</div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* ── LOGIN FORM (Admin or Student) ── */}
-        {!resetToken && (panel === "admin" || panel === "student") && (
+        ) : (
+          // ── TAB SWITCHER & LOGIN FORM ── //
           <div>
-            <Back to={null} />
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10, marginBottom: 20,
-              padding: "10px 14px", borderRadius: 10,
-              background: panel === "admin" ? `${primaryColor}14` : "rgba(16,217,160,0.08)",
-              border: `1px solid ${panel === "admin" ? `${primaryColor}33` : "rgba(16,217,160,0.2)"}`,
+            {/* Tab Switcher */}
+            <div style={{ 
+              display: "flex", background: "rgba(0,0,0,0.25)", 
+              borderRadius: 8, padding: 4, marginBottom: 28,
+              border: "1px solid rgba(255,255,255,0.05)"
             }}>
-              <span style={{ fontSize: 18 }}>{panel === "admin" ? "🔑" : "🎓"}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
-                  {panel === "admin" ? "Admin Panel" : "Student Portal"}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text3)" }}>
-                  {panel === "admin" ? "Staff & managers login" : "Students login here"}
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => { setPanel("student"); setError(""); setSuccess(""); }}
+                style={{ 
+                  flex: 1, padding: "10px 0", borderRadius: 6, border: "none", cursor: "pointer", 
+                  background: panel === "student" ? "rgba(16,217,160,0.15)" : "transparent", 
+                  color: panel === "student" ? "#10d9a0" : "var(--text3)", 
+                  fontWeight: panel === "student" ? 600 : 500, transition: "all 0.2s", fontSize: 13
+                }}
+              >
+                Student
+              </button>
+              <button
+                type="button"
+                onClick={() => { setPanel("admin"); setError(""); setSuccess(""); }}
+                style={{ 
+                  flex: 1, padding: "10px 0", borderRadius: 6, border: "none", cursor: "pointer", 
+                  background: panel === "admin" ? `${primaryColor}26` : "transparent", 
+                  color: panel === "admin" ? primaryColor : "var(--text3)", 
+                  fontWeight: panel === "admin" ? 600 : 500, transition: "all 0.2s", fontSize: 13
+                }}
+              >
+                Admin
+              </button>
             </div>
 
-            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div className="form-group">
-                <label>Email address</label>
+                <label style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text3)", marginBottom: 6 }}>Email Address</label>
                 <input
                   type="email"
-                  placeholder={panel === "admin" ? "admin@academy.com" : "student@example.com"}
+                  placeholder={panel === "admin" ? "admin@academy.com" : "your@email.com"}
                   value={form.email}
                   onChange={e => f("email", e.target.value)}
                   required
                   autoFocus
+                  style={{ background: "rgba(0,0,0,0.2)", padding: "12px" }}
                 />
               </div>
 
               <div className="form-group">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <label style={{ margin: 0 }}>Password</label>
-                  {/* FIX: Forgot password link only for admin */}
-                  {panel === "admin" && (
-                    <button
-                      type="button"
-                      onClick={() => { setPanel("forgot"); setError(""); setSuccess(""); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: primaryColor, padding: 0, fontWeight: 600 }}
-                    >
-                      Forgot password?
-                    </button>
-                  )}
-                </div>
+                <label style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text3)", marginBottom: 6 }}>Password</label>
                 <input
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="Your password"
                   value={form.password}
                   onChange={e => f("password", e.target.value)}
                   required
+                  style={{ background: "rgba(0,0,0,0.2)", padding: "12px" }}
                 />
               </div>
 
-              {/* FIX: error always shows here, never crashes */}
-              {error && (
-                <div style={{
-                  padding: "10px 14px",
-                  background: "rgba(248,113,113,0.08)",
-                  border: "1px solid rgba(248,113,113,0.2)",
-                  borderRadius: 8, color: "var(--red)", fontSize: 12.5,
-                  display: "flex", flexDirection: "column", gap: 6,
-                }}>
-                  <span>⚠ {error}</span>
-                  {/* Show forgot password hint if wrong password */}
-                  {(error.toLowerCase().includes("invalid") || error.toLowerCase().includes("incorrect")) && panel === "admin" && (
-                    <button
-                      type="button"
-                      onClick={() => { setPanel("forgot"); setError(""); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: primaryColor, padding: 0, textAlign: "left", fontWeight: 600 }}
-                    >
-                      Click here to reset your password →
-                    </button>
-                  )}
+              {/* Forgot password link */}
+              {panel === "admin" && (
+                <div style={{ display: "flex", justifyContent: "flex-start", marginTop: -4, marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => { setPanel("forgot"); setError(""); setSuccess(""); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: primaryColor, padding: 0, fontWeight: 500 }}
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
               )}
 
+              {/* Error Message */}
+              {error && (
+                <div style={{
+                  padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)",
+                  borderRadius: 8, color: "var(--red)", fontSize: 12.5, display: "flex", flexDirection: "column", gap: 6,
+                }}>
+                  <span>⚠ {error}</span>
+                </div>
+              )}
+
+              {/* Submit Button */}
               <button
                 type="submit"
                 className="btn btn-primary"
                 disabled={loading}
                 style={{
                   width: "100%", justifyContent: "center",
-                  padding: "11px", fontSize: 13.5, marginTop: 4,
-                  background: panel === "student"
-                    ? "linear-gradient(135deg, #059669, #10d9a0)"
-                    : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+                  padding: "13px", fontSize: 14, marginTop: 4, fontWeight: 600,
+                  background: panel === "student" ? "linear-gradient(135deg, #059669, #10d9a0)" : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+                  boxShadow: panel === "student" ? "0 4px 14px rgba(16,217,160,0.3)" : `0 4px 14px ${primaryColor}40`,
+                  border: "none", color: "#fff"
                 }}
               >
-                {loading ? "Signing in…" : `Sign in to ${panel === "admin" ? "Admin Panel" : "Student Portal"} →`}
+                {loading ? "Signing in…" : `Login to ${academyName}`}
               </button>
             </form>
           </div>
         )}
+      </div>
 
-        <div style={{ textAlign: "center", marginTop: 24, fontSize: 11, color: "var(--text3)" }}>
-          {academyName} Management System
-        </div>
+      {/* ── FOOTER (Outside Card) ── */}
+      <div style={{ 
+        display: "flex", gap: 16, marginTop: 32, fontSize: 11, color: "var(--text3)", 
+        opacity: 0.7, fontWeight: 500
+      }}>
+        <a href="#" style={{ color: "var(--text3)", textDecoration: "none" }}>Privacy Policy</a>
+        <span>·</span>
+        <a href="#" style={{ color: "var(--text3)", textDecoration: "none" }}>Terms of Service</a>
+        <span>·</span>
+        <a href="#" style={{ color: "var(--text3)", textDecoration: "none" }}>Contact</a>
       </div>
     </div>
   );
