@@ -82,13 +82,20 @@ router.get("/:id", auth, async (req, res) => {
 // ── Record payment — sends push notification to student + parent ────────────────────
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  
+  const client = await db.pool.connect();
   try {
     const { fee_record_id, amount, payment_mode, transaction_ref, paid_on, notes } = req.body;
-    if (!fee_record_id || !amount || !payment_mode)
+    if (!fee_record_id || amount === undefined || amount === null || !payment_mode)
       return res.status(400).json({ error: "fee_record_id, amount and payment_mode are required" });
 
+    const paymentAmount = parseFloat(amount);
+    if (isNaN(paymentAmount) || paymentAmount <= 0) {
+      return res.status(400).json({ error: "Invalid payment amount. Amount must be greater than zero." });
+    }
+
     // Fetch fee record + student info (including FCM tokens) + academy name
-    const { rows: frRows } = await db.query(
+    const { rows: frRows } = await client.query(
       `SELECT fr.*, s.branch_id, s.academy_id AS student_academy_id,
               s.fcm_token, s.parent_fcm_token, s.name AS student_name,
               a.name AS academy_name
@@ -104,13 +111,27 @@ router.post("/", auth, async (req, res) => {
     if (aid && fr.student_academy_id && fr.student_academy_id !== aid)
       return res.status(403).json({ error: "Fee record does not belong to your academy" });
 
+    const due = parseFloat(fr.amount_due);
+    const paidSoFar = parseFloat(fr.amount_paid);
+    // Allow a small epsilon for floating point issues
+    if (paymentAmount > (due - paidSoFar) + 0.01) {
+      return res.status(400).json({ error: `Payment amount (${paymentAmount}) exceeds the outstanding balance (${due - paidSoFar}).` });
+    }
+
     const student_id = fr.student_id;
     const branch_id  = fr.branch_id;
 
-    // Receipt number: RCP-YYYYMMDD-NNNN per academy per day
+    await client.query("BEGIN");
+
+    // Acquire an advisory lock scoped to academy to prevent receipt number race conditions
+    // Using a hash of the prefix as the lock ID
     const today  = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).replace(/-/g, "");
     const prefix = `RCP-${today}-`;
-    const { rows: lastRows } = await db.query(
+    const lockId = 1000 + (aid || 0);
+    await client.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
+
+    // Receipt number: RCP-YYYYMMDD-NNNN per academy per day
+    const { rows: lastRows } = await client.query(
       `SELECT receipt_no FROM payments
        WHERE receipt_no LIKE $1
        ${aid ? "AND branch_id IN (SELECT id FROM branches WHERE academy_id=$2)" : ""}
@@ -125,21 +146,23 @@ router.post("/", auth, async (req, res) => {
     }
     const receipt_no = `${prefix}${String(seq).padStart(4, "0")}`;
 
-    const { rows } = await db.query(
+    const { rows } = await client.query(
       `INSERT INTO payments
          (fee_record_id, student_id, branch_id, amount, payment_mode,
           transaction_ref, paid_on, collected_by, notes, receipt_no)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [fee_record_id, student_id, branch_id, amount, payment_mode,
+      [fee_record_id, student_id, branch_id, paymentAmount, payment_mode,
        transaction_ref || null, paid_on || new Date(), req.user.id, notes || null, receipt_no]
     );
 
-    const totalPaid = parseFloat(fr.amount_paid) + parseFloat(amount);
-    const status    = totalPaid >= parseFloat(fr.amount_due) ? "paid" : "partial";
-    await db.query(
+    const totalPaid = paidSoFar + paymentAmount;
+    const status    = totalPaid >= due - 0.01 ? "paid" : "partial";
+    await client.query(
       "UPDATE fee_records SET amount_paid=$1, status=$2 WHERE id=$3",
       [totalPaid, status, fee_record_id]
     );
+
+    await client.query("COMMIT");
 
     // Send push notification to student and parent
     if (fr.fcm_token || fr.parent_fcm_token) {
@@ -148,7 +171,7 @@ router.post("/", auth, async (req, res) => {
         studentName:  fr.student_name,
         studentToken: fr.fcm_token,
         parentToken:  fr.parent_fcm_token,
-        amount,
+        amount:       paymentAmount,
         receiptNo:    receipt_no,
         periodLabel:  fr.period_label,
         academyName:  fr.academy_name,
@@ -157,8 +180,11 @@ router.post("/", auth, async (req, res) => {
 
     res.json(rows[0]);
   } catch (e) {
+    await client.query("ROLLBACK");
     console.error("Create payment error:", e.message);
     res.status(500).json({ error: "Failed to record payment" });
+  } finally {
+    client.release();
   }
 });
 

@@ -39,9 +39,6 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) return callback(null, true);
     // Allow all subdomains of exponentgrow.in
     if (origin.endsWith(".exponentgrow.in")) return callback(null, true);
-    if (origin.endsWith(".onrender.com"))    return callback(null, true);
-    if (origin.endsWith(".netlify.app"))     return callback(null, true);
-    if (origin.endsWith(".vercel.app"))      return callback(null, true);
     console.warn(`[CORS] Blocked: ${origin}`);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },

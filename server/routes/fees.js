@@ -123,6 +123,9 @@ router.patch("/mark-overdue", auth, async (req, res) => {
                  AND fr.status = 'pending'
                  AND fr.due_date < $2`;
       params = [aid, today];
+    } else if (req.user.branch_id) {
+      query = `UPDATE fee_records SET status='overdue' WHERE branch_id=$1 AND status='pending' AND due_date < $2`;
+      params = [req.user.branch_id, today];
     } else {
       query = `UPDATE fee_records SET status='overdue' WHERE status='pending' AND due_date < $1`;
       params = [today];
