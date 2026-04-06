@@ -142,7 +142,7 @@ export function AcademyProvider({ children }) {
 
       setAcademy({
         id: null,
-        name:          cachedName     || "My Academy",
+        name:          cachedName     || "Exponent Platform",
         logo_url:      cachedLogo     || null,
         favicon_url:   cachedFavicon  || null,
         primary_color: cachedPrimary  || "2563EB",

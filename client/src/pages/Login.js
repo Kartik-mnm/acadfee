@@ -82,6 +82,19 @@ export default function Login() {
     </button>
   );
 
+  const DefaultLogo = ({ size = 42 }) => (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4f46e5" />
+          <stop offset="100%" stopColor="#9333ea" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill="url(#logo-grad)" />
+      <path d="M10 10H22M10 16H18M10 22H22" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+
   return (
     <div className="login-bg">
       <div className="login-card">
@@ -98,7 +111,7 @@ export default function Login() {
           }}>
             {logoUrl
               ? <img src={logoUrl} alt={academyName} style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 8 }} />
-              : <img src={logo} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} />
+              : <DefaultLogo size={42} />
             }
           </div>
           <div style={{
