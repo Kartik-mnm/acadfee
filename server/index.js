@@ -16,18 +16,14 @@ startAbsentCron();
 startKeepAlive();
 
 const allowedOrigins = [
-  // Old Render URLs (keep for backward compat)
   "https://acadfee.onrender.com",
   "https://acadfee-app.onrender.com",
-  // New custom domains
   "https://exponentgrow.in",
   "https://www.exponentgrow.in",
   "https://app.exponentgrow.in",
   "https://api.exponentgrow.in",
-  // Platform
   "https://exponent-platform.vercel.app",
   "https://expoent.netlify.app",
-  // Local dev
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5000",
@@ -37,7 +33,6 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow all subdomains of exponentgrow.in
     if (origin.endsWith(".exponentgrow.in")) return callback(null, true);
     console.warn(`[CORS] Blocked: ${origin}`);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
@@ -55,7 +50,7 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// ── Academy routes ───────────────────────────────────────────────────────────────────
+// ── Academy routes ────────────────────────────────────────────────────────────
 app.use("/api/auth",         require("./routes/auth"));
 app.use("/api/branches",     require("./routes/branches"));
 app.use("/api/batches",      require("./routes/batches"));
@@ -71,14 +66,15 @@ app.use("/api/admission",    require("./routes/admission"));
 app.use("/api/upload",       require("./routes/upload"));
 app.use("/api/working-days", require("./routes/working-days"));
 app.use("/api/daily-report", require("./routes/daily-report").router);
+app.use("/api/fcm-debug",    require("./routes/fcm-debug"));
 
-// ── Platform routes ───────────────────────────────────────────────────────────────────
+// ── Platform routes ────────────────────────────────────────────────────────────
 app.use("/platform/auth",    require("./routes/platform-auth"));
 app.use("/platform",         require("./routes/platform"));
 app.use("/api/academy",      require("./routes/academy-config"));
 app.use("/api/onboarding",   require("./routes/onboarding"));
 
-// ── Health check ───────────────────────────────────────────────────────────────────
+// ── Health check ──────────────────────────────────────────────────────────────
 app.get("/health", (_, res) => res.json({ status: "ok", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime()) }));
 app.get("/",       (_, res) => res.json({ status: "Exponent Platform API running" }));
 
