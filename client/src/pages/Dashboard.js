@@ -2,13 +2,16 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import OnboardingChecklist from "./OnboardingChecklist";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Cell, CartesianGrid,
+} from "recharts";
 
-const fmt    = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 const fmtShort = (n) => {
   const num = Number(n || 0);
   if (num >= 100000) return `₹${(num / 100000).toFixed(1)}L`;
-  if (num >= 1000)   return `₹${(num / 1000).toFixed(1)}k`;
+  if (num >= 1000)   return `₹${(num / 1000).toFixed(0)}k`;
   return `₹${num}`;
 };
 
@@ -19,68 +22,118 @@ function BarTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
-      background: "#0f172a", border: "1px solid rgba(59,130,246,0.25)",
-      borderRadius: 10, padding: "8px 14px", fontSize: 12,
-      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+      background: "var(--bg2)",
+      border: "1px solid rgba(99,102,241,0.3)",
+      borderRadius: 10, padding: "10px 16px",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+      fontSize: 12,
     }}>
-      <div style={{ color: "#94a3b8", marginBottom: 3, fontWeight: 600, fontSize: 11 }}>{label}</div>
-      <div style={{ color: "#3b82f6", fontWeight: 800, fontSize: 14 }}>{fmt(payload[0].value)}</div>
+      <div style={{ color: "var(--text3)", marginBottom: 4, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+      <div style={{ color: "#818cf8", fontWeight: 800, fontSize: 16 }}>{fmt(payload[0].value)}</div>
     </div>
   );
 }
 
-// ── The new collection chart card ─────────────────────────────────────────────
+// ── Custom Y-axis tick ────────────────────────────────────────────────────────
+function CustomYTick({ x, y, payload }) {
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fill="var(--text3)" fontSize={10} fontWeight={600}>
+      {fmtShort(payload.value)}
+    </text>
+  );
+}
+
+// ── Professional collection chart ─────────────────────────────────────────────
 function CollectionChart({ trend }) {
   if (!trend || trend.length === 0) {
     return (
-      <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text3)" }}>
-        <div style={{ fontSize: 13 }}>No collection data yet</div>
+      <div className="card" style={{ padding: 28, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220 }}>
+        <div style={{ textAlign: "center", color: "var(--text3)" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>No collection data yet</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>Start recording payments to see trends</div>
+        </div>
       </div>
     );
   }
 
-  // Current month is the last entry
-  const current   = trend[trend.length - 1];
-  const previous  = trend[trend.length - 2];
+  const current     = trend[trend.length - 1];
+  const previous    = trend[trend.length - 2];
   const currentVal  = parseFloat(current?.collected  || 0);
   const previousVal = parseFloat(previous?.collected || 0);
 
-  // % change vs last month
   const pctChange = previousVal > 0
     ? (((currentVal - previousVal) / previousVal) * 100).toFixed(1)
     : null;
   const isUp = pctChange === null ? true : parseFloat(pctChange) >= 0;
 
-  const maxVal = Math.max(...trend.map(t => parseFloat(t.collected || 0)), 1);
-
   return (
-    <div className="card" style={{ padding: "24px 24px 20px" }}>
-      {/* Top section — big number + badge */}
-      <div style={{ marginBottom: 4, fontSize: 11, fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-        Collected this month
-      </div>
-      <div style={{ fontSize: 32, fontWeight: 900, color: "var(--text1)", lineHeight: 1.1, marginBottom: 10, fontFamily: "monospace" }}>
-        {fmt(currentVal)}
-      </div>
-      {pctChange !== null && (
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 5,
-          padding: "4px 12px", borderRadius: 20,
-          background: isUp ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
-          border: `1px solid ${isUp ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
-          fontSize: 12, fontWeight: 700,
-          color: isUp ? "var(--green)" : "var(--red)",
-          marginBottom: 20,
-        }}>
-          <span style={{ fontSize: 14 }}>{isUp ? "↗" : "↘"}</span>
-          {isUp ? "+" : ""}{pctChange}% vs last month
+    <div className="card" style={{ padding: "24px 20px 16px" }}>
+
+      {/* SVG gradient definition — injected once in the DOM */}
+      <svg width={0} height={0} style={{ position: "absolute" }}>
+        <defs>
+          <linearGradient id="bar-current" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#6366f1" stopOpacity={1} />
+            <stop offset="100%" stopColor="#4338ca" stopOpacity={0.85} />
+          </linearGradient>
+          <linearGradient id="bar-past" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#6366f1" stopOpacity={0.28} />
+            <stop offset="100%" stopColor="#6366f1" stopOpacity={0.08} />
+          </linearGradient>
+        </defs>
+      </svg>
+
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>
+            Collected this month
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "var(--text1)", lineHeight: 1, fontFamily: "monospace" }}>
+            {fmt(currentVal)}
+          </div>
         </div>
-      )}
+        {pctChange !== null && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            padding: "5px 12px", borderRadius: 20,
+            background: isUp ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+            border: `1px solid ${isUp ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)"}`,
+            fontSize: 12, fontWeight: 700,
+            color: isUp ? "var(--green)" : "var(--red)",
+            whiteSpace: "nowrap",
+          }}>
+            <span>{isUp ? "↗" : "↘"}</span>
+            {isUp ? "+" : ""}{pctChange}% vs last month
+          </div>
+        )}
+      </div>
 
       {/* Bar chart */}
-      <div style={{ height: 120, marginTop: 8 }}>
+      <div style={{ height: 150 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={trend} barCategoryGap="20%" margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+          <BarChart
+            data={trend}
+            barCategoryGap="28%"
+            margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="bar-current-inline" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#818cf8" stopOpacity={1} />
+                <stop offset="100%" stopColor="#4338ca" stopOpacity={0.9} />
+              </linearGradient>
+              <linearGradient id="bar-past-inline" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#6366f1" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#6366f1" stopOpacity={0.08} />
+              </linearGradient>
+            </defs>
+
+            <CartesianGrid
+              vertical={false}
+              stroke="rgba(148,163,184,0.07)"
+              strokeDasharray="4 4"
+            />
             <XAxis
               dataKey="month"
               tick={{ fill: "var(--text3)", fontSize: 10, fontWeight: 600 }}
@@ -88,20 +141,43 @@ function CollectionChart({ trend }) {
               tickLine={false}
               tickFormatter={m => m?.split(" ")[0]?.toUpperCase().substring(0, 3)}
             />
-            <Tooltip content={<BarTooltip />} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
-            <Bar dataKey="collected" radius={[5, 5, 0, 0]}>
+            <YAxis
+              tick={<CustomYTick />}
+              axisLine={false}
+              tickLine={false}
+              width={42}
+            />
+            <Tooltip
+              content={<BarTooltip />}
+              cursor={{ fill: "rgba(99,102,241,0.06)", radius: 6 }}
+            />
+            <Bar dataKey="collected" radius={[6, 6, 2, 2]} maxBarSize={44}>
               {trend.map((entry, index) => {
                 const isCurrent = index === trend.length - 1;
                 return (
                   <Cell
                     key={`cell-${index}`}
-                    fill={isCurrent ? "#1e3a5f" : "rgba(59,130,246,0.18)"}
+                    fill={isCurrent ? "url(#bar-current-inline)" : "url(#bar-past-inline)"}
+                    stroke={isCurrent ? "rgba(129,140,248,0.4)" : "transparent"}
+                    strokeWidth={1}
                   />
                 );
               })}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 20, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text3)" }}>
+          <div style={{ width: 10, height: 10, borderRadius: 2, background: "linear-gradient(135deg,#818cf8,#4338ca)" }} />
+          Current month
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text3)" }}>
+          <div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(99,102,241,0.3)" }} />
+          Previous months
+        </div>
       </div>
     </div>
   );
@@ -162,6 +238,9 @@ export default function Dashboard({ onNavigate }) {
 
   const showChecklist = isNewAcademy && user.role === "super_admin" && !checklistDismissed;
 
+  // Limit to latest 5 payments for a clean, proportional layout
+  const recentPayments = (data.recent_payments || []).slice(0, 5);
+
   return (
     <div>
       <div className="page-header">
@@ -214,10 +293,10 @@ export default function Dashboard({ onNavigate }) {
       {/* Charts row */}
       <div className="grid-2" style={{ marginBottom: 24 }}>
 
-        {/* New collection chart */}
+        {/* Professional collection chart */}
         <CollectionChart trend={trend} />
 
-        {/* Recent payments */}
+        {/* Recent payments — max 5 rows */}
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div>
@@ -226,24 +305,34 @@ export default function Dashboard({ onNavigate }) {
             </div>
             <button className="btn btn-secondary btn-sm" onClick={() => onNavigate?.("payments")}>View all</button>
           </div>
-          {data.recent_payments?.length === 0 ? (
+          {recentPayments.length === 0 ? (
             <div className="empty-state" style={{ padding: 24 }}>
               <div className="empty-text">No payments yet</div>
             </div>
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Student</th><th>Amount</th><th>Mode</th><th>Date</th></tr></thead>
+                <thead>
+                  <tr><th>Student</th><th>Amount</th><th>Mode</th><th>Date</th></tr>
+                </thead>
                 <tbody>
-                  {data.recent_payments?.map((p, i) => (
+                  {recentPayments.map((p, i) => (
                     <tr key={i}>
                       <td>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{p.student_name}</div>
-                        {user.role === "super_admin" && <div className="text-muted text-sm">{p.branch_name}</div>}
+                        {user.role === "super_admin" && (
+                          <div className="text-muted text-sm">{p.branch_name}</div>
+                        )}
                       </td>
-                      <td><span style={{ color: "var(--green)", fontWeight: 700, fontFamily: "monospace" }}>{fmt(p.amount)}</span></td>
+                      <td>
+                        <span style={{ color: "var(--green)", fontWeight: 700, fontFamily: "monospace" }}>
+                          {fmt(p.amount)}
+                        </span>
+                      </td>
                       <td><span className="badge badge-blue">{p.payment_mode}</span></td>
-                      <td style={{ color: "var(--text3)", fontSize: 12 }}>{new Date(p.paid_on).toLocaleDateString("en-IN")}</td>
+                      <td style={{ color: "var(--text3)", fontSize: 12 }}>
+                        {new Date(p.paid_on).toLocaleDateString("en-IN")}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
