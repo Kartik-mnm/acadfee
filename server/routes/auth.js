@@ -7,9 +7,7 @@ const db     = require("../db");
 const { Resend } = require("resend");
 const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
-// Verified domain sender
 const FROM_ADDRESS = "Exponent Platform <noreply@exponentgrow.in>";
-// Custom domain URL — where the reset form lives
 const APP_URL = "https://app.exponentgrow.in";
 
 setInterval(async () => {
@@ -88,20 +86,16 @@ router.post("/login", loginLimiter, async (req, res) => {
 router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email is required" });
-  // Always return success — prevents email enumeration
   res.json({ message: "If that email exists, a reset link has been sent." });
 
   try {
     const { rows } = await db.query(
       "SELECT id, name FROM users WHERE email = $1", [email.toLowerCase().trim()]
     );
-    if (!rows[0]) {
-      console.log(`[auth] Forgot password: email not found: ${email}`);
-      return;
-    }
+    if (!rows[0]) return;
 
     const token     = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
     await db.query(`
       INSERT INTO password_reset_tokens (user_id, token, expires_at)
@@ -109,16 +103,12 @@ router.post("/forgot-password", async (req, res) => {
       ON CONFLICT (user_id) DO UPDATE SET token=$2, expires_at=$3, created_at=NOW()
     `, [rows[0].id, token, expiresAt]);
 
-    if (!process.env.RESEND_API_KEY) {
-      console.log("[auth] RESEND_API_KEY not set — skipping reset email");
-      return;
-    }
+    if (!process.env.RESEND_API_KEY) return;
 
     const resend   = new Resend(process.env.RESEND_API_KEY);
     const resetUrl = `${APP_URL}?reset_token=${token}`;
-    console.log(`[auth] Sending reset email to ${email}, link: ${resetUrl}`);
 
-    const { data, error } = await resend.emails.send({
+    await resend.emails.send({
       from:    FROM_ADDRESS,
       to:      email,
       subject: "Reset your password \u2014 Exponent",
@@ -137,12 +127,6 @@ router.post("/forgot-password", async (req, res) => {
         </div>
       `,
     });
-
-    if (error) {
-      console.error("[auth] Resend error:", JSON.stringify(error));
-    } else {
-      console.log(`[auth] Reset email sent to ${email}, id: ${data?.id}`);
-    }
   } catch (e) {
     console.error("Forgot password error:", e.message);
   }
@@ -175,8 +159,11 @@ router.post("/student-login", loginLimiter, async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
   try {
     const { rows } = await db.query(
-      `SELECT s.*, b.name AS batch_name, br.name AS branch_name
-       FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
+      `SELECT s.*, b.name AS batch_name, br.name AS branch_name, a.name AS academy_name
+       FROM students s
+       LEFT JOIN batches b  ON b.id  = s.batch_id
+       LEFT JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN academies a ON a.id  = s.academy_id
        WHERE s.email=$1 AND s.login_enabled=true`, [email]
     );
     const student = rows[0];
@@ -193,9 +180,32 @@ router.post("/student-login", loginLimiter, async (req, res) => {
     if (parseInt(activeTokens[0].cnt) >= deviceLimit)
       return res.status(403).json({ error: `Maximum ${deviceLimit} device(s) already logged in.`, code: "DEVICE_LIMIT_REACHED" });
 
-    const payload = { id: student.id, role: "student", branch_id: student.branch_id, name: student.name, academy_id: student.academy_id || null };
+    const payload = {
+      id:         student.id,
+      role:       "student",
+      branch_id:  student.branch_id,
+      name:       student.name,
+      academy_id: student.academy_id || null,
+      roll_no:    student.roll_no    || null,  // FIX: include roll_no in JWT payload
+    };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
-    res.json({ token: accessToken, refreshToken, user: { id: student.id, name: student.name, email: student.email, role: "student", branch_id: student.branch_id, branch_name: student.branch_name, batch_name: student.batch_name, academy_id: student.academy_id || null } });
+
+    res.json({
+      token: accessToken,
+      refreshToken,
+      user: {
+        id:           student.id,
+        name:         student.name,
+        email:        student.email,
+        role:         "student",
+        branch_id:    student.branch_id,
+        branch_name:  student.branch_name,
+        batch_name:   student.batch_name,
+        academy_id:   student.academy_id   || null,
+        academy_name: student.academy_name || null,
+        roll_no:      student.roll_no      || null,  // FIX: include in login response
+      }
+    });
   } catch (e) {
     console.error("Student login error:", e.message);
     res.status(500).json({ error: "Login failed" });
