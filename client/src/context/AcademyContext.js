@@ -44,6 +44,24 @@ function applyFavicon(faviconUrl) {
   document.head.appendChild(link);
 }
 
+// Fetch platform-level branding and apply it (used when no academy is loaded)
+function applyPlatformBranding() {
+  fetch("https://api.exponentgrow.in/platform/auth/public-branding")
+    .then(r => r.json())
+    .then(data => {
+      if (data.logo_url) {
+        try { localStorage.setItem("exponent_logo_url", data.logo_url); } catch {}
+      }
+      if (data.favicon_url) {
+        applyFavicon(data.favicon_url);
+      }
+      applyTitle("Exponent Platform");
+    })
+    .catch(() => {
+      applyTitle("Exponent Platform");
+    });
+}
+
 // Apply branding from cache immediately (called at module load time so it's
 // instant — before React even mounts, so no flicker on refresh/new tab)
 function applyCachedBranding() {
@@ -165,7 +183,17 @@ export function AcademyProvider({ children }) {
         } else if (storedSlug) {
           applyAndStore(await fetchBySlug(storedSlug));
         } else {
-          onError();
+          // No academy identified — this is a fresh/anonymous visitor.
+          // Clear any stale academy favicon/logo cache so old branding doesn't leak.
+          localStorage.removeItem(CACHE_FAVICON);
+          localStorage.removeItem(CACHE_LOGO);
+          localStorage.removeItem(CACHE_NAME);
+          // Remove any stale cached favicon from DOM
+          applyFavicon(null);
+          // Apply platform-level branding (logo + favicon from super-admin settings)
+          applyPlatformBranding();
+          // Still set academy state to null so Login page shows platform defaults
+          setAcademy(null);
         }
       } catch {
         onError();
