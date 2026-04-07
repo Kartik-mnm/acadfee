@@ -149,7 +149,7 @@ export default function PrivacyPolicy() {
           <div>Nagpur, Maharashtra, India</div>
           <div>
             Email:{" "}
-            <a href="mailto:kartik@exponentgrow.in" style={s.a}>kartik@exponentgrow.in</a>
+            <a href="mailto:aspirantth@gmail.com" style={s.a}>aspirantth@gmail.com</a>
           </div>
           <div>
             Phone / WhatsApp:{" "}

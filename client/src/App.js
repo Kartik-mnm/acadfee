@@ -21,6 +21,8 @@ import StudentDashboard from "./pages/StudentDashboard";
 import AcademySignup from "./pages/AcademySignup";
 import AcademySettings from "./pages/AcademySettings";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
+import Contact from "./pages/Contact";
 import "./App.css";
 
 const NAV_ICONS = {
@@ -250,6 +252,8 @@ export default function App() {
   if (window.location.pathname === "/apply")   return <AdmissionForm />;
   if (window.location.pathname === "/signup")  return <AcademySignup />;
   if (window.location.pathname === "/privacy") return <PrivacyPolicy />;
+  if (window.location.pathname === "/terms") return <TermsOfService />;
+  if (window.location.pathname === "/contact") return <Contact />;
   return (
     <AcademyProvider>
       <AuthProvider>

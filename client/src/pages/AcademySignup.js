@@ -227,7 +227,7 @@ export default function AcademySignup() {
         </div>
 
         <p style={{ textAlign: "center", fontSize: 11, color: S.t3, marginTop: 16 }}>
-          By signing up you agree to our Terms of Service
+          By signing up you agree to our <a href="/terms" style={{ color: S.acc, textDecoration: "none" }}>Terms of Service</a>
         </p>
       </div>
     </div>

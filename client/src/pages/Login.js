@@ -298,11 +298,11 @@ export default function Login() {
         display: "flex", gap: 16, marginTop: 32, fontSize: 11, color: "var(--text3)", 
         opacity: 0.7, fontWeight: 500
       }}>
-        <a href="#" style={{ color: "var(--text3)", textDecoration: "none" }}>Privacy Policy</a>
+        <a href="/privacy" style={{ color: "var(--text3)", textDecoration: "none" }}>Privacy Policy</a>
         <span>·</span>
-        <a href="#" style={{ color: "var(--text3)", textDecoration: "none" }}>Terms of Service</a>
+        <a href="/terms" style={{ color: "var(--text3)", textDecoration: "none" }}>Terms of Service</a>
         <span>·</span>
-        <a href="#" style={{ color: "var(--text3)", textDecoration: "none" }}>Contact</a>
+        <a href="/contact" style={{ color: "var(--text3)", textDecoration: "none" }}>Contact</a>
       </div>
     </div>
   );
