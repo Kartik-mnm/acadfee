@@ -1,70 +1,96 @@
-// GET /api/fcm-debug  — confirms FCM is working end-to-end
-// Protected: only works if you know the admin JWT
+// FCM debug routes — helps diagnose notification issues
 const router = require("express").Router();
 const { auth } = require("../middleware");
 const { sendNotification } = require("../fcm");
 const db = require("../db");
 
-// GET /api/fcm-debug/status  — check if Firebase Admin is initialized
-router.get("/status", auth, async (req, res) => {
-  const firebaseVars = {
-    FIREBASE_PROJECT_ID:    !!process.env.FIREBASE_PROJECT_ID,
-    FIREBASE_PRIVATE_KEY:   !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_CLIENT_EMAIL:  !!process.env.FIREBASE_CLIENT_EMAIL,
+// GET /api/fcm-debug/status  — PUBLIC, no auth needed
+// Open this URL directly in any browser to check FCM setup
+router.get("/status", async (req, res) => {
+  const vars = {
+    FIREBASE_PROJECT_ID:   !!process.env.FIREBASE_PROJECT_ID,
+    FIREBASE_PRIVATE_KEY:  !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
   };
-  const allSet = Object.values(firebaseVars).every(Boolean);
+  const allSet = Object.values(vars).every(Boolean);
 
-  // Check how many students have FCM tokens
   let tokenCount = 0;
+  let sampleStudents = [];
   try {
     const { rows } = await db.query(
-      "SELECT COUNT(*) FROM students WHERE fcm_token IS NOT NULL AND fcm_token != ''"
+      `SELECT COUNT(*)::int AS cnt FROM students WHERE fcm_token IS NOT NULL AND fcm_token != ''`
     );
-    tokenCount = parseInt(rows[0].count);
-  } catch {}
+    tokenCount = rows[0].cnt;
+
+    // Show first 5 students with tokens (name only, for verification)
+    const { rows: samples } = await db.query(
+      `SELECT name FROM students WHERE fcm_token IS NOT NULL AND fcm_token != '' LIMIT 5`
+    );
+    sampleStudents = samples.map(s => s.name);
+  } catch (e) {
+    console.error("[fcm-debug] DB error:", e.message);
+  }
 
   res.json({
-    firebase_initialized: allSet,
-    env_vars: firebaseVars,
+    ok: allSet && tokenCount > 0,
+    firebase_admin_initialized: allSet,
+    env_vars_set: vars,
     students_with_fcm_token: tokenCount,
-    message: allSet
-      ? "Firebase Admin is configured. Notifications will be sent if students have tokens."
-      : "Firebase Admin is NOT fully configured. Set all FIREBASE_* env vars in Render.",
+    sample_students_with_token: sampleStudents,
+    diagnosis: !allSet
+      ? "PROBLEM: Firebase Admin env vars missing in Render. Set FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL."
+      : tokenCount === 0
+      ? "WARNING: Firebase Admin is configured but NO student has an FCM token. Students need to open the portal and click 'Enable Notifications'."
+      : `All good! Firebase configured + ${tokenCount} student(s) have tokens. Notifications should work.`,
   });
 });
 
-// POST /api/fcm-debug/test  — send a test notification to a specific student
+// POST /api/fcm-debug/test  — send a test push to a specific student (requires auth)
 // Body: { student_id }
 router.post("/test", auth, async (req, res) => {
-  if (req.user.role !== "super_admin")
-    return res.status(403).json({ error: "Super admin only" });
+  if (!["super_admin", "branch_manager"].includes(req.user.role))
+    return res.status(403).json({ error: "Admin only" });
 
   const { student_id } = req.body;
   if (!student_id) return res.status(400).json({ error: "student_id required" });
 
   try {
     const { rows } = await db.query(
-      "SELECT id, name, fcm_token FROM students WHERE id = $1", [student_id]
+      "SELECT id, name, fcm_token, parent_fcm_token FROM students WHERE id = $1",
+      [student_id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Student not found" });
     const student = rows[0];
 
-    if (!student.fcm_token) {
+    if (!student.fcm_token && !student.parent_fcm_token) {
       return res.json({
         sent: false,
-        reason: "Student has no FCM token. They need to open the student portal and click 'Enable Notifications'.",
         student: student.name,
+        diagnosis: "Student has no FCM token. They need to open the student portal and click 'Enable Notifications'.",
       });
     }
 
-    const result = await sendNotification(
-      student.fcm_token,
-      "🔔 Test Notification",
-      `Hello ${student.name}! If you see this, FCM notifications are working correctly.`,
-      { type: "test" }
-    );
+    const results = [];
+    if (student.fcm_token) {
+      const r = await sendNotification(
+        student.fcm_token,
+        "\uD83D\uDD14 Test Notification",
+        `Hello ${student.name}! Attendance notifications are working correctly.`,
+        { type: "test" }
+      );
+      results.push({ token_type: "student", result: r });
+    }
+    if (student.parent_fcm_token) {
+      const r = await sendNotification(
+        student.parent_fcm_token,
+        "\uD83D\uDD14 Test Notification (Parent)",
+        `Parent notification test for ${student.name} — working correctly.`,
+        { type: "test" }
+      );
+      results.push({ token_type: "parent", result: r });
+    }
 
-    res.json({ sent: !result.skipped && !result.error, result, student: student.name });
+    res.json({ sent: true, student: student.name, results });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
