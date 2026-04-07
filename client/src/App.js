@@ -42,8 +42,119 @@ const NAV_ICONS = {
   settings:    "⚙",
 };
 
+// ── Upgrade Contact Modal ────────────────────────────────────────────────
+function UpgradeModal({ onClose }) {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: "var(--bg2)",
+        border: "1px solid var(--border)",
+        borderRadius: 16,
+        padding: "32px 28px",
+        maxWidth: 440,
+        width: "100%",
+        position: "relative",
+      }}>
+        {/* Close */}
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute", top: 14, right: 16,
+            background: "none", border: "none", fontSize: 20,
+            cursor: "pointer", color: "var(--text3)", lineHeight: 1,
+          }}
+        >✕</button>
+
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🚀</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text1)", marginBottom: 4 }}>
+            Upgrade Your Plan
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.6 }}>
+            Reach out to us and we’ll get you upgraded within minutes.
+          </div>
+        </div>
+
+        {/* Contact options */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+          {/* WhatsApp */}
+          <a
+            href="https://wa.me/918956419453?text=Hi%20Kartik%2C%20I%20want%20to%20upgrade%20my%20Exponent%20academy%20plan."
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "14px 18px",
+              background: "rgba(37,211,102,0.1)",
+              border: "1px solid rgba(37,211,102,0.3)",
+              borderRadius: 12, textDecoration: "none",
+              transition: "background 0.15s",
+            }}
+          >
+            <span style={{ fontSize: 28 }}>💬</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#25d366" }}>WhatsApp</div>
+              <div style={{ fontSize: 12, color: "var(--text3)" }}>+91 89564 19453 — fastest response</div>
+            </div>
+          </a>
+
+          {/* Call */}
+          <a
+            href="tel:+918956419453"
+            style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "14px 18px",
+              background: "rgba(59,130,246,0.08)",
+              border: "1px solid rgba(59,130,246,0.25)",
+              borderRadius: 12, textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: 28 }}>📞</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--accent)" }}>Call Us</div>
+              <div style={{ fontSize: 12, color: "var(--text3)" }}>+91 89564 19453</div>
+            </div>
+          </a>
+
+          {/* Email */}
+          <a
+            href="mailto:aspirantth@gmail.com?subject=Upgrade%20Request%20%E2%80%94%20Exponent%20Plan&body=Hi%20Kartik%2C%0A%0AI%20would%20like%20to%20upgrade%20my%20academy%20plan.%0A%0AThank%20you."
+            style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "14px 18px",
+              background: "rgba(168,85,247,0.08)",
+              border: "1px solid rgba(168,85,247,0.25)",
+              borderRadius: 12, textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: 28 }}>✉️</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--purple, #a855f7)" }}>Email</div>
+              <div style={{ fontSize: 12, color: "var(--text3)" }}>aspirantth@gmail.com</div>
+            </div>
+          </a>
+        </div>
+
+        <div style={{ marginTop: 20, fontSize: 11, color: "var(--text3)", textAlign: "center" }}>
+          We typically respond within a few hours — Mon to Sat.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Trial expiry banner ────────────────────────────────────────────────────────
-function TrialBanner({ academy, onSettings }) {
+function TrialBanner({ academy, onUpgrade }) {
   if (!academy?.trial_ends_at || academy?.plan !== "trial") return null;
   const msLeft = new Date(academy.trial_ends_at) - Date.now();
   const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
@@ -72,7 +183,7 @@ function TrialBanner({ academy, onSettings }) {
       <button
         className="btn btn-sm"
         style={{ background: urgent ? "rgba(239,68,68,0.2)" : "rgba(251,191,36,0.15)", color: urgent ? "var(--red)" : "var(--yellow)", border: "none" }}
-        onClick={() => onSettings?.()}
+        onClick={onUpgrade}
       >
         Contact Us to Upgrade →
       </button>
@@ -86,6 +197,7 @@ function Layout() {
   const [page, setPage]               = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme]             = useState(() => localStorage.getItem("theme") || "dark");
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const mainRef = useRef(null);
 
   useEffect(() => {
@@ -171,6 +283,8 @@ function Layout() {
 
   return (
     <div className="app-shell">
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
+
       <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
         {sidebarOpen ? "✕" : "☰"}
       </button>
@@ -237,9 +351,7 @@ function Layout() {
       </aside>
 
       <main className="main-content" ref={mainRef}>
-        <TrialBanner academy={academy} onSettings={() => goTo("settings")} />
-        {/* Each page is wrapped in its own ErrorBoundary so a crash on one page
-            doesn't take down the whole app or the sidebar navigation */}
+        <TrialBanner academy={academy} onUpgrade={() => setShowUpgrade(true)} />
         <ErrorBoundary page={page} onNavigate={goTo}>
           <Page onNavigate={goTo} />
         </ErrorBoundary>
@@ -252,7 +364,7 @@ export default function App() {
   if (window.location.pathname === "/apply")   return <AdmissionForm />;
   if (window.location.pathname === "/signup")  return <AcademySignup />;
   if (window.location.pathname === "/privacy") return <PrivacyPolicy />;
-  if (window.location.pathname === "/terms") return <TermsOfService />;
+  if (window.location.pathname === "/terms")   return <TermsOfService />;
   if (window.location.pathname === "/contact") return <Contact />;
   return (
     <AcademyProvider>
