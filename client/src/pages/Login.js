@@ -18,14 +18,33 @@ export default function Login() {
   const urlParams  = new URLSearchParams(window.location.search);
   const resetToken = urlParams.get("reset_token");
 
-  const academyName  = academy?.name || "Academy";
+  // Platform branding fallback (only used when no academy is loaded)
+  const [platformLogoUrl, setPlatformLogoUrl] = useState(
+    () => { try { return localStorage.getItem("exponent_logo_url") || null; } catch { return null; } }
+  );
+  useEffect(() => {
+    if (!academy) {
+      fetch("https://api.exponentgrow.in/platform/auth/public-branding")
+        .then(r => r.json())
+        .then(data => {
+          if (data.logo_url) {
+            setPlatformLogoUrl(data.logo_url);
+            try { localStorage.setItem("exponent_logo_url", data.logo_url); } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [academy]);
+
+  const academyName  = academy?.name || "Exponent Platform";
   const primaryColor = academy?.primary_color
     ? (academy.primary_color.startsWith("#") ? academy.primary_color : `#${academy.primary_color}`)
     : "#2563eb";
   const accentColor  = academy?.accent_color
     ? (academy.accent_color.startsWith("#") ? academy.accent_color : `#${academy.accent_color}`)
     : "#38bdf8";
-  const logoUrl = academy?.logo_url || null;
+  // Academy logo → platform logo → null (shows DefaultLogo SVG)
+  const logoUrl = academy?.logo_url || platformLogoUrl || null;
 
   const handleLogin = async (e) => {
     e.preventDefault();
