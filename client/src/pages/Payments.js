@@ -63,61 +63,161 @@ function Receipt({ payment, onClose, academy }) {
   const dueDate       = p.due_date ? new Date(p.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—";
   const paidDate      = p.paid_on  ? new Date(p.paid_on).toLocaleDateString("en-IN",  { day: "numeric", month: "long", year: "numeric" }) : "—";
 
+  // Single receipt copy HTML — used twice
+  const copyHTML = `
+<div class="copy">
+  <div class="copy-inner">
+    <div class="hdr">
+      <div class="academy-name">${academyName}</div>
+      <div class="academy-addr">${p.branch_name || ""}</div>
+      ${contactLine ? `<div class="academy-addr">Contact: ${contactLine}</div>` : ""}
+    </div>
+    <div class="receipt-title-box"><h2>FEES RECEIPT</h2></div>
+    <table class="info-table"><tr>
+      <td class="lbl">Receipt No.</td><td class="colon">:</td><td class="val mono">${p.receipt_no}</td>
+      <td class="lbl" style="text-align:right">Date</td><td class="colon">:</td><td class="val">${paidDate}</td>
+    </tr></table>
+    <table class="info-table" style="border-top:1px solid #ccc;padding-top:6px;margin-top:4px">
+      <tr><td class="lbl">Student Name</td><td class="colon">:</td><td class="val" colspan="3">${p.student_name}</td></tr>
+      <tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name || "—"}</td></tr>
+      <tr>
+        <td class="lbl">Batch/Course</td><td class="colon">:</td><td class="val">${p.batch_name || "—"}</td>
+        <td class="lbl" style="text-align:right">Branch</td><td class="colon">:</td><td class="val">${p.branch_name || "—"}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label || "—"}</td>
+        <td class="lbl" style="text-align:right">Due Date</td><td class="colon">:</td><td class="val" style="color:#c00;font-weight:900">${dueDate}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Payment Mode</td><td class="colon">:</td>
+        <td class="val" colspan="3">${(p.payment_mode || "").toUpperCase()}${p.transaction_ref ? " — " + p.transaction_ref : ""}</td>
+      </tr>
+    </table>
+    <table class="fee-table">
+      <thead><tr><th>Fee Details</th><th class="ac">Amount</th></tr></thead>
+      <tbody>
+        <tr><td>${p.period_label || "Tuition Fee"}</td><td class="ac">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td></tr>
+        <tr class="sr"><td></td><td class="ac">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td></tr>
+      </tbody>
+    </table>
+    <table class="summary-table">
+      <tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">₹${Number(p.amount_due || 0).toLocaleString("en-IN")}</td></tr>
+      <tr><td class="lbl">Paid Fee</td><td class="val">₹${Number(p.amount_paid || 0).toLocaleString("en-IN")}</td></tr>
+      <tr class="br"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance > 0 ? "#c00" : "#090"}">₹${Number(balance).toLocaleString("en-IN")}</td></tr>
+    </table>
+    <div class="words-box"><span style="font-weight:700">Rupees </span>${amountWords}</div>
+    <div class="footer">
+      <div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
+      <div class="sign-box"><div class="sign-line"></div>Authorized Signatory</div>
+    </div>
+  </div>
+</div>`;
+
   const receiptHTML = `<!DOCTYPE html><html><head><title>Fee Receipt - ${p.receipt_no}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#fff;color:#000}
-.page{width:750px;margin:20px auto}.copies{display:flex}.copy{width:375px;border:2px solid #000}
-.copy+.copy{border-left:1px dashed #999}.copy-inner{padding:12px 14px}
-.hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px}
-.academy-name{font-size:17px;font-weight:900;text-transform:uppercase}
-.academy-addr{font-size:10px;color:#333;line-height:1.5;margin-top:2px}
-.receipt-title-box{border:2px solid #000;text-align:center;padding:5px;margin:10px 0}
-.receipt-title-box h2{font-size:16px;font-weight:900;letter-spacing:.05em}
-.info-table{width:100%;border-collapse:collapse;margin-bottom:8px}
-.info-table td{padding:4px 2px;font-size:11px;vertical-align:top}
-.info-table .lbl{font-weight:700;width:90px;color:#333}.info-table .colon{width:10px}.info-table .val{font-weight:600}
-.fee-table{width:100%;border-collapse:collapse;margin:8px 0}
-.fee-table th{background:#e0e0e0;border:1px solid #999;padding:5px 6px;font-size:11px;text-align:left}
-.fee-table td{border:1px solid #ccc;padding:5px 6px;font-size:11px}.fee-table .ac{text-align:right;font-weight:700}
-.fee-table .sr td{background:#e8e8e8;font-weight:700}
-.summary-table{width:100%;border-collapse:collapse;margin-top:4px}
-.summary-table td{padding:4px 6px;font-size:11px;border:1px solid #ccc}
-.summary-table .lbl{font-weight:700;background:#f5f5f5}.summary-table .val{text-align:right;font-weight:700}
-.summary-table .br td{background:#fff3cd}
-.words-box{border:1px solid #ccc;padding:5px 8px;margin-top:8px;font-size:10px}
-.footer{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px;padding-top:8px;border-top:1px solid #ccc}
-.footer-note{font-size:9px;color:#666}.sign-box{text-align:center;font-size:10px}
-.sign-line{border-top:1px solid #333;width:100px;margin:20px auto 4px}
-@media print{body{margin:0}.page{margin:0;width:100%}.no-print{display:none}}</style>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:Arial,sans-serif; background:#fff; color:#000; }
+.page { width:780px; margin:20px auto; }
+
+/* ── Two copies side by side with a visible cut gap in between ── */
+.copies {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.copy {
+  width: 375px;
+  border: 2px solid #000;
+  flex-shrink: 0;
+}
+.copy-inner { padding: 12px 14px; }
+
+/* ── Cut line separator ── */
+.cut-separator {
+  width: 30px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  position: relative;
+}
+.cut-separator::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 2px dashed #aaa;
+}
+.cut-icon {
+  background: #fff;
+  padding: 4px 0;
+  font-size: 16px;
+  z-index: 1;
+  line-height: 1;
+  transform: rotate(90deg);
+}
+.cut-label {
+  background: #fff;
+  padding: 2px 0;
+  font-size: 7px;
+  color: #aaa;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  z-index: 1;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.hdr { text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:10px; }
+.academy-name { font-size:17px; font-weight:900; text-transform:uppercase; }
+.academy-addr { font-size:10px; color:#333; line-height:1.5; margin-top:2px; }
+.receipt-title-box { border:2px solid #000; text-align:center; padding:5px; margin:10px 0; }
+.receipt-title-box h2 { font-size:16px; font-weight:900; letter-spacing:.05em; }
+.info-table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+.info-table td { padding:4px 2px; font-size:11px; vertical-align:top; }
+.info-table .lbl { font-weight:700; width:90px; color:#333; }
+.info-table .colon { width:10px; }
+.info-table .val { font-weight:600; }
+.mono { font-family:monospace; }
+.fee-table { width:100%; border-collapse:collapse; margin:8px 0; }
+.fee-table th { background:#e0e0e0; border:1px solid #999; padding:5px 6px; font-size:11px; text-align:left; }
+.fee-table td { border:1px solid #ccc; padding:5px 6px; font-size:11px; }
+.fee-table .ac { text-align:right; font-weight:700; }
+.fee-table .sr td { background:#e8e8e8; font-weight:700; }
+.summary-table { width:100%; border-collapse:collapse; margin-top:4px; }
+.summary-table td { padding:4px 6px; font-size:11px; border:1px solid #ccc; }
+.summary-table .lbl { font-weight:700; background:#f5f5f5; }
+.summary-table .val { text-align:right; font-weight:700; }
+.summary-table .br td { background:#fff3cd; }
+.words-box { border:1px solid #ccc; padding:5px 8px; margin-top:8px; font-size:10px; }
+.footer { display:flex; justify-content:space-between; align-items:flex-end; margin-top:16px; padding-top:8px; border-top:1px solid #ccc; }
+.footer-note { font-size:9px; color:#666; }
+.sign-box { text-align:center; font-size:10px; }
+.sign-line { border-top:1px solid #333; width:100px; margin:20px auto 4px; }
+
+@media print {
+  body { margin:0; }
+  .page { margin:0; width:100%; }
+  .no-print { display:none; }
+}
+</style>
 </head><body>
-<div class="page"><div class="copies">
-${[1,2].map(()=>`<div class="copy"><div class="copy-inner">
-<div class="hdr"><div class="academy-name">${academyName}</div>
-<div class="academy-addr">${p.branch_name||""}</div>
-${contactLine?`<div class="academy-addr">Contact: ${contactLine}</div>`:""}</div>
-<div class="receipt-title-box"><h2>FEES RECEIPT</h2></div>
-<table class="info-table"><tr>
-<td class="lbl">Receipt No.</td><td class="colon">:</td><td class="val" style="font-family:monospace">${p.receipt_no}</td>
-<td class="lbl" style="text-align:right">Date</td><td class="colon">:</td><td class="val">${paidDate}</td></tr></table>
-<table class="info-table" style="border-top:1px solid #ccc;padding-top:6px;margin-top:4px">
-<tr><td class="lbl">Student Name</td><td class="colon">:</td><td class="val" colspan="3">${p.student_name}</td></tr>
-<tr><td class="lbl">Father's Name</td><td class="colon">:</td><td class="val" colspan="3">${p.parent_name||"—"}</td></tr>
-<tr><td class="lbl">Batch/Course</td><td class="colon">:</td><td class="val">${p.batch_name||"—"}</td>
-<td class="lbl" style="text-align:right">Branch</td><td class="colon">:</td><td class="val">${p.branch_name||"—"}</td></tr>
-<tr><td class="lbl">Period</td><td class="colon">:</td><td class="val">${p.period_label||"—"}</td>
-<td class="lbl" style="text-align:right">Due Date</td><td class="colon">:</td><td class="val" style="color:#c00;font-weight:900">${dueDate}</td></tr>
-<tr><td class="lbl">Payment Mode</td><td class="colon">:</td><td class="val" colspan="3">${(p.payment_mode||"").toUpperCase()}${p.transaction_ref?" — "+p.transaction_ref:""}</td></tr></table>
-<table class="fee-table"><thead><tr><th>Fee Details</th><th class="ac">Amount</th></tr></thead><tbody>
-<tr><td>${p.period_label||"Tuition Fee"}</td><td class="ac">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-<tr class="sr"><td></td><td class="ac">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr></tbody></table>
-<table class="summary-table">
-<tr><td class="lbl" style="width:60%">Total Fee</td><td class="val">₹${Number(p.amount_due||0).toLocaleString("en-IN")}</td></tr>
-<tr><td class="lbl">Paid Fee</td><td class="val">₹${Number(p.amount_paid||0).toLocaleString("en-IN")}</td></tr>
-<tr class="br"><td class="lbl">Balance Fee</td><td class="val" style="color:${balance>0?"#c00":"#090"}">₹${Number(balance).toLocaleString("en-IN")}</td></tr></table>
-<div class="words-box"><span style="font-weight:700">Rupees </span>${amountWords}</div>
-<div class="footer"><div class="footer-note">Computer generated receipt.<br/>No signature required.</div>
-<div class="sign-box"><div class="sign-line"></div>Authorized Signatory</div></div>
-</div></div>`).join("")}
-</div></div><script>window.onload=()=>window.print();</script></body></html>`;
+<div class="page">
+  <div class="copies">
+    ${copyHTML}
+    <div class="cut-separator">
+      <span class="cut-label">cut here</span>
+      <span class="cut-icon">✂</span>
+      <span class="cut-label">cut here</span>
+    </div>
+    ${copyHTML}
+  </div>
+</div>
+<script>window.onload = () => window.print();</script>
+</body></html>`;
 
   const print = () => {
     const w = window.open("", "_blank");
@@ -207,7 +307,6 @@ export default function Payments() {
   const [search,       setSearch]       = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [receipt,      setReceipt]      = useState(null);
-  // FIX: removed student_id from form — backend now looks it up from fee_record_id
   const [form, setForm] = useState({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
@@ -219,7 +318,6 @@ export default function Payments() {
 
   useEffect(() => {
     load();
-    // Load ALL fee records that have outstanding balance (pending + partial + overdue)
     Promise.all([
       API.get("/fees?status=pending"),
       API.get("/fees?status=partial"),
@@ -241,7 +339,6 @@ export default function Payments() {
     if (!form.amount || parseFloat(form.amount) <= 0) { setError("Please enter a valid amount."); return; }
     setSaving(true);
     try {
-      // FIX: only send fee_record_id (no student_id) — backend resolves student from fee record
       const { data } = await API.post("/payments", {
         fee_record_id:   form.fee_record_id,
         amount:          form.amount,
@@ -252,7 +349,6 @@ export default function Payments() {
       });
       setShowModal(false);
       load();
-      // Fetch full payment details for receipt
       const { data: full } = await API.get(`/payments/${data.id}`);
       setReceipt(full);
     } catch (e) {
