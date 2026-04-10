@@ -101,6 +101,10 @@ async function runMigration() {
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE CASCADE`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_admission_enquiries_academy ON admission_enquiries(academy_id)`);
 
+    // payments - add merchant_id (academy_id) if missing
+    await db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES academies(id) ON DELETE CASCADE`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_payments_merchant ON payments(merchant_id)`);
+
     console.log("\u2705 Migration complete");
   } catch (err) {
     console.error("Migration error:", err.message);

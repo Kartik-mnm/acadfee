@@ -100,7 +100,7 @@ router.post("/", auth, async (req, res) => {
     // Look up student_id + FCM tokens from the fee record
     const { rows: frRows } = await db.query(
       `SELECT fr.student_id, fr.period_label, fr.amount_due, fr.amount_paid,
-              s.name AS student_name, s.fcm_token, s.parent_fcm_token, s.academy_id,
+              s.name AS student_name, s.fcm_token, s.parent_fcm_token, s.academy_id, s.branch_id,
               a.name AS academy_name
        FROM fee_records fr
        JOIN students s ON s.id = fr.student_id
@@ -112,7 +112,7 @@ router.post("/", auth, async (req, res) => {
 
     const {
       student_id, student_name, fcm_token, parent_fcm_token,
-      academy_name, period_label, academy_id: studentAcademyId,
+      academy_name, period_label, academy_id: studentAcademyId, branch_id,
     } = frRows[0];
 
     // Use academy_id from the student record as fallback (handles branch managers)
@@ -132,15 +132,15 @@ router.post("/", auth, async (req, res) => {
     }
     const receipt_no = `RCP-${today}-${String(seq).padStart(4, "0")}`;
 
-    // INSERT — use only the 'notes' column (the correct DB column name)
+    // INSERT — include merchant_id (academy_id in DB), branch_id, and collected_by
     const { rows } = await db.query(
       `INSERT INTO payments
-         (student_id, fee_record_id, amount, payment_mode, transaction_ref, notes, paid_on, receipt_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         (student_id, fee_record_id, amount, payment_mode, transaction_ref, notes, paid_on, receipt_no, merchant_id, branch_id, collected_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
       [student_id, fee_record_id, amount, payment_mode,
        transaction_ref || null, finalNotes,
-       paymentDate, receipt_no]
+       paymentDate, receipt_no, academyId, branch_id, req.user.id]
     );
     const payment = rows[0];
 

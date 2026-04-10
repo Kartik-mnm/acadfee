@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS payments (
   fee_record_id  INT NOT NULL REFERENCES fee_records(id) ON DELETE CASCADE,
   student_id     INT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
   branch_id      INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+  merchant_id    INT REFERENCES academies(id) ON DELETE CASCADE,  -- Links to owner academy
   amount         NUMERIC(10,2) NOT NULL,
   payment_mode   VARCHAR(20) CHECK (payment_mode IN ('cash','upi','bank_transfer','cheque')) NOT NULL,
   transaction_ref VARCHAR(100),
