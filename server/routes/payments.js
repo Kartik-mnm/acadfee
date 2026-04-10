@@ -3,6 +3,9 @@ const db     = require("../db");
 const { auth } = require("../middleware");
 const { sendNotification } = require("../fcm");
 
+// Ensure payments table has a notes column (some older DBs may only have note)
+db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
+
 // GET /api/payments  — student sees own, admin sees academy's
 router.get("/", auth, async (req, res) => {
   try {
@@ -86,12 +89,15 @@ router.post("/", auth, async (req, res) => {
     if (!fee_record_id || !amount) return res.status(400).json({ error: "fee_record_id and amount required" });
     if (parseFloat(amount) <= 0) return res.status(400).json({ error: "Amount must be greater than 0" });
 
-    // Validate and normalize paid_on date — always store as YYYY-MM-DD
+    // Normalize paid_on — always YYYY-MM-DD
     const paymentDate = paid_on && /^\d{4}-\d{2}-\d{2}$/.test(paid_on)
       ? paid_on
       : new Date().toISOString().split("T")[0];
 
-    // Look up student_id from the fee record
+    // The final notes value — accept either field name from frontend
+    const finalNotes = notes || note || null;
+
+    // Look up student_id + FCM tokens from the fee record
     const { rows: frRows } = await db.query(
       `SELECT fr.student_id, fr.period_label, fr.amount_due, fr.amount_paid,
               s.name AS student_name, s.fcm_token, s.parent_fcm_token, s.academy_id,
@@ -107,11 +113,9 @@ router.post("/", auth, async (req, res) => {
     const {
       student_id, student_name, fcm_token, parent_fcm_token,
       academy_name, period_label, academy_id: studentAcademyId,
-      amount_due, amount_paid: already_paid,
     } = frRows[0];
 
-    // FIX: use studentAcademyId from the fee record — avoids null crash
-    // when academy_id is not on req (branch manager users)
+    // Use academy_id from the student record as fallback (handles branch managers)
     const academyId = req.academyId || studentAcademyId;
 
     // Generate receipt number: RCP-YYYYMMDD-NNNN (per academy per day)
@@ -125,23 +129,17 @@ router.post("/", auth, async (req, res) => {
         [paymentDate, academyId]
       );
       seq = (cntRows[0]?.cnt || 0) + 1;
-    } else {
-      // No academy (standalone) — count by student's branch
-      const { rows: cntRows } = await db.query(
-        `SELECT COUNT(*)::int AS cnt FROM payments p
-         JOIN students s ON s.id = p.student_id
-         WHERE DATE(p.paid_on) = $1::date AND s.id = $2`,
-        [paymentDate, student_id]
-      );
-      seq = (cntRows[0]?.cnt || 0) + 1;
     }
     const receipt_no = `RCP-${today}-${String(seq).padStart(4, "0")}`;
 
+    // INSERT — use only the 'notes' column (the correct DB column name)
     const { rows } = await db.query(
-      `INSERT INTO payments (student_id, fee_record_id, amount, payment_mode, transaction_ref, note, paid_on, receipt_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      `INSERT INTO payments
+         (student_id, fee_record_id, amount, payment_mode, transaction_ref, notes, paid_on, receipt_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING *`,
       [student_id, fee_record_id, amount, payment_mode,
-       transaction_ref || null, notes || note || null,
+       transaction_ref || null, finalNotes,
        paymentDate, receipt_no]
     );
     const payment = rows[0];
@@ -159,7 +157,7 @@ router.post("/", auth, async (req, res) => {
       [amount, fee_record_id]
     );
 
-    // Send FCM payment notification (non-blocking)
+    // Send FCM payment notification (non-blocking — never fails the request)
     const amtStr  = `\u20b9${Number(amount).toLocaleString("en-IN")}`;
     const academy = academy_name || "your academy";
     const period  = period_label ? ` (${period_label})` : "";
@@ -173,10 +171,7 @@ router.post("/", auth, async (req, res) => {
     const notifPromises = [];
     if (fcm_token)        notifPromises.push(sendNotification(fcm_token,        notifTitle, notifBody, notifData));
     if (parent_fcm_token) notifPromises.push(sendNotification(parent_fcm_token, `\ud83d\udcb3 Fee paid for ${student_name}`, `${amtStr} fee${period} paid via ${modeStr} at ${academy}. Receipt: ${receipt_no}`, notifData));
-
-    if (notifPromises.length > 0) {
-      Promise.allSettled(notifPromises).catch(() => {});
-    }
+    if (notifPromises.length > 0) Promise.allSettled(notifPromises).catch(() => {});
 
     res.json({ ...payment, receipt_no });
   } catch (e) {
@@ -193,7 +188,6 @@ router.delete("/:id", auth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
     const p = rows[0];
     await db.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
-    // Reverse the fee record update
     await db.query(
       `UPDATE fee_records SET
          amount_paid = GREATEST(0, amount_paid - $1),
