@@ -3,16 +3,13 @@ const db = require("../db");
 const { auth, branchFilter, studentSelf } = require("../middleware");
 
 /**
- * Build roll number prefix:
- *   academy.roll_prefix + branch.roll_prefix
+ * Build roll number prefix from academy + branch prefixes.
  * e.g. academy="NA", branch="DW" → "NADW"
- * Falls back to branch-name heuristics if no explicit prefix is set.
  */
 function buildRollPrefix(academyPrefix, branchPrefix, branchName) {
   const acad   = (academyPrefix || "").toUpperCase().trim();
   const branch = (branchPrefix  || "").toUpperCase().trim();
   if (acad || branch) return acad + branch;
-  // Legacy fallback — derive from branch name
   if (!branchName) return "NA";
   const lower = branchName.toLowerCase();
   const LEGACY = {
@@ -36,7 +33,6 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
        FROM students s JOIN branches br ON br.id = s.branch_id
        WHERE s.roll_no IS NULL ${aidCond} ORDER BY s.branch_id, s.id ASC`
     );
-    // Get academy prefix
     let academyPrefix = "";
     if (aid) {
       const { rows: acadRows } = await db.query(`SELECT roll_prefix FROM academies WHERE id=$1`, [aid]);
@@ -81,13 +77,20 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
       );
       return res.json(rows);
     }
+
     const page   = Math.max(1, parseInt(req.query.page) || 1);
-    const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 1000); // allow up to 1000 for performance page
     const offset = (page - 1) * limit;
     const search = (req.query.search || "").trim();
+
     let conditions = []; let params = []; let idx = 1;
     if (aid) { conditions.push(`s.academy_id=$${idx++}`); params.push(aid); }
-    if (req.branchId)       { conditions.push(`s.branch_id=$${idx++}`); params.push(req.branchId); }
+
+    // FIX: respect branch_id query param for super_admin (needed by Performance/Results page)
+    // branchFilter middleware sets req.branchId for branch_managers automatically
+    const branchId = req.branchId || (req.user.role === "super_admin" ? req.query.branch_id : null);
+    if (branchId) { conditions.push(`s.branch_id=$${idx++}`); params.push(branchId); }
+
     if (req.query.batch_id) { conditions.push(`s.batch_id=$${idx++}`);  params.push(req.query.batch_id); }
     if (req.query.status)   { conditions.push(`s.status=$${idx++}`);    params.push(req.query.status); }
     if (search) {
@@ -95,20 +98,34 @@ router.get("/", auth, branchFilter, studentSelf, async (req, res) => {
       params.push(`%${search}%`); idx++;
     }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-    const { rows: countRows } = await db.query(`SELECT COUNT(*) FROM students s ${where}`, [...params]);
-    const total = parseInt(countRows[0].count);
-    const totalPages = Math.ceil(total / limit);
-    const limitIdx  = idx;
-    const offsetIdx = idx + 1;
-    params.push(limit);
-    params.push(offset);
+
+    // If page param present, return paginated response; otherwise return all (for dropdowns etc.)
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(`SELECT COUNT(*) FROM students s ${where}`, [...params]);
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+      const limitIdx  = idx;
+      const offsetIdx = idx + 1;
+      params.push(limit); params.push(offset);
+      const { rows } = await db.query(
+        `SELECT s.*, b.name AS batch_name, br.name AS branch_name
+         FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
+         ${where} ORDER BY s.id DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        params
+      );
+      return res.json({ data: rows, page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 });
+    }
+
+    // No page param — return flat array (used by Performance, ID cards, etc.)
+    const limitClause = limit ? `LIMIT $${idx}` : "";
+    if (limit) params.push(limit);
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name
        FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id
-       ${where} ORDER BY s.id DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+       ${where} ORDER BY s.name ${limitClause}`,
       params
     );
-    res.json({ data: rows, page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 });
+    res.json(rows);
   } catch (e) {
     console.error("List students error:", e.message);
     res.status(500).json({ error: "Failed to fetch students" });
@@ -144,14 +161,12 @@ router.post("/", auth, async (req, res) => {
     const aid = req.academyId;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
 
-    // Get branch info + academy roll_prefix to build the combined prefix
     const { rows: brRows } = await db.query(
       `SELECT br.name, br.roll_prefix AS branch_prefix, a.roll_prefix AS academy_prefix
-       FROM branches br
-       LEFT JOIN academies a ON a.id = br.academy_id
+       FROM branches br LEFT JOIN academies a ON a.id = br.academy_id
        WHERE br.id=$1`, [bid]
     );
-    const branchInfo  = brRows[0] || {};
+    const branchInfo = brRows[0] || {};
     const prefix = buildRollPrefix(
       branchInfo.academy_prefix || "",
       branchInfo.branch_prefix  || "",
