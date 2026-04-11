@@ -121,7 +121,7 @@ export default function Login() {
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{
           width: 64, height: 64,
-          background: `lineargradient(135deg, ${primaryColor}26, ${accentColor}1a)`,
+          background: `linear-gradient(135deg, ${primaryColor}26, ${accentColor}1a)`,
           border: `1px solid ${accentColor}33`,
           borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center",
           margin: "0 auto 16px",
