@@ -72,6 +72,15 @@ router.delete("/:date", auth, async (req, res) => {
 // GET /api/working-days/check/:date
 router.get("/check/:date", auth, async (req, res) => {
   const bid = req.user.role === "super_admin" ? req.query.branch_id : req.user.branch_id;
+  const aid = req.academyId;
+
+  if (!bid) return res.status(400).json({ error: "branch_id required" });
+
+  if (aid) {
+    const { rows: brRows } = await db.query(`SELECT id FROM branches WHERE id=$1 AND academy_id=$2`, [bid, aid]);
+    if (!brRows[0]) return res.status(403).json({ error: "Access denied: branch from different academy" });
+  }
+
   const { rows } = await db.query("SELECT * FROM working_days WHERE date=$1 AND branch_id=$2", [req.params.date, bid]);
   const isWorking = rows.length === 0 ? true : rows[0].is_working;
   res.json({ date: req.params.date, is_working: isWorking, record: rows[0] || null });

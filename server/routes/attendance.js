@@ -15,7 +15,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
       if (student_id)        { cond.push(`a.student_id=$${i++}`); params.push(student_id); }
       else if (req.branchId) { cond.push(`a.branch_id=$${i++}`);  params.push(req.branchId); }
       const aid = req.academyId;
-      if (aid && !student_id) {
+      if (aid) {
         cond.push(`s.academy_id=$${i++}`);
         params.push(aid);
       }

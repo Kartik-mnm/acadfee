@@ -24,6 +24,11 @@ router.get("/token/:student_id", auth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: "Student not found" });
     const student = rows[0];
 
+    const aid = req.academyId;
+    if (aid && student.academy_id && student.academy_id !== aid) {
+      return res.status(403).json({ error: "Access denied: student belongs to different academy" });
+    }
+
     if (student.status !== "active") {
       const batchEnded = student.batch_end_date && new Date(student.batch_end_date) < new Date();
       return res.status(403).json({
@@ -64,6 +69,16 @@ router.post("/register-token", auth, async (req, res) => {
       return res.status(400).json({ error: "Invalid request" });
     if (req.user.role === "student" && req.user.id !== parseInt(student_id))
       return res.status(403).json({ error: "Cannot register token for another student" });
+    
+    // Verify academy ownership for branch managers / admins
+    const aid = req.academyId;
+    if (aid) {
+      const { rows } = await db.query(
+        "SELECT id FROM students WHERE id=$1 AND academy_id=$2", [student_id, aid]
+      );
+      if (!rows[0]) return res.status(403).json({ error: "Access denied: student belongs to different academy" });
+    }
+
     const col = type === "student" ? "fcm_token" : "parent_fcm_token";
     await db.query(`UPDATE students SET ${col}=$1 WHERE id=$2`, [token, student_id]);
     console.log(`[FCM] Registered ${type} token for student ${student_id}`);
