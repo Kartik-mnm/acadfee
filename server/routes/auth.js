@@ -114,16 +114,10 @@ router.post("/forgot-password", async (req, res) => {
       subject: "Reset your password \u2014 Exponent",
       html: `
         <div style="font-family:Arial,sans-serif;max-width:500px;margin:20px auto;background:#0d1117;border-radius:12px;padding:32px;border:1px solid #1e2535;">
-          <div style="text-align:center;margin-bottom:24px;">
-            <div style="font-size:22px;font-weight:900;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">EXPONENT</div>
-          </div>
           <h2 style="color:#eef1fb;margin:0 0 16px;">Reset your password</h2>
-          <p style="color:#8892b5;line-height:1.7;">Hi ${rows[0].name},<br><br>Click the button below to reset your Exponent password. This link expires in <strong style="color:#eef1fb;">1 hour</strong>.</p>
+          <p style="color:#8892b5;line-height:1.7;">Hi ${rows[0].name},<br><br>Click below to reset your password. This link expires in <strong style="color:#eef1fb;">1 hour</strong>.</p>
           <a href="${resetUrl}" style="display:block;margin:24px 0;padding:13px 28px;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;text-align:center;">Reset Password</a>
           <p style="color:#454f72;font-size:12px;">If you didn't request this, ignore this email.</p>
-          <div style="margin-top:24px;padding-top:16px;border-top:1px solid #1e2535;text-align:center;font-size:11px;color:#454f72;">
-            Exponent Platform &middot; exponentgrow.in
-          </div>
         </div>
       `,
     });
@@ -153,32 +147,58 @@ router.post("/reset-password", async (req, res) => {
   }
 });
 
-// ── Student Login ────────────────────────────────────────────────────────────
+// ── Student Login ─────────────────────────────────────────────────────────────
 router.post("/student-login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
   try {
+    // FIX: Do NOT filter by login_enabled=true in the query.
+    // Instead fetch the student by email only, then check login_enabled separately
+    // so we can give a specific error message for each failure case.
     const { rows } = await db.query(
       `SELECT s.*, b.name AS batch_name, br.name AS branch_name, a.name AS academy_name
        FROM students s
-       LEFT JOIN batches b  ON b.id  = s.batch_id
+       LEFT JOIN batches b   ON b.id  = s.batch_id
        LEFT JOIN branches br ON br.id = s.branch_id
        LEFT JOIN academies a ON a.id  = s.academy_id
-       WHERE s.email=$1 AND s.login_enabled=true`, [email]
+       WHERE LOWER(s.email) = LOWER($1)`, [email.trim()]
     );
     const student = rows[0];
-    if (!student) return res.status(401).json({ error: "Invalid email or student portal not enabled" });
-    if (!student.login_password) return res.status(401).json({ error: "Student portal not set up" });
-    if (!(await bcrypt.compare(password, student.login_password)))
-      return res.status(401).json({ error: "Invalid email or password" });
 
+    // Case 1: no student with this email at all
+    if (!student) {
+      console.log(`[student-login] No student found for email: ${email}`);
+      return res.status(401).json({ error: "No student account found with this email address." });
+    }
+
+    // Case 2: student exists but portal not enabled / no password set
+    if (!student.login_enabled || !student.login_password) {
+      console.log(`[student-login] Portal not enabled for: ${email} (login_enabled=${student.login_enabled})`);
+      return res.status(401).json({
+        error: "Student portal access is not enabled for your account. Please ask your academy admin to set your portal password."
+      });
+    }
+
+    // Case 3: wrong password
+    const passwordMatch = await bcrypt.compare(password, student.login_password);
+    if (!passwordMatch) {
+      console.log(`[student-login] Wrong password for: ${email}`);
+      return res.status(401).json({ error: "Incorrect password. Please try again." });
+    }
+
+    // Case 4: device limit reached
     const deviceLimit = student.login_device_limit ?? 2;
     const { rows: activeTokens } = await db.query(
       `SELECT COUNT(*) AS cnt FROM refresh_tokens
-       WHERE (payload->>'id')::int=$1 AND payload->>'role'='student' AND expires_at>NOW()`, [student.id]
+       WHERE (payload->>'id')::int=$1 AND payload->>'role'='student' AND expires_at>NOW()`,
+      [student.id]
     );
-    if (parseInt(activeTokens[0].cnt) >= deviceLimit)
-      return res.status(403).json({ error: `Maximum ${deviceLimit} device(s) already logged in.`, code: "DEVICE_LIMIT_REACHED" });
+    if (parseInt(activeTokens[0].cnt) >= deviceLimit) {
+      return res.status(403).json({
+        error: `You are already logged in on ${deviceLimit} device(s). Please log out from another device first.`,
+        code: "DEVICE_LIMIT_REACHED"
+      });
+    }
 
     const payload = {
       id:         student.id,
@@ -186,10 +206,11 @@ router.post("/student-login", loginLimiter, async (req, res) => {
       branch_id:  student.branch_id,
       name:       student.name,
       academy_id: student.academy_id || null,
-      roll_no:    student.roll_no    || null,  // FIX: include roll_no in JWT payload
+      roll_no:    student.roll_no    || null,
     };
     const { accessToken, refreshToken } = await issueTokenPair(payload);
 
+    console.log(`[student-login] Success: ${student.name} (${email})`);
     res.json({
       token: accessToken,
       refreshToken,
@@ -203,12 +224,12 @@ router.post("/student-login", loginLimiter, async (req, res) => {
         batch_name:   student.batch_name,
         academy_id:   student.academy_id   || null,
         academy_name: student.academy_name || null,
-        roll_no:      student.roll_no      || null,  // FIX: include in login response
+        roll_no:      student.roll_no      || null,
       }
     });
   } catch (e) {
     console.error("Student login error:", e.message);
-    res.status(500).json({ error: "Login failed" });
+    res.status(500).json({ error: "Login failed. Please try again." });
   }
 });
 
@@ -324,12 +345,17 @@ router.patch("/users/:id/password", auth, superAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// FIX: set-student-password also sets login_enabled=true explicitly
 router.post("/set-student-password", auth, async (req, res) => {
   const { student_id, password, enabled } = req.body;
   if (!student_id || !password) return res.status(400).json({ error: "student_id and password are required" });
   try {
     const hash = await bcrypt.hash(password, 10);
-    await db.query(`UPDATE students SET login_password=$1, login_enabled=$2 WHERE id=$3`, [hash, enabled!==false, student_id]);
+    // Always enable login when setting a password (enabled defaults to true)
+    await db.query(
+      `UPDATE students SET login_password=$1, login_enabled=true WHERE id=$2`,
+      [hash, student_id]
+    );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
