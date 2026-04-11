@@ -57,8 +57,9 @@ router.get("/", auth, async (req, res) => {
 // GET /api/payments/:id  — fetch a single payment for receipt reprint
 router.get("/:id", auth, async (req, res) => {
   try {
+    const aid = req.academyId;
     const { rows } = await db.query(
-      `SELECT p.*, s.name AS student_name, s.phone, s.roll_no, s.parent_name,
+      `SELECT p.*, s.name AS student_name, s.phone, s.roll_no, s.parent_name, s.academy_id,
               b.name AS batch_name, br.name AS branch_name,
               a.name AS academy_name, a.phone AS academy_phone,
               a.phone2 AS academy_phone2,
@@ -74,6 +75,12 @@ router.get("/:id", auth, async (req, res) => {
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
+    if (req.user.role === "student" && rows[0].student_id !== req.user.id) {
+       return res.status(403).json({ error: "Access denied" });
+    }
+    if (req.user.role !== "student" && aid && rows[0].academy_id !== aid) {
+       return res.status(403).json({ error: "Access denied: belongs to different academy" });
+    }
     res.json(rows[0]);
   } catch (e) {
     console.error("Get payment error:", e.message);
@@ -114,6 +121,10 @@ router.post("/", auth, async (req, res) => {
       student_id, student_name, fcm_token, parent_fcm_token,
       academy_name, period_label, academy_id: studentAcademyId, branch_id,
     } = frRows[0];
+
+    if (req.academyId && req.academyId !== studentAcademyId) {
+      return res.status(403).json({ error: "Fee record belongs to a different academy" });
+    }
 
     // Use academy_id from the student record as fallback (handles branch managers)
     const academyId = req.academyId || studentAcademyId;
@@ -184,8 +195,15 @@ router.post("/", auth, async (req, res) => {
 router.delete("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { rows } = await db.query("SELECT * FROM payments WHERE id=$1", [req.params.id]);
+    const aid = req.academyId;
+    const { rows } = await db.query(
+      "SELECT p.*, s.academy_id FROM payments p JOIN students s ON s.id=p.student_id WHERE p.id=$1", 
+      [req.params.id]
+    );
     if (!rows[0]) return res.status(404).json({ error: "Payment not found" });
+    if (aid && rows[0].academy_id !== aid) {
+      return res.status(403).json({ error: "Access denied: belongs to different academy" });
+    }
     const p = rows[0];
     await db.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
     await db.query(
