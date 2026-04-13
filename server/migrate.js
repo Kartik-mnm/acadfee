@@ -1,22 +1,11 @@
 const db = require("./db");
 const bcrypt = require("bcryptjs");
 
-// Hash computed once at startup to avoid bcrypt blocking every restart
-let platformAdminHashCache = null;
-async function getPlatformAdminHash() {
-  if (!platformAdminHashCache) {
-    platformAdminHashCache = await bcrypt.hash("Exponent@2025", 10);
-  }
-  return platformAdminHashCache;
-}
-
 async function runMigration() {
-  // Each statement is wrapped individually so one failure doesn't kill all migrations
-  async function safe(sql, label) {
+  async function safe(sql, label, params) {
     try {
-      await db.query(sql);
+      await db.query(sql, params);
     } catch (e) {
-      // Ignore "already exists" type errors (idempotent)
       if (!e.message?.includes("already exists") && !e.message?.includes("duplicate")) {
         console.warn(`[migrate] ${label || ""}: ${e.message}`);
       }
@@ -36,7 +25,6 @@ async function runMigration() {
       created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
     )`, "create academies");
 
-    // ── Academies columns ───────────────────────────────────────────────────────
     for (const col of [
       "logo_url TEXT", "favicon_url TEXT", "tagline TEXT",
       "primary_color TEXT DEFAULT '2563EB'", "accent_color TEXT DEFAULT '38BDF8'",
@@ -96,13 +84,14 @@ async function runMigration() {
     await safe(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT`, "platform_admins.favicon_url");
     await safe(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT`, "platform_admins.logo_url");
 
-    // Upsert default platform admin (only if table was just created)
-    const hash = await getPlatformAdminHash();
+    // FIX: use parameterized query — bcrypt hashes contain $ which breaks interpolated SQL
+    const hash = await bcrypt.hash("Exponent@2025", 10);
     await safe(
       `INSERT INTO platform_admins (name, email, password_hash)
-       VALUES ('Kartik', 'kartik@exponent.app', '${hash}')
+       VALUES ($1, $2, $3)
        ON CONFLICT (email) DO NOTHING`,
-      "upsert platform_admin"
+      "upsert platform_admin",
+      ["Kartik", "kartik@exponent.app", hash]
     );
 
     // ── Expenses ─────────────────────────────────────────────────────────────────
@@ -114,14 +103,16 @@ async function runMigration() {
     }
     await safe(`UPDATE expenses e SET academy_id = br.academy_id FROM branches br WHERE br.id = e.branch_id AND e.academy_id IS NULL`, "backfill expenses.academy_id");
 
+    // ── Payments — ensure notes column exists (some old DBs only have note) ─────
+    await safe(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes TEXT`, "payments.notes");
+    await safe(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS transaction_ref TEXT`, "payments.transaction_ref");
+    await safe(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES academies(id) ON DELETE CASCADE`, "payments.merchant_id");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_merchant ON payments(merchant_id)`, "idx_payments_merchant");
+
     // ── Admission enquiries ───────────────────────────────────────────────────────
     await safe(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url TEXT`, "admission.photo_url");
     await safe(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS academy_id INT REFERENCES academies(id) ON DELETE CASCADE`, "admission.academy_id");
     await safe(`CREATE INDEX IF NOT EXISTS idx_admission_enquiries_academy ON admission_enquiries(academy_id)`, "idx_admission_academy");
-
-    // ── Payments ─────────────────────────────────────────────────────────────────
-    await safe(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES academies(id) ON DELETE CASCADE`, "payments.merchant_id");
-    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_merchant ON payments(merchant_id)`, "idx_payments_merchant");
 
     // ── Platform audit + revenue ─────────────────────────────────────────────────
     await safe(`CREATE TABLE IF NOT EXISTS platform_audit_log (
@@ -155,7 +146,6 @@ async function runMigration() {
 
     console.log("\u2705 Migration complete");
   } catch (err) {
-    // Migration errors should NEVER crash the server — log and continue
     console.error("[migrate] Fatal migration error (server will still start):", err.message);
   }
 }
