@@ -1,3 +1,4 @@
+// ── Platform Auth Routes ───────────────────────────────────────────────────────────────────
 const express  = require("express");
 const router   = express.Router();
 const bcrypt   = require("bcryptjs");
@@ -8,10 +9,6 @@ const { authenticatePlatformOwner } = require("../middleware");
 function getPlatformSecret() {
   return process.env.JWT_SECRET || "fallback_secret";
 }
-
-// Ensure branding columns exist
-db.query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT").catch(() => {});
-db.query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT").catch(() => {});
 
 // POST /platform/auth/login
 router.post("/login", async (req, res) => {
@@ -59,7 +56,11 @@ router.post("/change-password", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// GET /platform/auth/branding  (authenticated — full details)
+// ── Platform branding (favicon + logo stored in DB) ──────────────────────────────────────────
+db.query(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT`).catch(() => {});
+db.query(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT`).catch(() => {});
+
+// GET /platform/auth/branding  — authenticated
 router.get("/branding", authenticatePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -72,7 +73,7 @@ router.get("/branding", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// PUT /platform/auth/branding  (authenticated — save to DB)
+// PUT /platform/auth/branding  — authenticated
 router.put("/branding", authenticatePlatformOwner, async (req, res) => {
   const { favicon_url, logo_url } = req.body;
   try {
@@ -87,22 +88,19 @@ router.put("/branding", authenticatePlatformOwner, async (req, res) => {
   }
 });
 
-// GET /platform/auth/public-branding  (NO auth — for index.html on page load)
-// Returns only the favicon and logo URLs so any new browser can apply them
+// GET /platform/auth/public-branding  — PUBLIC (no auth)
+// Called by AcademyContext when no academy slug is stored.
+// Returns the platform owner's favicon/logo for generic branding.
+// Must never 500 — client silently ignores errors.
 router.get("/public-branding", async (req, res) => {
   try {
-    // Return branding for the first (and only) platform admin
     const { rows } = await db.query(
-      "SELECT favicon_url, logo_url FROM platform_admins ORDER BY id LIMIT 1"
+      "SELECT favicon_url, logo_url FROM platform_admins ORDER BY id ASC LIMIT 1"
     );
-    const data = rows[0] || {};
-    // Only return URLs if they're real Cloudinary URLs — not nulls or empty
-    res.json({
-      favicon_url: data.favicon_url || null,
-      logo_url:    data.logo_url    || null,
-    });
+    res.json(rows[0] || { favicon_url: null, logo_url: null });
   } catch (e) {
-    res.status(500).json({ favicon_url: null, logo_url: null });
+    // Silently return empty — client falls back to defaults
+    res.json({ favicon_url: null, logo_url: null });
   }
 });
 
