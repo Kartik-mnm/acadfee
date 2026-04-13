@@ -6,10 +6,10 @@ const rateLimit    = require("express-rate-limit");
 const app          = express();
 app.set("trust proxy", 1);
 
-const { initFCM }                        = require("./fcm");
+const { initFCM }                         = require("./fcm");
 const { startAbsentCron, startKeepAlive } = require("./cron");
 const runMigration                        = require("./migrate");
-const { checkConnection }                 = require("./db");
+const { checkConnection, startDbHeartbeat } = require("./db");
 
 const allowedOrigins = [
   "https://acadfee.onrender.com",
@@ -88,27 +88,28 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-// ── Start server ───────────────────────────────────────────────────────────────
-// Wait for DB to be ready BEFORE starting to accept traffic.
-// This prevents the first few requests after a cold start from hitting 500.
+// ── Start server ──────────────────────────────────────────────────────────────
 async function start() {
   const PORT = process.env.PORT || 5000;
 
-  // 1. Verify DB connection (with retries)
+  // 1. Verify DB is reachable before accepting traffic
   const dbOk = await checkConnection();
   if (!dbOk) {
     console.error("[startup] Database unavailable — starting anyway but requests may fail");
   }
 
-  // 2. Run migrations (non-blocking — won't crash server on failure)
+  // 2. Run migrations (isolated — won't crash server)
   await runMigration();
 
-  // 3. Init services
+  // 3. Start DB heartbeat — keeps connections alive, prevents cold-start 500s
+  startDbHeartbeat();
+
+  // 4. Init services
   initFCM();
   startAbsentCron();
   startKeepAlive();
 
-  // 4. Start listening
+  // 5. Start listening
   app.listen(PORT, () => {
     console.log(`\u2705 Server running on port ${PORT}`);
     console.log(`[startup] DB: ${dbOk ? "\u2705 connected" : "\u26a0 uncertain"}`);
