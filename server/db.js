@@ -1,72 +1,88 @@
 const { Pool } = require("pg");
 
-// ── Connection pool — tuned for Render free/starter tier ──────────────────────
-// Free tier has limited DB connections (typically 25 on Neon/Supabase free).
-// These settings prevent connection exhaustion under real load and
-// gracefully handle the "connection terminated due to timeout" errors
-// that appear when the DB proxy drops idle connections.
+// ── Connection pool ────────────────────────────────────────────────────────────
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-
-  // Max connections in pool — keep low enough to share with other services
   max: 10,
-
-  // How long (ms) an idle client can sit in the pool before being closed
-  // 10 min — long enough to avoid constant reconnects, short enough to
-  // not exhaust DB-side connection limits
-  idleTimeoutMillis: 10 * 60 * 1000,
-
-  // How long (ms) to wait for a connection before throwing
-  // 5s gives enough time on a cold DB without hanging the user request
-  connectionTimeoutMillis: 5000,
-
-  // Kill queries that run longer than 15s — prevents slow queries from
-  // blocking the entire pool on Render's slower free-tier DB
-  statement_timeout: 15000,
-
-  // Re-check connection health before handing it to a request
-  // Catches stale connections dropped by Neon/Supabase proxy
+  idleTimeoutMillis:     10 * 60 * 1000, // 10 min idle before closing
+  connectionTimeoutMillis: 8000,         // 8s to get a connection
+  statement_timeout:     20000,          // 20s max query time
   allowExitOnIdle: false,
 });
 
-// Log pool errors — these show up as the "connection terminated" messages
 pool.on("error", (err) => {
-  console.error("[DB] Unexpected pool error:", err.message);
+  console.error("[DB] Pool error:", err.message);
 });
 
-pool.on("connect", () => {
-  // Uncomment for debugging connection churn:
-  // console.log("[DB] New client connected to pool");
-});
-
-pool.on("remove", () => {
-  // Uncomment for debugging connection churn:
-  // console.log("[DB] Client removed from pool");
-});
-
-// Retry wrapper — on transient connection errors, retry once automatically
-// Handles the "connection terminated unexpectedly" race condition at cold start
-async function query(text, params) {
-  try {
-    return await pool.query(text, params);
-  } catch (err) {
-    const isTransient =
-      err.code === "57P01" || // admin_shutdown
-      err.code === "08006" || // connection_failure
-      err.code === "08001" || // unable_to_connect
-      err.message?.includes("connection terminated") ||
-      err.message?.includes("Connection terminated") ||
-      err.message?.includes("ECONNRESET");
-
-    if (isTransient) {
-      console.warn("[DB] Transient connection error — retrying once:", err.message);
-      // Wait 300ms then retry with a fresh connection
-      await new Promise((r) => setTimeout(r, 300));
-      return pool.query(text, params);
-    }
-    throw err;
-  }
+// ── Transient error detection ─────────────────────────────────────────────────
+function isTransientError(err) {
+  if (!err) return false;
+  const transientCodes = [
+    "57P01", // admin_shutdown
+    "08006", // connection_failure
+    "08001", // unable_to_connect
+    "08P01", // protocol_violation
+    "53300", // too_many_connections
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+  ];
+  if (transientCodes.includes(err.code)) return true;
+  const msg = err.message || "";
+  return (
+    msg.includes("connection terminated") ||
+    msg.includes("Connection terminated") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("connection timeout") ||
+    msg.includes("the database system is starting up") ||
+    msg.includes("too many connections")
+  );
 }
 
-module.exports = { query, pool };
+// ── Query with retry ──────────────────────────────────────────────────────────
+// Retries up to 3 times with exponential backoff on transient DB errors.
+// This handles the "dead connection" problem on Render free-tier restarts.
+async function query(text, params) {
+  const MAX_RETRIES = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await pool.query(text, params);
+    } catch (err) {
+      lastErr = err;
+      if (isTransientError(err) && attempt < MAX_RETRIES) {
+        const delay = attempt * 500; // 500ms, 1000ms
+        console.warn(`[DB] Transient error (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms: ${err.message}`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+// ── Startup health check ──────────────────────────────────────────────────────
+// Called once on server start to verify DB is reachable BEFORE accepting requests.
+// Prevents the first user request from hitting a cold/dead connection.
+async function checkConnection() {
+  const MAX_ATTEMPTS = 5;
+  for (let i = 1; i <= MAX_ATTEMPTS; i++) {
+    try {
+      await pool.query("SELECT 1");
+      console.log("[DB] \u2705 Database connection verified");
+      return true;
+    } catch (err) {
+      console.warn(`[DB] Connection check attempt ${i}/${MAX_ATTEMPTS} failed: ${err.message}`);
+      if (i < MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, i * 1000)); // 1s, 2s, 3s, 4s
+      }
+    }
+  }
+  console.error("[DB] \u274c Could not connect to database after", MAX_ATTEMPTS, "attempts");
+  return false;
+}
+
+module.exports = { query, pool, checkConnection };

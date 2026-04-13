@@ -6,14 +6,10 @@ const rateLimit    = require("express-rate-limit");
 const app          = express();
 app.set("trust proxy", 1);
 
-const { initFCM }         = require("./fcm");
+const { initFCM }                        = require("./fcm");
 const { startAbsentCron, startKeepAlive } = require("./cron");
-const runMigration        = require("./migrate");
-
-runMigration();
-initFCM();
-startAbsentCron();
-startKeepAlive();
+const runMigration                        = require("./migrate");
+const { checkConnection }                 = require("./db");
 
 const allowedOrigins = [
   "https://acadfee.onrender.com",
@@ -75,8 +71,16 @@ app.use("/api/academy",      require("./routes/academy-config"));
 app.use("/api/onboarding",   require("./routes/onboarding"));
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get("/health", (_, res) => res.json({ status: "ok", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime()) }));
-app.get("/",       (_, res) => res.json({ status: "Exponent Platform API running" }));
+app.get("/health", async (_, res) => {
+  try {
+    const { query } = require("./db");
+    await query("SELECT 1");
+    res.json({ status: "ok", db: "connected", timestamp: new Date().toISOString(), uptime: Math.floor(process.uptime()) });
+  } catch (e) {
+    res.status(503).json({ status: "error", db: "disconnected", error: e.message });
+  }
+});
+app.get("/", (_, res) => res.json({ status: "Exponent Platform API running" }));
 
 app.use((err, req, res, next) => {
   if (err.message?.startsWith("CORS blocked")) return res.status(403).json({ error: err.message });
@@ -84,5 +88,34 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`\u2705 Server running on port ${PORT}`));
+// ── Start server ───────────────────────────────────────────────────────────────
+// Wait for DB to be ready BEFORE starting to accept traffic.
+// This prevents the first few requests after a cold start from hitting 500.
+async function start() {
+  const PORT = process.env.PORT || 5000;
+
+  // 1. Verify DB connection (with retries)
+  const dbOk = await checkConnection();
+  if (!dbOk) {
+    console.error("[startup] Database unavailable — starting anyway but requests may fail");
+  }
+
+  // 2. Run migrations (non-blocking — won't crash server on failure)
+  await runMigration();
+
+  // 3. Init services
+  initFCM();
+  startAbsentCron();
+  startKeepAlive();
+
+  // 4. Start listening
+  app.listen(PORT, () => {
+    console.log(`\u2705 Server running on port ${PORT}`);
+    console.log(`[startup] DB: ${dbOk ? "\u2705 connected" : "\u26a0 uncertain"}`);
+  });
+}
+
+start().catch(err => {
+  console.error("[startup] Fatal error:", err);
+  process.exit(1);
+});
