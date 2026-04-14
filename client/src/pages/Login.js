@@ -1,24 +1,47 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
-import logo from "../logo.png";
+
+// Retry a function up to maxAttempts times on 500/503/network errors
+// Shows a countdown between retries so users know what's happening
+async function withRetry(fn, { maxAttempts = 3, delayMs = 5000, onRetry } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err?.response?.status;
+      const isServerError = !status || status >= 500; // 500, 503, network error
+      const isLastAttempt  = attempt === maxAttempts;
+
+      if (!isServerError || isLastAttempt) throw err;
+
+      // Server is starting up — wait and retry
+      if (onRetry) onRetry(attempt, maxAttempts, delayMs);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
 
 export default function Login() {
-  const { login }    = useAuth();
-  const { academy }  = useAcademy();
-  const [panel, setPanel]           = useState("student"); // "admin" | "student" | "forgot"
-  const [form, setForm]             = useState({ email: "", password: "" });
+  const { login }   = useAuth();
+  const { academy } = useAcademy();
+  const [panel, setPanel]             = useState("student");
+  const [form, setForm]               = useState({ email: "", password: "" });
   const [newPassword, setNewPassword] = useState("");
-  const [error, setError]           = useState("");
-  const [success, setSuccess]       = useState("");
-  const [loading, setLoading]       = useState(false);
+  const [error, setError]             = useState("");
+  const [success, setSuccess]         = useState("");
+  const [loading, setLoading]         = useState(false);
+  const [retryMsg, setRetryMsg]       = useState(""); // "Server waking up, retrying in 4s..."
+  const [countdown, setCountdown]     = useState(0);
+  const countdownRef = useRef(null);
 
-  // Check for reset token in URL on load
   const urlParams  = new URLSearchParams(window.location.search);
   const resetToken = urlParams.get("reset_token");
 
-  // Platform branding fallback (only used when no academy is loaded)
   const [platformLogoUrl, setPlatformLogoUrl] = useState(
     () => { try { return localStorage.getItem("exponent_logo_url") || null; } catch { return null; } }
   );
@@ -31,10 +54,23 @@ export default function Login() {
             setPlatformLogoUrl(data.logo_url);
             try { localStorage.setItem("exponent_logo_url", data.logo_url); } catch {}
           }
-        })
-        .catch(() => {});
+        }).catch(() => {});
     }
   }, [academy]);
+
+  // Cleanup countdown timer on unmount
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
+
+  const startCountdown = (totalMs) => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    let secs = Math.round(totalMs / 1000);
+    setCountdown(secs);
+    countdownRef.current = setInterval(() => {
+      secs -= 1;
+      setCountdown(secs);
+      if (secs <= 0) clearInterval(countdownRef.current);
+    }, 1000);
+  };
 
   const academyName  = academy?.name || "Exponent Platform";
   const primaryColor = academy?.primary_color
@@ -43,20 +79,34 @@ export default function Login() {
   const accentColor  = academy?.accent_color
     ? (academy.accent_color.startsWith("#") ? academy.accent_color : `#${academy.accent_color}`)
     : "#38bdf8";
-  // Academy logo → platform logo → null (shows DefaultLogo SVG)
   const logoUrl = academy?.logo_url || platformLogoUrl || null;
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setError(""); setSuccess(""); setLoading(true);
+    setError(""); setSuccess(""); setRetryMsg(""); setLoading(true);
     try {
       const endpoint = panel === "student" ? "/auth/student-login" : "/auth/login";
-      const { data } = await API.post(endpoint, form);
-      login(data.token, data.user, data.refreshToken);
+      await withRetry(
+        () => API.post(endpoint, form).then(({ data }) => login(data.token, data.user, data.refreshToken)),
+        {
+          maxAttempts: 3,
+          delayMs: 6000,
+          onRetry: (attempt, max, delayMs) => {
+            setRetryMsg(`Server is starting up… retrying (${attempt}/${max - 1})`);
+            startCountdown(delayMs);
+          },
+        }
+      );
     } catch (err) {
-      // FIX: always set error from response, never crash
-      const msg = err?.response?.data?.error || err?.message || "Invalid credentials. Please try again.";
-      setError(msg);
+      setRetryMsg("");
+      const status = err?.response?.status;
+      if (!status || status >= 500) {
+        // After all retries failed — friendly message
+        setError("Server is busy. Please wait a moment and try again.");
+      } else {
+        const msg = err?.response?.data?.error || "Invalid credentials. Please try again.";
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -80,7 +130,6 @@ export default function Login() {
       await API.post("/auth/reset-password", { token: resetToken, password: newPassword });
       setSuccess("Password reset successfully! Redirecting to login...");
       setTimeout(() => {
-        // Clear the token from URL and go back to login
         window.history.replaceState({}, "", window.location.pathname);
         window.location.reload();
       }, 2000);
@@ -94,7 +143,7 @@ export default function Login() {
   const Back = ({ to = null }) => (
     <button
       type="button"
-      onClick={() => { setPanel(to); setError(""); setSuccess(""); }}
+      onClick={() => { setPanel(to); setError(""); setSuccess(""); setRetryMsg(""); }}
       style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--text3)", marginBottom: 16, padding: 0, display: "flex", alignItems: "center", gap: 4 }}
     >
       ← Back
@@ -116,8 +165,8 @@ export default function Login() {
 
   return (
     <div className="login-bg" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
-      
-      {/* ── HEADER (Outside Card) ── */}
+
+      {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{
           width: 64, height: 64,
@@ -129,13 +178,9 @@ export default function Login() {
         }}>
           {logoUrl
             ? <img src={logoUrl} alt={academyName} style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 8 }} />
-            : <DefaultLogo size={42} />
-          }
+            : <DefaultLogo size={42} />}
         </div>
-        <div style={{
-          fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px",
-          color: "#ffffff"
-        }}>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px", color: "#ffffff" }}>
           {academyName}
         </div>
         <div style={{
@@ -148,180 +193,147 @@ export default function Login() {
         </div>
       </div>
 
-      {/* ── MAIN CARD ── */}
-      <div className="login-card" style={{ width: "100%", maxWidth: 420,  padding: "32px", boxSizing: "border-box" }}>
+      {/* Card */}
+      <div className="login-card" style={{ width: "100%", maxWidth: 420, padding: "32px", boxSizing: "border-box" }}>
 
-        {/* ── PASSWORD RESET FORM (when ?reset_token= in URL) ── */}
         {resetToken ? (
           <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Set a new password</div>
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 8 }}>Enter your new password below.</div>
             <div className="form-group">
               <label>New Password (min 6 characters)</label>
-              <input
-                type="password"
-                placeholder="Enter new password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                required
-                autoFocus
-                minLength={6}
-              />
+              <input type="password" placeholder="Enter new password" value={newPassword}
+                onChange={e => setNewPassword(e.target.value)} required autoFocus minLength={6} />
             </div>
-            {error   && <div style={{ padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, color: "var(--red)", fontSize: 12.5 }}>⚠ {error}</div>}
-            {success && <div style={{ padding: "10px 14px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 8, color: "var(--green)", fontSize: 12.5 }}>✓ {success}</div>}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading}
-              style={{ width: "100%", justifyContent: "center", padding: "11px", background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})` }}
-            >
+            {error   && <div style={{ padding:"10px 14px", background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:8, color:"var(--red)", fontSize:12.5 }}>⚠ {error}</div>}
+            {success && <div style={{ padding:"10px 14px", background:"rgba(16,185,129,0.08)",  border:"1px solid rgba(16,185,129,0.2)",  borderRadius:8, color:"var(--green)",fontSize:12.5 }}>✓ {success}</div>}
+            <button type="submit" className="btn btn-primary" disabled={loading}
+              style={{ width:"100%", justifyContent:"center", padding:"11px",
+                background:`linear-gradient(135deg, ${primaryColor}, ${accentColor})` }}>
               {loading ? "Resetting..." : "Set New Password"}
             </button>
           </form>
+
         ) : panel === "forgot" ? (
-          // ── FORGOT PASSWORD FORM ── //
           <form onSubmit={handleForgot} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <Back to="admin" />
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Forgot your password?</div>
-            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 8, lineHeight: 1.6 }}>Enter your email address and we'll send you a reset link.</div>
+            <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 8, lineHeight: 1.6 }}>Enter your email and we’ll send a reset link.</div>
             <div className="form-group">
               <label>Email address</label>
-              <input
-                type="email"
-                placeholder="admin@academy.com"
-                value={form.email}
-                onChange={e => f("email", e.target.value)}
-                required
-                autoFocus
-                style={{ padding: "12px", background: "rgba(0,0,0,0.2)" }}
-              />
+              <input type="email" placeholder="admin@academy.com" value={form.email}
+                onChange={e => f("email", e.target.value)} required autoFocus
+                style={{ padding:"12px", background:"rgba(0,0,0,0.2)" }} />
             </div>
-            {error   && <div style={{ padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, color: "var(--red)", fontSize: 12.5 }}>⚠ {error}</div>}
-            {success && <div style={{ padding: "10px 14px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 8, color: "var(--green)", fontSize: 12.5 }}>✓ {success}</div>}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading}
-              style={{ width: "100%", justifyContent: "center", padding: "12px", background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`, boxShadow: `0 4px 14px ${primaryColor}40` }}
-            >
+            {error   && <div style={{ padding:"10px 14px", background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:8, color:"var(--red)", fontSize:12.5 }}>⚠ {error}</div>}
+            {success && <div style={{ padding:"10px 14px", background:"rgba(16,185,129,0.08)",  border:"1px solid rgba(16,185,129,0.2)",  borderRadius:8, color:"var(--green)",fontSize:12.5 }}>✓ {success}</div>}
+            <button type="submit" className="btn btn-primary" disabled={loading}
+              style={{ width:"100%", justifyContent:"center", padding:"12px",
+                background:`linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+                boxShadow:`0 4px 14px ${primaryColor}40` }}>
               {loading ? "Sending..." : "Send Reset Link"}
             </button>
           </form>
+
         ) : (
-          // ── TAB SWITCHER & LOGIN FORM ── //
           <div>
-            {/* Tab Switcher */}
-            <div style={{ 
-              display: "flex", background: "rgba(0,0,0,0.25)", 
-              borderRadius: 8, padding: 4, marginBottom: 28,
-              border: "1px solid rgba(255,255,255,0.05)"
-            }}>
-              <button
-                type="button"
-                onClick={() => { setPanel("student"); setError(""); setSuccess(""); }}
-                style={{ 
-                  flex: 1, padding: "10px 0", borderRadius: 6, border: "none", cursor: "pointer", 
-                  background: panel === "student" ? "rgba(16,217,160,0.15)" : "transparent", 
-                  color: panel === "student" ? "#10d9a0" : "var(--text3)", 
-                  fontWeight: panel === "student" ? 600 : 500, transition: "all 0.2s", fontSize: 13
-                }}
-              >
-                Student
-              </button>
-              <button
-                type="button"
-                onClick={() => { setPanel("admin"); setError(""); setSuccess(""); }}
-                style={{ 
-                  flex: 1, padding: "10px 0", borderRadius: 6, border: "none", cursor: "pointer", 
-                  background: panel === "admin" ? `${primaryColor}26` : "transparent", 
-                  color: panel === "admin" ? primaryColor : "var(--text3)", 
-                  fontWeight: panel === "admin" ? 600 : 500, transition: "all 0.2s", fontSize: 13
-                }}
-              >
-                Admin
-              </button>
+            {/* Tab switcher */}
+            <div style={{ display:"flex", background:"rgba(0,0,0,0.25)", borderRadius:8, padding:4, marginBottom:28,
+              border:"1px solid rgba(255,255,255,0.05)" }}>
+              {[{id:"student",label:"Student"},{id:"admin",label:"Admin"}].map(tab => (
+                <button key={tab.id} type="button"
+                  onClick={() => { setPanel(tab.id); setError(""); setRetryMsg(""); }}
+                  style={{
+                    flex:1, padding:"10px 0", borderRadius:6, border:"none", cursor:"pointer",
+                    background: panel===tab.id ? (tab.id==="student" ? "rgba(16,217,160,0.15)" : `${primaryColor}26`) : "transparent",
+                    color: panel===tab.id ? (tab.id==="student" ? "#10d9a0" : primaryColor) : "var(--text3)",
+                    fontWeight: panel===tab.id ? 600 : 500, transition:"all 0.2s", fontSize:13
+                  }}>{tab.label}</button>
+              ))}
             </div>
 
-            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <form onSubmit={handleLogin} style={{ display:"flex", flexDirection:"column", gap:16 }}>
               <div className="form-group">
-                <label style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text3)", marginBottom: 6 }}>Email Address</label>
-                <input
-                  type="email"
-                  placeholder={panel === "admin" ? "admin@academy.com" : "your@email.com"}
-                  value={form.email}
-                  onChange={e => f("email", e.target.value)}
-                  required
-                  autoFocus
-                  style={{ background: "rgba(0,0,0,0.2)", padding: "12px" }}
-                />
+                <label style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.5px", color:"var(--text3)", marginBottom:6 }}>Email Address</label>
+                <input type="email" placeholder={panel==="admin" ? "admin@academy.com" : "your@email.com"}
+                  value={form.email} onChange={e => f("email", e.target.value)}
+                  required autoFocus style={{ background:"rgba(0,0,0,0.2)", padding:"12px" }} />
               </div>
 
               <div className="form-group">
-                <label style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text3)", marginBottom: 6 }}>Password</label>
-                <input
-                  type="password"
-                  placeholder="Your password"
-                  value={form.password}
-                  onChange={e => f("password", e.target.value)}
-                  required
-                  style={{ background: "rgba(0,0,0,0.2)", padding: "12px" }}
-                />
+                <label style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.5px", color:"var(--text3)", marginBottom:6 }}>Password</label>
+                <input type="password" placeholder="Your password"
+                  value={form.password} onChange={e => f("password", e.target.value)}
+                  required style={{ background:"rgba(0,0,0,0.2)", padding:"12px" }} />
               </div>
 
-              {/* Forgot password link */}
               {panel === "admin" && (
-                <div style={{ display: "flex", justifyContent: "flex-start", marginTop: -4, marginBottom: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => { setPanel("forgot"); setError(""); setSuccess(""); }}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: primaryColor, padding: 0, fontWeight: 500 }}
-                  >
+                <div style={{ display:"flex", justifyContent:"flex-start", marginTop:-4, marginBottom:8 }}>
+                  <button type="button"
+                    onClick={() => { setPanel("forgot"); setError(""); setRetryMsg(""); }}
+                    style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:primaryColor, padding:0, fontWeight:500 }}>
                     Forgot Password?
                   </button>
                 </div>
               )}
 
-              {/* Error Message */}
-              {error && (
+              {/* Server waking up — shown instead of error during retries */}
+              {retryMsg && (
                 <div style={{
-                  padding: "10px 14px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)",
-                  borderRadius: 8, color: "var(--red)", fontSize: 12.5, display: "flex", flexDirection: "column", gap: 6,
+                  padding:"12px 14px", background:"rgba(251,191,36,0.08)",
+                  border:"1px solid rgba(251,191,36,0.25)", borderRadius:8,
+                  color:"var(--yellow)", fontSize:12.5,
+                  display:"flex", alignItems:"center", gap:8
                 }}>
-                  <span>⚠ {error}</span>
+                  <span style={{ fontSize:18, animation:"spin 1s linear infinite", display:"inline-block" }}>⏳</span>
+                  <div>
+                    <div style={{ fontWeight:600 }}>{retryMsg}</div>
+                    {countdown > 0 && (
+                      <div style={{ fontSize:11, marginTop:2, opacity:0.8 }}>Trying again in {countdown}s…</div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={loading}
+              {/* Error — shown only after all retries exhausted */}
+              {error && !retryMsg && (
+                <div style={{
+                  padding:"10px 14px", background:"rgba(248,113,113,0.08)",
+                  border:"1px solid rgba(248,113,113,0.2)", borderRadius:8,
+                  color:"var(--red)", fontSize:12.5
+                }}>
+                  ⚠ {error}
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary" disabled={loading}
                 style={{
-                  width: "100%", justifyContent: "center",
-                  padding: "13px", fontSize: 14, marginTop: 4, fontWeight: 600,
-                  background: panel === "student" ? "linear-gradient(135deg, #059669, #10d9a0)" : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
-                  boxShadow: panel === "student" ? "0 4px 14px rgba(16,217,160,0.3)" : `0 4px 14px ${primaryColor}40`,
-                  border: "none", color: "#fff"
-                }}
-              >
-                {loading ? "Signing in…" : `Login to ${academyName}`}
+                  width:"100%", justifyContent:"center", padding:"13px", fontSize:14,
+                  marginTop:4, fontWeight:600, border:"none", color:"#fff",
+                  background: panel==="student"
+                    ? "linear-gradient(135deg, #059669, #10d9a0)"
+                    : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+                  boxShadow: panel==="student"
+                    ? "0 4px 14px rgba(16,217,160,0.3)"
+                    : `0 4px 14px ${primaryColor}40`,
+                  opacity: loading ? 0.75 : 1,
+                }}>
+                {loading
+                  ? (retryMsg ? "Retrying…" : "Signing in…")
+                  : `Login to ${academyName}`}
               </button>
             </form>
           </div>
         )}
       </div>
 
-      {/* ── FOOTER (Outside Card) ── */}
-      <div style={{ 
-        display: "flex", gap: 16, marginTop: 32, fontSize: 11, color: "var(--text3)", 
-        opacity: 0.7, fontWeight: 500
-      }}>
-        <a href="/privacy" style={{ color: "var(--text3)", textDecoration: "none" }}>Privacy Policy</a>
+      {/* Footer */}
+      <div style={{ display:"flex", gap:16, marginTop:32, fontSize:11, color:"var(--text3)", opacity:0.7, fontWeight:500 }}>
+        <a href="/privacy" style={{ color:"var(--text3)", textDecoration:"none" }}>Privacy Policy</a>
         <span>·</span>
-        <a href="/terms" style={{ color: "var(--text3)", textDecoration: "none" }}>Terms of Service</a>
+        <a href="/terms" style={{ color:"var(--text3)", textDecoration:"none" }}>Terms of Service</a>
         <span>·</span>
-        <a href="/contact" style={{ color: "var(--text3)", textDecoration: "none" }}>Contact</a>
+        <a href="/contact" style={{ color:"var(--text3)", textDecoration:"none" }}>Contact</a>
       </div>
     </div>
   );
