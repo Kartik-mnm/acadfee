@@ -295,9 +295,49 @@ async function runMigration() {
     )`, "create working_days");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 2 — ADD MISSING COLUMNS TO EXISTING TABLES (idempotent ALTERs)
-    // Safe to run even if columns already exist (ADD COLUMN IF NOT EXISTS).
     // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 2 — ADD MISSING COLUMNS TO EXISTING TABLES & FIX MISMATCHES
+    // Safe to run even if columns already exist.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // -- HOTFIX: align tables with what JS routes expect --
+    
+    // Fix test scores table name
+    await safe(`ALTER TABLE test_scores RENAME TO test_results`, "rename test_scores to test_results");
+    
+    // Fix expenses date column name
+    await safe(`ALTER TABLE expenses RENAME COLUMN paid_on TO expense_date`, "rename expenses.paid_on to expense_date");
+
+    // Fix attendance table to be monthly, not daily
+    try {
+      const { rows } = await db.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name='attendance' AND column_name='status'
+      `);
+      if (rows.length > 0) {
+        // This is the old daily attendance table, drop it
+        await db.query(`DROP TABLE attendance CASCADE`);
+        console.log("[migrate] Dropped old daily attendance table");
+        
+        await db.query(`
+          CREATE TABLE attendance (
+            id SERIAL PRIMARY KEY,
+            student_id INT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            branch_id INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+            month INT NOT NULL,
+            year INT NOT NULL,
+            total_days INT DEFAULT 0,
+            present INT DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(student_id, month, year)
+          )
+        `);
+        console.log("[migrate] Recreated monthly attendance table");
+      }
+    } catch (e) {
+      console.warn("[migrate] Attendance check error:", e.message);
+    }
 
     // academies — extra columns added over time
     for (const col of [
