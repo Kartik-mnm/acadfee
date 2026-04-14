@@ -61,6 +61,51 @@ router.get("/token/:student_id", auth, async (req, res) => {
   }
 });
 
+// ── Generate QR tokens in bulk ──────────────────────────────────────────────────
+router.post("/tokens/bulk", auth, async (req, res) => {
+  try {
+    const { student_ids } = req.body;
+    if (!Array.isArray(student_ids) || student_ids.length === 0) return res.status(400).json({ error: "No students provided" });
+
+    const aid = req.academyId;
+    // ensure the students belong to the academy correctly
+    const { rows } = await db.query(
+      `SELECT s.id, s.name, s.branch_id, COALESCE(s.academy_id, br.academy_id) AS academy_id,
+              LOWER(s.status) AS status, b.end_date AS batch_end_date
+       FROM students s
+       JOIN branches br ON br.id = s.branch_id
+       LEFT JOIN batches b ON b.id = s.batch_id
+       WHERE s.id = ANY($1)`,
+      [student_ids]
+    );
+
+    const tokens = {};
+    for (const student of rows) {
+      if (aid && student.academy_id !== aid) continue;
+      
+      const isInactive = student.status !== "active";
+      const batchEnded = student.batch_end_date && new Date(student.batch_end_date) < new Date();
+      if (isInactive || batchEnded) continue; // Skip tokens for inactive
+
+      const token = jwt.sign(
+        {
+          student_id: student.id,
+          branch_id:  student.branch_id,
+          academy_id: student.academy_id,
+          type: "qr_attendance"
+        },
+        getJwtSecret()
+      );
+      tokens[student.id] = token;
+    }
+
+    res.json(tokens);
+  } catch (e) {
+    console.error("Bulk QR token error:", e.message);
+    res.status(500).json({ error: "Failed to generate bulk tokens" });
+  }
+});
+
 // ── Register FCM token ────────────────────────────────────────────────────────────
 router.post("/register-token", auth, async (req, res) => {
   try {

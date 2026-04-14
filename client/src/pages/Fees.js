@@ -62,6 +62,7 @@ export default function Fees() {
   const [saving, setSaving] = useState(false);
   const [manError, setManError] = useState("");
   const [msg, setMsg] = useState("");
+  const [nudging, setNudging] = useState(false);
 
   const load = () => {
     const q = new URLSearchParams();
@@ -84,6 +85,33 @@ export default function Fees() {
     setMsg(`✓ Marked ${data.updated} records as overdue`);
     load();
     setTimeout(() => setMsg(""), 3000);
+  };
+
+  const nudgeDefaulters = async () => {
+    // Collect all unpaid records from currently filtered view
+    const defaulters = filtered.filter(r => ["pending", "partial", "overdue"].includes(r.status));
+    if (defaulters.length === 0) {
+      setMsg("⚠ No defaulters in current view.");
+      setTimeout(() => setMsg(""), 3000);
+      return;
+    }
+    
+    // De-duplicate by student (optional, but let's just nudge all unpaid records)
+    const recordIds = defaulters.map(r => r.id);
+    
+    if (!window.confirm(`Are you sure you want to send WhatsApp reminders to ${recordIds.length} fee records?`)) return;
+    
+    setNudging(true);
+    setMsg("");
+    try {
+      const { data } = await API.post("/fees/nudge", { record_ids: recordIds });
+      setMsg(`🚀 Successfully sent ${data.nudged} out of ${data.total} WhatsApp reminders!`);
+    } catch (e) {
+      setMsg("⚠ " + (e.response?.data?.error || "Failed to trigger nudge. Make sure WhatsApp is connected in Settings."));
+    } finally {
+      setNudging(false);
+      setTimeout(() => setMsg(""), 6000);
+    }
   };
 
   const generate = async () => {
@@ -142,6 +170,9 @@ export default function Fees() {
           <div className="page-sub">{filtered.length} record(s)</div>
         </div>
         <div className="gap-row">
+          <button className="btn" onClick={nudgeDefaulters} disabled={nudging || filtered.length === 0} style={{ background: "var(--green)", color: "white", border: "1px solid rgba(16,185,129,0.5)" }}>
+            {nudging ? "⏳ Nudging..." : "💬 Nudge Defaulters"}
+          </button>
           <button className="btn btn-secondary" onClick={markOverdue}>⚠ Mark Overdue</button>
           <button className="btn btn-secondary" onClick={() => { setManError(""); setShowManual(true); }}>+ Manual Record</button>
           <button className="btn btn-primary" onClick={() => setShowGenerate(true)}>⚡ Generate Monthly</button>

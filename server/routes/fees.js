@@ -107,6 +107,53 @@ router.post("/generate", auth, async (req, res) => {
   } finally { client.release(); }
 });
 
+// Bulk Nudge Defaulters via WhatsApp
+router.post("/nudge", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  const { record_ids } = req.body;
+  if (!Array.isArray(record_ids) || record_ids.length === 0) return res.status(400).json({ error: "No records selected" });
+  
+  const aid = req.academyId;
+  const { sendWhatsAppMessage } = require("../whatsapp");
+
+  try {
+    // Bulk fetch records ensuring they belong to this academy and are overdue or pending partial
+    const { rows } = await db.query(
+      `SELECT fr.id, fr.amount_due, fr.amount_paid, fr.period_label, 
+              s.name AS student_name, s.phone, s.parent_phone, a.name AS academy_name
+       FROM fee_records fr
+       JOIN students s ON s.id = fr.student_id
+       LEFT JOIN academies a ON a.id = s.academy_id
+       WHERE fr.id = ANY($1) 
+         AND (s.academy_id = $2 OR $2 IS NULL)
+         AND fr.status IN ('pending', 'partial', 'overdue')`,
+      [record_ids, aid || null]
+    );
+
+    let sentCount = 0;
+    // We send sequentially to avoid spamming the connection and triggering WhatsApp anti-spam too quickly
+    for (const record of rows) {
+      const balance = record.amount_due - record.amount_paid;
+      const phone = record.parent_phone || record.phone;
+      if (balance > 0 && phone) {
+        const amtStr = `\u20b9${Number(balance).toLocaleString("en-IN")}`;
+        const pLabel = record.period_label || "this period";
+        const acadName = record.academy_name || "Academy";
+        
+        const msg = `⚠️ *FEE REMINDER*\n\nDear Parent/Student,\n\nThis is a gentle reminder that a fee balance of *${amtStr}* for ${record.student_name} (${pLabel}) is currently pending.\n\nPlease clear your dues at the earliest.\n\nThank you,\n${acadName}`;
+        
+        const success = await sendWhatsAppMessage(aid, phone, msg);
+        if (success) sentCount++;
+      }
+    }
+
+    res.json({ success: true, nudged: sentCount, total: rows.length });
+  } catch (e) {
+    console.error("Nudge defaulters error:", e.message);
+    res.status(500).json({ error: "Failed to send WhatsApp reminders" });
+  }
+});
+
 // Mark overdue — scoped to academy only
 router.patch("/mark-overdue", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
