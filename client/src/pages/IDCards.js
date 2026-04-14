@@ -34,6 +34,7 @@ export default function IDCards() {
   const [printLayout,  setPrintLayout]  = useState("vertical"); // 'vertical' or 'horizontal'
   const [cardWidth,    setCardWidth]    = useState(54);
   const [cardHeight,   setCardHeight]   = useState(85);
+  const [previewHtml,  setPreviewHtml]  = useState(null);
   
   const [loadingPrint, setLoadingPrint] = useState(false);
   const [backfilling,  setBackfilling]  = useState(false);
@@ -90,85 +91,79 @@ export default function IDCards() {
     setSelectedIds(next);
   };
 
-  const printCards = async () => {
-    const targetStudents = students.filter(s => selectedIds.has(s.id));
-    if (targetStudents.length === 0) return;
+  const generateDocument = async (targetStudents) => {
+    const { data: tokens } = await API.post("/qrscan/tokens/bulk", { student_ids: targetStudents.map(s => s.id) });
+      
+    let htmlCards = "";
     
-    setLoadingPrint(true);
-    try {
-      const { data: tokens } = await API.post("/qrscan/tokens/bulk", { student_ids: Array.from(selectedIds) });
-      
-      let htmlCards = "";
-      
-      for (const s of targetStudents) {
-        let qrDataUrl = "";
-        if (tokens[s.id]) {
-          qrDataUrl = await QRCode.toDataURL(tokens[s.id], {
-            width: 200, margin: 1, errorCorrectionLevel: "L", color: { dark: "#0a1628", light: "#ffffff" }
-          });
-        }
-        
-        const ended = isBatchEnded(s);
-        const topBg = ended ? "#888" : primaryColor;
-        const botBg = ended ? "linear-gradient(135deg,#888,#aaa)" : `linear-gradient(135deg,${primaryColor},${accentColor})`;
-        
-        if (printLayout === "vertical") {
-            htmlCards += `
-              <div class="card printer-card" style="width: ${cardWidth}mm; height: ${cardHeight}mm;">
-                ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
-                <div class="card-top">
-                  <div class="academy-name">${academyName.toUpperCase()}</div>
-                  <div class="academy-sub">STUDENT IDENTITY CARD</div>
-                  <svg class="wave" viewBox="0 0 216 30" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path d="M0,20 C40,35 80,5 108,20 C136,35 176,5 216,20 L216,30 L0,30 Z" fill="white"/></svg>
-                </div>
-                <div class="photo-wrap"><div class="photo-circle">${s.photo_url ? `<img src="${s.photo_url}" />` : "👤"}</div></div>
-                <div class="card-body">
-                  <div class="student-name">${s.name}</div>
-                  <div class="student-role">${s.batch_name || "Student"}</div>
-                  <div class="divider" style="background:linear-gradient(90deg,transparent,${primaryColor},transparent)"></div>
-                  <div class="info-row"><span class="info-label">Roll No</span><span class="info-value">${getRollDisplay(s)}</span></div>
-                  <div class="info-row"><span class="info-label">Branch</span><span class="info-value">${s.branch_name || "—"}</span></div>
-                  <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${s.phone || "—"}</span></div>
-                </div>
-                <div class="qr-section">
-                  ${qrDataUrl ? `<img class="qr-img" src="${qrDataUrl}" />` : '<div class="qr-placeholder"></div>'}
-                  <div class="qr-label">SCAN FOR ATTENDANCE</div>
-                </div>
-                <div class="card-bottom" style="background:${botBg}">
-                  <div class="student-badge">${ended ? "Inactive" : "Student"}</div>
-                </div>
-              </div>
-            `;
-        } else {
-            // Horizontal layout
-            htmlCards += `
-              <div class="card printer-card hz-wrap" style="width: ${cardWidth}mm; height: ${cardHeight}mm;">
-                ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
-                <div class="hz-left" style="background:${topBg}">
-                   <div class="photo-circle hz-photo">${s.photo_url ? `<img src="${s.photo_url}" />` : "👤"}</div>
-                   <div class="academy-name hz-acad" style="writing-mode: vertical-rl; transform: rotate(180deg); margin-top:2mm; font-size: 6pt;">${academyName.toUpperCase()}</div>
-                </div>
-                <div class="hz-center">
-                  <div class="student-name" style="text-align:left; font-size:12pt;">${s.name}</div>
-                  <div class="student-role" style="text-align:left; font-size:7pt; color:${accentColor}">${s.batch_name || "Student"}</div>
-                  <div class="divider" style="background:linear-gradient(90deg,transparent,${primaryColor},transparent); margin: 3mm 0;"></div>
-                  <div class="info-row"><span class="info-label">Roll No</span><span class="info-value">${getRollDisplay(s)}</span></div>
-                  <div class="info-row"><span class="info-label">Branch</span><span class="info-value">${s.branch_name || "—"}</span></div>
-                  <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${s.phone || "—"}</span></div>
-                </div>
-                <div class="hz-right">
-                  <div class="qr-section" style="background:transparent; border:none; padding:0;">
-                    ${qrDataUrl ? `<img class="qr-img hz-qr" src="${qrDataUrl}" />` : '<div class="qr-placeholder hz-qr"></div>'}
-                    <div class="qr-label">ATTENDANCE</div>
-                  </div>
-                </div>
-              </div>
-            `;
-        }
+    for (const s of targetStudents) {
+      let qrDataUrl = "";
+      if (tokens[s.id]) {
+        qrDataUrl = await QRCode.toDataURL(tokens[s.id], {
+          width: 200, margin: 1, errorCorrectionLevel: "L", color: { dark: "#0a1628", light: "#ffffff" }
+        });
       }
       
-      const w = window.open("", "_blank");
-      w.document.write(`<!DOCTYPE html>
+      const ended = isBatchEnded(s);
+      const topBg = ended ? "#888" : primaryColor;
+      const botBg = ended ? "linear-gradient(135deg,#888,#aaa)" : `linear-gradient(135deg,${primaryColor},${accentColor})`;
+      
+      if (printLayout === "vertical") {
+          htmlCards += `
+            <div class="card printer-card" style="width: ${cardWidth}mm; height: ${cardHeight}mm;">
+              ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
+              <div class="card-top" style="background:${topBg}">
+                <div class="academy-name">${academyName.toUpperCase()}</div>
+                <div class="academy-sub">STUDENT IDENTITY CARD</div>
+                <svg class="wave" viewBox="0 0 216 30" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path d="M0,20 C40,35 80,5 108,20 C136,35 176,5 216,20 L216,30 L0,30 Z" fill="white"/></svg>
+              </div>
+              <div class="photo-wrap"><div class="photo-circle">${s.photo_url ? `<img src="${s.photo_url}" />` : "👤"}</div></div>
+              <div class="card-body">
+                <div class="student-name">${s.name}</div>
+                <div class="student-role">${s.batch_name || "Student"}</div>
+                <div class="divider" style="background:linear-gradient(90deg,transparent,${primaryColor},transparent)"></div>
+                <div class="info-row"><span class="info-label">Roll No</span><span class="info-value">${getRollDisplay(s)}</span></div>
+                <div class="info-row"><span class="info-label">Branch</span><span class="info-value">${s.branch_name || "—"}</span></div>
+                <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${s.phone || "—"}</span></div>
+              </div>
+              <div class="qr-section">
+                ${qrDataUrl ? `<img class="qr-img" src="${qrDataUrl}" />` : '<div class="qr-placeholder"></div>'}
+                <div class="qr-label">SCAN FOR ATTENDANCE</div>
+              </div>
+              <div class="card-bottom" style="background:${botBg}">
+                <div class="student-badge">${ended ? "Inactive" : "Student"}</div>
+              </div>
+            </div>
+          `;
+      } else {
+          // Horizontal layout
+          htmlCards += `
+            <div class="card printer-card hz-wrap" style="width: ${cardWidth}mm; height: ${cardHeight}mm;">
+              ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
+              <div class="hz-left" style="background:${topBg}">
+                 <div class="photo-circle hz-photo">${s.photo_url ? `<img src="${s.photo_url}" />` : "👤"}</div>
+                 <div class="academy-name hz-acad" style="writing-mode: vertical-rl; transform: rotate(180deg); margin-top:2mm; font-size: 6pt;">${academyName.toUpperCase()}</div>
+              </div>
+              <div class="hz-center">
+                <div class="student-name" style="text-align:left; font-size:12pt;">${s.name}</div>
+                <div class="student-role" style="text-align:left; font-size:7pt; color:${accentColor}">${s.batch_name || "Student"}</div>
+                <div class="divider" style="background:linear-gradient(90deg,transparent,${primaryColor},transparent); margin: 3mm 0;"></div>
+                <div class="info-row"><span class="info-label">Roll No</span><span class="info-value">${getRollDisplay(s)}</span></div>
+                <div class="info-row"><span class="info-label">Branch</span><span class="info-value">${s.branch_name || "—"}</span></div>
+                <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${s.phone || "—"}</span></div>
+              </div>
+              <div class="hz-right">
+                <div class="qr-section" style="background:transparent; border:none; padding:0;">
+                  ${qrDataUrl ? `<img class="qr-img hz-qr" src="${qrDataUrl}" />` : '<div class="qr-placeholder hz-qr"></div>'}
+                  <div class="qr-label">ATTENDANCE</div>
+                </div>
+              </div>
+            </div>
+          `;
+      }
+    }
+    
+    return `<!DOCTYPE html>
 <html>
 <head>
   <title>Bulk ID Cards</title>
@@ -191,7 +186,7 @@ export default function IDCards() {
     /* V-Card Styles */
     .card-top { height:26mm; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; }
     .wave { position:absolute; bottom:-0.5px; left:0; right:0; height:8mm; }
-    .academy-name { color:white; font-size:7pt; font-weight:900; letter-spacing:0.5px; text-align:center; z-index:2; }
+    .academy-name { color:white; font-size:7pt; font-weight:900; letter-spacing:0.5px; text-align:center; z-index:2; padding:0 2mm;}
     .academy-sub  { color:rgba(255,255,255,0.6); font-size:5pt; letter-spacing:0.8px; text-align:center; z-index:2; margin-top:1mm; }
     .photo-wrap   { display:flex; justify-content:center; margin-top:-8mm; position:relative; z-index:10; }
     .photo-circle { border-radius:50%; background:#e8edf5; border:2px solid white; display:flex; align-items:center; justify-content:center; overflow:hidden; }
@@ -224,11 +219,34 @@ export default function IDCards() {
     ${htmlCards}
   </div>
 </body>
-</html>`);
+</html>`;
+  };
+
+  const printCards = async () => {
+    const targetStudents = students.filter(s => selectedIds.has(s.id));
+    if (targetStudents.length === 0) return;
+    setLoadingPrint(true);
+    try {
+      const htmlDoc = await generateDocument(targetStudents);
+      const w = window.open("", "_blank");
+      w.document.write(htmlDoc);
       w.document.close();
       setTimeout(() => w.print(), 1000);
     } catch (e) {
       alert("Print generation failed. Make sure server is connected.");
+    } finally {
+      setLoadingPrint(false);
+    }
+  };
+
+  const previewSingleCard = async (e, s) => {
+    e.stopPropagation();
+    setLoadingPrint(true);
+    try {
+      const htmlDoc = await generateDocument([s]);
+      setPreviewHtml(htmlDoc);
+    } catch (err) {
+      alert("Preview generation failed.");
     } finally {
       setLoadingPrint(false);
     }
@@ -305,6 +323,16 @@ export default function IDCards() {
                            <div className="text-muted text-sm mono">{getRollDisplay(s)}</div>
                            {isBatchEnded(s) && <div style={{ fontSize: 10, color: "var(--red)" }}>Inactive</div>}
                         </td>
+                        <td style={{ width: 44, textAlign: "center" }}>
+                           <button 
+                             onClick={(e) => previewSingleCard(e, s)} 
+                             className="btn btn-secondary btn-sm" 
+                             style={{ padding: "4px 8px", background: "white" }} 
+                             title="Preview Card"
+                           >
+                              👁️
+                           </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -371,6 +399,36 @@ export default function IDCards() {
           </button>
         </div>
       </div>
+      
+      {/* Dynamic Overlay Preview Modal */}
+      {previewHtml && (
+        <div 
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", justifyContent: "center", alignItems: "center", backdropFilter: "blur(2px)" }} 
+          onClick={() => setPreviewHtml(null)}
+        >
+          <div 
+            style={{ background: "white", padding: 24, borderRadius: 16, width: "100%", maxWidth: 500, boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 18 }}>ID Card Preview</h3>
+              <button 
+                onClick={() => setPreviewHtml(null)} 
+                style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "var(--text2)" }}
+              >&times;</button>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text3)", marginBottom: 16 }}>This is how the card will look when exported. Click Bulk Print to arrange these on an A4 sheet.</p>
+            <iframe 
+               title="Card Preview"
+               srcDoc={previewHtml} 
+               style={{ width: "100%", height: 420, border: "2px dashed #e2e8f0", borderRadius: 12, background: "#f8faff" }} 
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="btn btn-secondary" onClick={() => setPreviewHtml(null)}>Close Preview</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
