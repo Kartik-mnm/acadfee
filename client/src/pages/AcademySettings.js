@@ -76,6 +76,77 @@ function ImageUploader({ label, currentUrl, onUploaded }) {
   );
 }
 
+function WhatsAppIntegration() {
+  const [status, setStatus] = useState({ connected: false, user: null });
+  const [qr, setQr] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStatus = async () => {
+    try {
+      const { data } = await API.get("/whatsapp/qr");
+      setQr(data.qr);
+      setStatus({ connected: data.connected, user: data.user });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000); // Poll every 5s for QR updates
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleLogout = async () => {
+    if (!window.confirm("Disconnect WhatsApp? You will need to scan the QR code again.")) return;
+    setLoading(true);
+    try {
+      await API.post("/whatsapp/logout");
+      setQr(null);
+      setStatus({ connected: false, user: null });
+    } catch(e) {
+      console.error(e);
+    } finally { fetchStatus(); }
+  };
+
+  return (
+    <div style={{ marginTop: 32, paddingTop: 32, borderTop: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text3)", marginBottom: 12 }}>WhatsApp Automation</div>
+      <p style={{ fontSize: 12, color: "var(--text3)", marginBottom: 16 }}>
+        Link your WhatsApp account to automatically send fee receipts and absent alerts to parents. Messages are sent securely from your own phone number.
+      </p>
+
+      {loading ? (
+        <div style={{ fontSize: 13, color: "var(--text3)" }}>Loading WhatsApp status...</div>
+      ) : status.connected ? (
+        <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 8, padding: "16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ color: "var(--green)", fontWeight: 700, fontSize: 14 }}>✅ Connected & Active</div>
+            <div style={{ color: "var(--text3)", fontSize: 12, marginTop: 4 }}>Connected as: {status.user?.name || status.user?.id?.split(":")[0]}</div>
+          </div>
+          <button className="btn btn-danger btn-sm" onClick={handleLogout}>Disconnect</button>
+        </div>
+      ) : (
+        <div style={{ background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, padding: "20px", textAlign: "center" }}>
+          <div style={{ color: "var(--blue-400)", fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Scan to Connect WhatsApp</div>
+          {qr ? (
+            <img src={qr} alt="WhatsApp QR Code" style={{ width: 220, height: 220, background: "#fff", padding: 8, borderRadius: 8, margin: "0 auto" }} />
+          ) : (
+             <div style={{ fontSize: 13, color: "var(--text3)" }}>Generating secure QR code... Please wait.</div>
+          )}
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 12 }}>
+            1. Open WhatsApp on your phone.<br/>
+            2. Tap Menu or Settings and select Linked Devices.<br/>
+            3. Point your phone to this screen to capture the code.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AcademySettings() {
   const { academy } = useAcademy();
   const { user } = useAuth();
@@ -221,6 +292,8 @@ export default function AcademySettings() {
           <textarea value={form.address} onChange={e => set("address", e.target.value)}
             rows={2} placeholder="Full address" style={{ resize: "vertical" }} />
         </Field>
+
+        <WhatsAppIntegration />
 
         {/* ── Save ── */}
         {error && (

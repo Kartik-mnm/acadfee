@@ -2,6 +2,7 @@ const router = require("express").Router();
 const db     = require("../db");
 const { auth } = require("../middleware");
 const { sendNotification } = require("../fcm");
+const { sendWhatsAppMessage } = require("../whatsapp");
 
 // Ensure payments table has a notes column (some older DBs may only have note)
 db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
@@ -108,7 +109,7 @@ router.post("/", auth, async (req, res) => {
     const { rows: frRows } = await db.query(
       `SELECT fr.student_id, fr.period_label, fr.amount_due, fr.amount_paid,
               s.name AS student_name, s.fcm_token, s.parent_fcm_token, s.academy_id, s.branch_id,
-              a.name AS academy_name
+              s.phone, s.parent_phone, a.name AS academy_name
        FROM fee_records fr
        JOIN students s ON s.id = fr.student_id
        LEFT JOIN academies a ON a.id = s.academy_id
@@ -120,6 +121,7 @@ router.post("/", auth, async (req, res) => {
     const {
       student_id, student_name, fcm_token, parent_fcm_token,
       academy_name, period_label, academy_id: studentAcademyId, branch_id,
+      phone, parent_phone
     } = frRows[0];
 
     if (req.academyId && req.academyId !== studentAcademyId) {
@@ -183,6 +185,13 @@ router.post("/", auth, async (req, res) => {
     if (fcm_token)        notifPromises.push(sendNotification(fcm_token,        notifTitle, notifBody, notifData));
     if (parent_fcm_token) notifPromises.push(sendNotification(parent_fcm_token, `\ud83d\udcb3 Fee paid for ${student_name}`, `${amtStr} fee${period} paid via ${modeStr} at ${academy}. Receipt: ${receipt_no}`, notifData));
     if (notifPromises.length > 0) Promise.allSettled(notifPromises).catch(() => {});
+
+    // WhatsApp Notification
+    const waPhone = parent_phone || phone;
+    if (waPhone) {
+      const waText = `🧾 *PAYMENT RECEIPT*\n\nHi,\nWe have received a payment of *${amtStr}* for ${student_name}${period ? ' for ' + period_label : ''}.\n\n*Receipt No:* ${receipt_no}\n*Mode:* ${modeStr}\n*Date:* ${dateStr}\n\nThank you!\n- ${academy}`;
+      sendWhatsAppMessage(academyId, waPhone, waText).catch(e => console.error("WA Send Error:", e.message));
+    }
 
     res.json({ ...payment, receipt_no });
   } catch (e) {

@@ -178,7 +178,14 @@ async function runMigration() {
       UNIQUE(student_id, date)
     )`, "create attendance");
 
-    // ── tests ───────────────────────────────────────────────────────────────
+    // ── whatsapp_sessions ───────────────────────────────────────────────────
+    await safe(`CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+      academy_id INT PRIMARY KEY REFERENCES academies(id) ON DELETE CASCADE,
+      session_data JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`, "create whatsapp_sessions");
+
+    // ── exams / tests ───────────────────────────────────────────────────────────────
     await safe(`CREATE TABLE IF NOT EXISTS tests (
       id          SERIAL PRIMARY KEY,
       branch_id   INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,

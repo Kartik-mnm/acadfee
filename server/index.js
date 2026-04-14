@@ -62,6 +62,7 @@ app.use("/api/admission",    require("./routes/admission"));
 app.use("/api/upload",       require("./routes/upload"));
 app.use("/api/working-days", require("./routes/working-days"));
 app.use("/api/daily-report", require("./routes/daily-report").router);
+app.use("/api/whatsapp",     require("./routes/whatsapp"));
 app.use("/api/fcm-debug",    require("./routes/fcm-debug"));
 
 // ── Platform routes ────────────────────────────────────────────────────────────
@@ -108,6 +109,10 @@ async function start() {
   initFCM();
   startAbsentCron();
   startKeepAlive();
+  
+  // 4b. Boot WhatsApp sessions asynchronously
+  const { bootSavedSessions } = require("./whatsapp");
+  bootSavedSessions();
 
   // 5. Start listening
   app.listen(PORT, () => {

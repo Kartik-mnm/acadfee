@@ -7,6 +7,7 @@
     "dev": "nodemon index.js"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
@@ -17,6 +18,8 @@
     "firebase-admin": "^13.7.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.11.3",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4",
     "resend": "^3.2.0"
   },
   "devDependencies": {

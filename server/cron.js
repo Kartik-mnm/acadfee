@@ -3,6 +3,7 @@ const db                         = require("./db");
 const { sendNotification }       = require("./fcm");
 const { generateMonthForBranch } = require("./routes/attendance");
 const { fetchDayData }           = require("./routes/daily-report");
+const { sendWhatsAppMessage }    = require("./whatsapp");
 const { Resend }                 = require("resend");
 
 let lastFiredDate = "";
@@ -109,8 +110,8 @@ async function sendAbsentNotifications(todayIST) {
     // students who only tapped entry would be excluded from absent notifications
     // but also have NO attendance credit — the worst of both worlds.
     const { rows: absentStudents } = await db.query(
-      `SELECT s.id, s.name, s.branch_id, s.fcm_token, s.parent_fcm_token,
-              br.name AS branch_name, a.name AS academy_name
+      `SELECT s.id, s.name, s.branch_id, s.fcm_token, s.parent_fcm_token, s.phone, s.parent_phone,
+              br.name AS branch_name, a.name AS academy_name, COALESCE(s.academy_id, br.academy_id) AS academy_id
        FROM students s
        JOIN branches br ON br.id = s.branch_id
        LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, br.academy_id)
@@ -158,6 +159,12 @@ async function sendAbsentNotifications(todayIST) {
           `${student.name} did not attend ${academyName} on ${dateLabel}.`,
           { type: "absent_alert", student_id: String(student.id), date: todayIST }
         );
+      }
+      
+      const phone = student.parent_phone || student.phone;
+      if (phone && student.academy_id) {
+        const text = `⚠️ *ABSENT ALERT*\n\nHi, ${student.name} did not attend ${academyName} on ${dateLabel}. Please contact the administration if you have questions.\n\n- ${academyName}`;
+        await sendWhatsAppMessage(student.academy_id, phone, text);
       }
     }
   } catch (e) {
