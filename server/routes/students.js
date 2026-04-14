@@ -158,6 +158,7 @@ router.post("/", auth, async (req, res) => {
             admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url } = req.body;
     if (!name || !batch_id) return res.status(400).json({ error: "name and batch_id are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
+    if (!bid) return res.status(400).json({ error: "Please select a branch" });
     const aid = req.academyId;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
 

@@ -30,8 +30,9 @@ router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date } = req.body;
-    if (!name) return res.status(400).json({ error: "name is required" });
+    if (!name) return res.status(400).json({ error: "Batch name is required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
+    if (!bid) return res.status(400).json({ error: "Please select a branch" });
     const aid = req.academyId;
 
     if (aid) {

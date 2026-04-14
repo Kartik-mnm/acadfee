@@ -59,9 +59,9 @@ router.post("/", auth, superAdmin, async (req, res) => {
       .substring(0, 4);
 
     const { rows } = await db.query(
-      `INSERT INTO branches (name, address, phone, email, academy_id, roll_prefix)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, address || null, phone || null, email || null, academyId || null, cleanPrefix]
+      `INSERT INTO branches (name, address, phone, academy_id, roll_prefix)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [name, address || null, phone || null, academyId || null, cleanPrefix]
     );
     res.status(201).json(rows[0]);
   } catch (e) {
@@ -81,11 +81,11 @@ router.put("/:id", auth, superAdmin, async (req, res) => {
       .replace(/[^A-Z0-9]/g, "")
       .substring(0, 4);
 
-    const whereExtra = academyId ? "AND academy_id = $7" : "";
-    const params = [name, address || null, phone || null, email || null, cleanPrefix, req.params.id];
+    const whereExtra = academyId ? "AND academy_id = $6" : "";
+    const params = [name, address || null, phone || null, cleanPrefix, req.params.id];
     if (academyId) params.push(academyId);
     const { rows, rowCount } = await db.query(
-      `UPDATE branches SET name=$1, address=$2, phone=$3, email=$4, roll_prefix=$5 WHERE id=$6 ${whereExtra} RETURNING *`,
+      `UPDATE branches SET name=$1, address=$2, phone=$3, roll_prefix=$4 WHERE id=$5 ${whereExtra} RETURNING *`,
       params
     );
     if (rowCount === 0) return res.status(404).json({ error: "Branch not found or access denied" });
