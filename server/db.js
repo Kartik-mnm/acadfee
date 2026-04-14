@@ -1,8 +1,13 @@
 const { Pool } = require("pg");
 
 // ── Connection pool ────────────────────────────────────────────────────────────
+// Supabase pooler (port 6543) runs in transaction mode — does not support
+// server-side prepared statements. We detect the pooler by port and disable them.
+const dbUrl = process.env.DATABASE_URL || "";
+const isSupabasePooler = dbUrl.includes(":6543");
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
   max: 10,
   // FIX: reduce idle timeout so the pool proactively closes stale connections
