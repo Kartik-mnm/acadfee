@@ -32,6 +32,8 @@ export default function IDCards() {
   // Bulk selection
   const [selectedIds,  setSelectedIds]  = useState(new Set());
   const [printLayout,  setPrintLayout]  = useState("vertical"); // 'vertical' or 'horizontal'
+  const [cardWidth,    setCardWidth]    = useState(54);
+  const [cardHeight,   setCardHeight]   = useState(85);
   
   const [loadingPrint, setLoadingPrint] = useState(false);
   const [backfilling,  setBackfilling]  = useState(false);
@@ -112,7 +114,7 @@ export default function IDCards() {
         
         if (printLayout === "vertical") {
             htmlCards += `
-              <div class="card vertical-card">
+              <div class="card printer-card" style="width: ${cardWidth}mm; height: ${cardHeight}mm;">
                 ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
                 <div class="card-top">
                   <div class="academy-name">${academyName.toUpperCase()}</div>
@@ -140,7 +142,7 @@ export default function IDCards() {
         } else {
             // Horizontal layout
             htmlCards += `
-              <div class="card horizontal-card">
+              <div class="card printer-card hz-wrap" style="width: ${cardWidth}mm; height: ${cardHeight}mm;">
                 ${ended ? '<div class="inactive-stamp">INACTIVE</div>' : ""}
                 <div class="hz-left" style="background:${topBg}">
                    <div class="photo-circle hz-photo">${s.photo_url ? `<img src="${s.photo_url}" />` : "👤"}</div>
@@ -178,13 +180,11 @@ export default function IDCards() {
       body { background:white; padding: 0; }
       @page { size: A4; margin: 5mm; }
     }
-    .grid { display: grid; gap: 4mm; justify-content: center; }
-    .grid-vertical { grid-template-columns: repeat(auto-fill, 54mm); }
-    .grid-horizontal { grid-template-columns: repeat(auto-fill, 85mm); }
+    .grid { display: grid; gap: 4mm; justify-content: center; grid-template-columns: repeat(auto-fill, ${cardWidth}mm); }
     
-    .card { background:white; overflow:hidden; position:relative; box-shadow:0 0 0 0.5px #e2e8f0; page-break-inside: avoid; }
-    .vertical-card { width:54mm; height:85mm; border-radius:3mm; display:flex; flex-direction:column; }
-    .horizontal-card { width:85mm; height:54mm; border-radius:3mm; display:flex; flex-direction:row; align-items: stretch; }
+    .card { background:white; overflow:hidden; position:relative; box-shadow:0 0 0 0.5px #e2e8f0; page-break-inside: avoid; border-radius: 3mm; display:flex; margin-bottom: 2mm; }
+    .printer-card { width: ${cardWidth}mm; height: ${cardHeight}mm; flex-direction:column; }
+    .printer-card.hz-wrap { flex-direction:row; align-items: stretch; }
     
     .inactive-stamp { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-30deg); font-size:14pt; font-weight:900; color:rgba(200,0,0,0.25); border:3px solid rgba(200,0,0,0.2); padding:2mm 4mm; border-radius:2mm; white-space:nowrap; pointer-events:none; z-index:20; }
     
@@ -196,7 +196,7 @@ export default function IDCards() {
     .photo-wrap   { display:flex; justify-content:center; margin-top:-8mm; position:relative; z-index:10; }
     .photo-circle { border-radius:50%; background:#e8edf5; border:2px solid white; display:flex; align-items:center; justify-content:center; overflow:hidden; }
     .photo-circle img { width:100%; height:100%; object-fit:cover; }
-    .vertical-card .photo-circle { width:18mm; height:18mm; font-size:16pt; }
+    .printer-card:not(.hz-wrap) .photo-circle { width:18mm; height:18mm; font-size:16pt; }
     .card-body    { padding:0 4mm; text-align:center; flex-grow:1; display:flex; flex-direction:column; justify-content:center; }
     .student-name { font-size:10pt; font-weight:900; color:#0a1628; line-height:1.2; text-transform:uppercase; }
     .student-role { font-size:6pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-top: 1mm; }
@@ -220,7 +220,7 @@ export default function IDCards() {
   </style>
 </head>
 <body>
-  <div class="grid grid-${printLayout}">
+  <div class="grid">
     ${htmlCards}
   </div>
 </body>
@@ -322,24 +322,37 @@ export default function IDCards() {
             <label>Card Orientation Layout</label>
             <div style={{ display: "flex", gap: 12 }}>
                <div 
-                 onClick={() => setPrintLayout("vertical")}
+                 onClick={() => { setPrintLayout("vertical"); setCardWidth(54); setCardHeight(85); }}
                  style={{ flex: 1, border: `2px solid ${printLayout === "vertical" ? "var(--accent)" : "transparent"}`, background: "var(--bg3)", borderRadius: 8, padding: 16, cursor: "pointer", textAlign: "center", position: "relative" }}
                >
                  {printLayout === "vertical" && <div style={{ position: "absolute", top: 8, right: 8, color: "var(--accent)", fontSize: 18 }}>✓</div>}
                  <div style={{ width: 30, height: 45, border: "2px solid var(--text3)", margin: "0 auto 10px", borderRadius: 4 }}></div>
-                 <div style={{ fontWeight: 600, fontSize: 14 }}>Vertical (CR80)</div>
-                 <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>54mm × 85mm standard</div>
+                 <div style={{ fontWeight: 600, fontSize: 14 }}>Vertical</div>
                </div>
                <div 
-                 onClick={() => setPrintLayout("horizontal")}
+                 onClick={() => { setPrintLayout("horizontal"); setCardWidth(85); setCardHeight(54); }}
                  style={{ flex: 1, border: `2px solid ${printLayout === "horizontal" ? "var(--accent)" : "transparent"}`, background: "var(--bg3)", borderRadius: 8, padding: 16, cursor: "pointer", textAlign: "center", position: "relative" }}
                >
                  {printLayout === "horizontal" && <div style={{ position: "absolute", top: 8, right: 8, color: "var(--accent)", fontSize: 18 }}>✓</div>}
                  <div style={{ width: 45, height: 30, border: "2px solid var(--text3)", margin: "8px auto 17px", borderRadius: 4 }}></div>
                  <div style={{ fontWeight: 600, fontSize: 14 }}>Horizontal</div>
-                 <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>85mm × 54mm minimal</div>
                </div>
             </div>
+          </div>
+          
+          <div className="form-group full" style={{ marginBottom: 20 }}>
+            <label>Custom Dimensions (mm)</label>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 4 }}>Width (mm)</span>
+                <input type="number" value={cardWidth} onChange={(e) => setCardWidth(e.target.value)} style={{ width: "100%" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 4 }}>Height (mm)</span>
+                <input type="number" value={cardHeight} onChange={(e) => setCardHeight(e.target.value)} style={{ width: "100%" }} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>Standard is 54mm × 85mm. Adjust to match your PVC/Lanyard sizes.</div>
           </div>
 
           <div style={{ background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, padding: 16, marginBottom: 24 }}>
