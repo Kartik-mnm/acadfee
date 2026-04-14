@@ -214,6 +214,93 @@ async function emailDailyReports(todayIST) {
   }
 }
 
+// ── Nightly database backup ───────────────────────────────────────────────────
+// Exports all critical tables as a JSON file and emails it to BACKUP_EMAIL.
+// Runs at 2:00 AM IST — safely after the 10 PM nightly job completes.
+// Requires RESEND_API_KEY and BACKUP_EMAIL environment variables.
+async function runNightlyBackup(dateStr) {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("[backup] Skipped — RESEND_API_KEY not set");
+    return;
+  }
+  const backupEmail = process.env.BACKUP_EMAIL || "kartik@exponent.app";
+  console.log(`[backup] Starting nightly backup for ${dateStr}...`);
+
+  try {
+    // Tables to back up — in dependency order
+    const tables = [
+      "academies",
+      "branches",
+      "users",
+      "batches",
+      "students",
+      "fee_records",
+      "payments",
+      "expenses",
+      "admission_enquiries",
+      "platform_admins",
+      "platform_revenue",
+    ];
+
+    const backup = { exported_at: new Date().toISOString(), date: dateStr, tables: {} };
+    const summary = [];
+
+    for (const table of tables) {
+      try {
+        const { rows } = await db.query(`SELECT * FROM ${table} ORDER BY id`);
+        backup.tables[table] = rows;
+        summary.push(`${table}: ${rows.length} rows`);
+      } catch (e) {
+        // Table might not exist yet — skip silently
+        backup.tables[table] = [];
+        summary.push(`${table}: skipped (${e.message})`);
+      }
+    }
+
+    const jsonStr    = JSON.stringify(backup, null, 2);
+    const jsonBuffer = Buffer.from(jsonStr, "utf-8");
+    const totalRows  = Object.values(backup.tables).reduce((acc, t) => acc + t.length, 0);
+    const sizeKB     = (jsonBuffer.length / 1024).toFixed(1);
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: "Exponent Backup <noreply@exponentgrow.in>",
+      to:   backupEmail,
+      subject: `🗄️ DB Backup ${dateStr} — ${totalRows} rows, ${sizeKB} KB`,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
+          <div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:20px 24px;border-radius:10px 10px 0 0;">
+            <div style="font-size:18px;font-weight:900;color:#fff;">🗄️ Nightly Database Backup</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:4px;">${dateStr} — Exponent Platform</div>
+          </div>
+          <div style="padding:20px 24px;border:1px solid #eee;border-top:none;border-radius:0 0 10px 10px;">
+            <p style="margin:0 0 12px;color:#333;">
+              Your automated backup is attached as <strong>backup-${dateStr}.json</strong>.
+              To restore, contact your developer with this file.
+            </p>
+            <div style="background:#f5f5ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#444;margin-bottom:16px;">
+              <strong>Summary:</strong><br/>
+              ${summary.map(s => `• ${s}`).join("<br/>")}
+            </div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 16px;font-size:12px;color:#166534;">
+              ✅ Total: <strong>${totalRows} rows</strong> exported &nbsp;|&nbsp; File size: <strong>${sizeKB} KB</strong>
+            </div>
+          </div>
+        </div>`,
+      attachments: [{
+        filename: `backup-${dateStr}.json`,
+        content:  jsonBuffer.toString("base64"),
+      }],
+    });
+
+    console.log(`[backup] ✅ Backup emailed to ${backupEmail} — ${totalRows} rows, ${sizeKB} KB`);
+  } catch (e) {
+    console.error("[backup] Failed:", e.message);
+  }
+}
+
+let lastBackupDate = "";
+
 // ── Main nightly job ───────────────────────────────────────────────────────────────────────────
 async function runNightlyJob() {
   // Calculate IST date using UTC+5:30 arithmetic — reliable across all Node/V8 versions
@@ -229,7 +316,7 @@ async function runNightlyJob() {
   lastFiredDate = todayIST;
 
   const [y, m] = todayIST.split("-").map(Number);
-  console.log(`\n[Cron] \u23f0 Nightly job starting for ${todayIST}`);
+  console.log(`\n[Cron] ⏰ Nightly job starting for ${todayIST}`);
 
   await purgeStaleTokens();               // 1. Clear FCM tokens for logged-out students
   await sendAbsentNotifications(todayIST); // 2. Push absent alerts
@@ -238,19 +325,29 @@ async function runNightlyJob() {
   await backfillStudentAcademyIds();      // 5. Fix any missing academy_id values
   await emailDailyReports(todayIST);      // 6. Email daily summaries to academy owners
 
-  console.log(`[Cron] \u2705 Nightly job complete for ${todayIST}`);
+  console.log(`[Cron] ✅ Nightly job complete for ${todayIST}`);
 }
 
-// ── Start scheduler ───────────────────────────────────────────────────────────────────────────
+// ── Start schedulers ──────────────────────────────────────────────────────────
 function startAbsentCron() {
-  console.log("\u2705 Nightly cron started \u2014 fires at 10:00 PM IST");
+  console.log("✅ Nightly cron started — fires at 10:00 PM IST");
+  console.log("✅ Backup cron started  — fires at 02:00 AM IST");
   setInterval(() => {
     const now     = new Date();
     const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
     const istHour = istDate.getUTCHours();
     const istMin  = istDate.getUTCMinutes();
+    const todayIST = istDate.toISOString().split("T")[0];
+
+    // Nightly job — 10:00 PM IST
     if (istHour === 22 && istMin === 0) runNightlyJob();
+
+    // Backup — 2:00 AM IST (runs once per day)
+    if (istHour === 2 && istMin === 0 && lastBackupDate !== todayIST) {
+      lastBackupDate = todayIST;
+      runNightlyBackup(todayIST);
+    }
   }, 60 * 1000);
 }
 
-module.exports = { startAbsentCron, runNightlyJob, startKeepAlive, backfillStudentAcademyIds };
+module.exports = { startAbsentCron, runNightlyJob, runNightlyBackup, startKeepAlive, backfillStudentAcademyIds };
