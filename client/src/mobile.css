@@ -5,7 +5,6 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@400,0&display=swap');
 
 /* ── Mobile Design Tokens ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
@@ -56,8 +55,6 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    /* Top: header bar height (~64px) + some breathing room */
-    /* Bottom: nav bar height (~72px) + safe area */
     padding: 72px 16px calc(80px + env(safe-area-inset-bottom, 0px)) 16px !important;
     background: var(--mob-bg) !important;
     -webkit-overflow-scrolling: touch;
@@ -137,6 +134,12 @@
   .card::before, .card::after { display: none !important; }
   .card:hover { transform: none !important; box-shadow: var(--mob-shadow) !important; }
 
+  .card-header {
+    border-bottom: 1px solid rgba(255,255,255,0.04) !important;
+    padding-bottom: 12px !important;
+    margin-bottom: 12px !important;
+  }
+
   .card-title {
     font-family: 'Manrope', sans-serif !important;
     font-size: 12px !important;
@@ -189,13 +192,33 @@
   .stat-value.yellow { color: #fbbf24 !important; }
   .stat-value.red    { color: var(--mob-error) !important; }
 
+  /* ── Attendance / score progress bars ───────────────────────────────── */
+  /* Used in Attendance page, Dashboard, Performance */
+  progress,
+  [role="progressbar"],
+  .progress-bar,
+  .attendance-bar {
+    background: var(--mob-surface-top) !important;
+    border-radius: 100px !important;
+    height: 6px !important;
+    overflow: hidden !important;
+    border: none !important;
+  }
+  /* Inner fill */
+  .progress-fill,
+  .attendance-fill {
+    border-radius: 100px !important;
+    height: 100% !important;
+    background: linear-gradient(90deg, var(--mob-primary-dim), var(--mob-primary)) !important;
+    transition: width 0.5s ease !important;
+  }
+
   /* ── Buttons ─────────────────────────────────────────────────────────── */
   .btn {
     border-radius: var(--mob-radius) !important;
     font-family: 'Inter', sans-serif !important;
     font-weight: 600 !important;
     -webkit-tap-highlight-color: transparent;
-    active-transform: scale(0.95);
   }
   .btn:active { transform: scale(0.95) !important; }
 
@@ -224,7 +247,7 @@
   }
   .btn-sm { font-size: 12px !important; padding: 6px 12px !important; }
 
-  /* ── Badges / Status chips ── pill shaped ─────────────────────────── */
+  /* ── Badges / Status chips — pill shaped ─────────────────────────── */
   .badge {
     border-radius: 100px !important;
     font-size: 10px !important;
@@ -234,35 +257,20 @@
     text-transform: uppercase !important;
     letter-spacing: 0.04em !important;
   }
-  .badge-green  {
-    background: var(--mob-sec-cont) !important;
-    color: var(--mob-secondary) !important;
-  }
-  .badge-red {
-    background: var(--mob-err-cont) !important;
-    color: var(--mob-error) !important;
-  }
-  .badge-yellow {
-    background: rgba(255,191,36,0.15) !important;
-    color: #fbbf24 !important;
-  }
-  .badge-blue {
-    background: rgba(155,168,255,0.12) !important;
-    color: var(--mob-primary) !important;
-  }
-  .badge-gray {
-    background: var(--mob-surface-top) !important;
-    color: var(--mob-on-var) !important;
-  }
+  .badge-green  { background: var(--mob-sec-cont) !important;  color: var(--mob-secondary) !important; }
+  .badge-red    { background: var(--mob-err-cont) !important;  color: var(--mob-error) !important; }
+  .badge-yellow { background: rgba(255,191,36,0.15) !important; color: #fbbf24 !important; }
+  .badge-blue   { background: rgba(155,168,255,0.12) !important; color: var(--mob-primary) !important; }
+  .badge-gray   { background: var(--mob-surface-top) !important; color: var(--mob-on-var) !important; }
 
-  /* ── Forms ── surface fill, no borders ────────────────────────────── */
+  /* ── Forms — surface fill, no borders ────────────────────────────── */
   input, select, textarea {
     background: var(--mob-surface-top) !important;
     border: none !important;
     border-radius: var(--mob-radius) !important;
     color: var(--mob-on-surface) !important;
     font-family: 'Inter', sans-serif !important;
-    font-size: 16px !important; /* prevent iOS zoom */
+    font-size: 16px !important; /* prevent iOS auto-zoom */
     padding: 12px 16px !important;
     box-shadow: none !important;
     -webkit-appearance: none;
@@ -297,6 +305,7 @@
     margin-bottom: 16px !important;
     flex-wrap: wrap !important;
     box-shadow: var(--mob-shadow) !important;
+    border: none !important;
   }
   .filters-bar input {
     flex: 1 1 100% !important;
@@ -310,6 +319,13 @@
     min-width: unset !important;
     font-size: 13px !important;
     padding: 10px 14px !important;
+  }
+  /* Search icon inside filters bar */
+  .search-input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23707585' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: 12px center !important;
+    padding-left: 40px !important;
   }
 
   /* ── Tables → card rows ─────────────────────────────────────────────── */
@@ -356,6 +372,34 @@
   td[data-label="Actions"]::before { display: none !important; }
   .gap-row { gap: 6px !important; flex-wrap: wrap !important; }
 
+  /* ── Mono text (receipt numbers etc.) ────────────────────────────────── */
+  .mono {
+    font-family: 'Inter', monospace !important;
+    font-size: 12px !important;
+    color: var(--mob-on-var) !important;
+    letter-spacing: 0.03em !important;
+  }
+
+  /* ── Alert/info boxes ─────────────────────────────────────────────────── */
+  .alert-danger, .error-msg {
+    background: rgba(255,110,132,0.08) !important;
+    border: none !important;
+    border-left: 3px solid var(--mob-error) !important;
+    border-radius: var(--mob-radius) !important;
+    color: var(--mob-error) !important;
+    font-size: 13px !important;
+    padding: 12px 14px !important;
+  }
+  .alert-success {
+    background: rgba(63,255,139,0.08) !important;
+    border: none !important;
+    border-left: 3px solid var(--mob-secondary) !important;
+    border-radius: var(--mob-radius) !important;
+    color: var(--mob-secondary) !important;
+    font-size: 13px !important;
+    padding: 12px 14px !important;
+  }
+
   /* ── Modal — bottom sheet ─────────────────────────────────────────────── */
   .modal-overlay {
     align-items: flex-end !important;
@@ -375,13 +419,23 @@
     animation: slideUpMob 0.3s cubic-bezier(0.34,1.2,0.64,1) !important;
     scrollbar-width: none !important;
   }
+  /* Drag handle on modal top */
+  .modal::before {
+    content: '' !important;
+    display: block !important;
+    width: 36px !important;
+    height: 4px !important;
+    background: rgba(255,255,255,0.15) !important;
+    border-radius: 100px !important;
+    margin: 12px auto 0 !important;
+  }
   .modal::-webkit-scrollbar { display: none !important; }
   @keyframes slideUpMob {
     from { opacity: 0; transform: translateY(100%); }
     to   { opacity: 1; transform: translateY(0); }
   }
   .modal-header {
-    padding: 20px 20px 14px !important;
+    padding: 16px 20px 14px !important;
     border-bottom: 1px solid rgba(255,255,255,0.04) !important;
   }
   .modal-title {
@@ -397,6 +451,9 @@
     width: 32px !important;
     height: 32px !important;
     color: var(--mob-on-var) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
   .modal-body { padding: 16px 20px !important; }
   .modal-footer {
@@ -432,9 +489,7 @@
     border: none !important;
     box-shadow: none !important;
   }
-  .nav-item.active::before {
-    background: var(--mob-primary) !important;
-  }
+  .nav-item.active::before { background: var(--mob-primary) !important; }
   .sidebar-footer {
     border-top: 1px solid rgba(255,255,255,0.04) !important;
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
@@ -466,6 +521,7 @@
   .loading {
     padding: 48px 24px !important;
     color: var(--mob-on-var) !important;
+    text-align: center !important;
   }
   .loading::before {
     border-color: var(--mob-surface-top) !important;
@@ -477,10 +533,18 @@
   .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
 
   /* ── Student link ─────────────────────────────────────────────────────── */
-  .student-link { color: var(--mob-primary) !important; }
+  .student-link {
+    color: var(--mob-primary) !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+  }
 
   /* ── Divider ─────────────────────────────────────────────────────────── */
   .divider { border-color: rgba(255,255,255,0.04) !important; }
+
+  /* ── Text colour helpers ──────────────────────────────────────────────── */
+  .text-muted { color: var(--mob-on-var) !important; }
+  .text-sm    { font-size: 12px !important; }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -501,11 +565,14 @@
     z-index: 1900 !important;
     align-items: center !important;
     justify-content: space-around !important;
-    background: rgba(8,14,26,0.85) !important;
+    /* Glassmorphism — matches zip design exactly */
+    background: rgba(8,14,26,0.75) !important;
     backdrop-filter: blur(20px) saturate(180%) !important;
     -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
     border-top: 1px solid rgba(255,255,255,0.05) !important;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px)) 8px !important;
+    /* Rounded top corners like in the zip designs */
+    border-radius: 24px 24px 0 0 !important;
+    padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px)) 8px !important;
     box-shadow: 0 -8px 24px rgba(61,90,254,0.08) !important;
   }
 
@@ -522,6 +589,7 @@
     border-radius: 14px !important;
     cursor: pointer !important;
     color: #a5abbb !important;
+    font-size: 10px !important;
     transition: all 0.2s ease !important;
     -webkit-tap-highlight-color: transparent !important;
     min-width: 0 !important;
@@ -548,16 +616,15 @@
     line-height: 1 !important;
   }
 
-  /* Hamburger hides its icon text — only shows academy name in mobile header */
+  /* Hamburger icon text hidden — mobile header is custom rendered */
   .hamburger-icon-text { display: none !important; }
 }
 
 /* ══════════════════════════════════════════════════════
-   MOBILE HEADER CONTENT INJECTION
-   The hamburger button becomes the full top app bar
+   MOBILE HEADER + SIDEBAR OVERLAY
    ══════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
-  /* Make sure the sidebar overlay covers everything */
+  /* Sidebar overlay dims the content behind the open drawer */
   .sidebar-overlay.open {
     display: block !important;
     background: rgba(8,14,26,0.7) !important;
@@ -574,7 +641,7 @@
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   @media (max-width: 768px) {
     .mobile-bottom-nav {
-      padding-bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
     }
     .main-content {
       padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
