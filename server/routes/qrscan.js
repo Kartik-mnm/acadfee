@@ -3,6 +3,7 @@ const db      = require("../db");
 const { auth, getJwtSecret } = require("../middleware");
 const jwt     = require("jsonwebtoken");
 const { sendAttendanceNotification } = require("../fcm");
+const { sendWhatsAppMessage }        = require("../whatsapp");
 
 const toIST = (date) => new Date(date).toLocaleTimeString("en-IN", {
   timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
@@ -68,7 +69,6 @@ router.post("/tokens/bulk", auth, async (req, res) => {
     if (!Array.isArray(student_ids) || student_ids.length === 0) return res.status(400).json({ error: "No students provided" });
 
     const aid = req.academyId;
-    // ensure the students belong to the academy correctly
     const { rows } = await db.query(
       `SELECT s.id, s.name, s.branch_id, COALESCE(s.academy_id, br.academy_id) AS academy_id,
               LOWER(s.status) AS status, b.end_date AS batch_end_date
@@ -82,10 +82,9 @@ router.post("/tokens/bulk", auth, async (req, res) => {
     const tokens = {};
     for (const student of rows) {
       if (aid && student.academy_id !== aid) continue;
-      
       const isInactive = student.status !== "active";
       const batchEnded = student.batch_end_date && new Date(student.batch_end_date) < new Date();
-      if (isInactive || batchEnded) continue; // Skip tokens for inactive
+      if (isInactive || batchEnded) continue;
 
       const token = jwt.sign(
         {
@@ -114,8 +113,7 @@ router.post("/register-token", auth, async (req, res) => {
       return res.status(400).json({ error: "Invalid request" });
     if (req.user.role === "student" && req.user.id !== parseInt(student_id))
       return res.status(403).json({ error: "Cannot register token for another student" });
-    
-    // Verify academy ownership for branch managers / admins
+
     const aid = req.academyId;
     if (aid) {
       const { rows } = await db.query(
@@ -197,12 +195,13 @@ router.post("/scan", auth, async (req, res) => {
       }
     }
 
-    // Fetch student + academy name in one query
+    // Fetch student + academy name + parent_phone in one query
     const { rows: sRows } = await db.query(
-      `SELECT s.name, s.phone, LOWER(s.status) AS status,
+      `SELECT s.name, s.phone, s.parent_phone, LOWER(s.status) AS status,
               s.fcm_token, s.parent_fcm_token,
               b.name AS batch_name, b.end_date AS batch_end_date,
               br.name AS branch_name,
+              a.id   AS academy_id,
               a.name AS academy_name
        FROM students s
        LEFT JOIN batches b ON b.id = s.batch_id
@@ -281,21 +280,45 @@ router.post("/scan", auth, async (req, res) => {
       });
     }
 
-    // FIX: pass academy_name so notifications say the correct academy name
+    const timeIST = toIST(now);
+
+    // 1. FCM push notification (student + parent app)
     sendAttendanceNotification({
       studentName:  student.name,
       scanType,
       time:         now,
-      timeIST:      toIST(now),
+      timeIST,
       studentToken: student.fcm_token,
       parentToken:  student.parent_fcm_token,
-      academyName:  student.academy_name,  // <-- now dynamic
+      academyName:  student.academy_name,
     }).catch(console.error);
+
+    // 2. WhatsApp message to parent's phone
+    if (student.parent_phone && student.academy_id) {
+      const isEntry = scanType === "entry";
+      const dateStr = new Date().toLocaleDateString("en-IN", {
+        day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata"
+      });
+      const waMsg = isEntry
+        ? `*Attendance Notification*\n\nYour child *${student.name}* has *arrived* at *${student.academy_name}*.\n\n` +
+          `*Time:* ${timeIST}\n*Date:* ${dateStr}\n*Branch:* ${student.branch_name}\n\n` +
+          `_This is an automated message from Exponent Platform._`
+        : `*Attendance Notification*\n\nYour child *${student.name}* has *left* *${student.academy_name}*.\n\n` +
+          `*Time:* ${timeIST}\n*Date:* ${dateStr}\n*Branch:* ${student.branch_name}\n\n` +
+          `_This is an automated message from Exponent Platform._`;
+
+      sendWhatsAppMessage(student.academy_id, student.parent_phone, waMsg)
+        .then(sent => {
+          if (sent) console.log(`[WA] Sent ${scanType} notification for ${student.name} to parent`);
+          else      console.log(`[WA] Parent phone not on WhatsApp or session not ready for ${student.name}`);
+        })
+        .catch(e => console.error(`[WA] Error sending attendance message:`, e.message));
+    }
 
     res.json({
       success: true, scan_type: scanType, student_id,
       student_name: student.name, batch: student.batch_name, branch: student.branch_name,
-      time: now, time_ist: toIST(now), scan: result,
+      time: now, time_ist: timeIST, scan: result,
       is_working_day: isWorkingDay, holiday_note: holidayNote,
     });
   } catch (e) {
