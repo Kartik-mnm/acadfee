@@ -42,6 +42,15 @@ const NAV_ICONS = {
   settings:    "⚙",
 };
 
+// Bottom nav tab definitions — 4 main tabs + "More" to open the full sidebar
+const BOTTOM_NAV_TABS = [
+  { id: "dashboard",  label: "Home",      emoji: "🏠" },
+  { id: "students",   label: "Students",  emoji: "👤" },
+  { id: "fees",       label: "Fees",      emoji: "💳" },
+  { id: "attendance", label: "Attendance",emoji: "✅" },
+  { id: "__more__",   label: "More",      emoji: "☰" },
+];
+
 // ── Upgrade Contact Modal ────────────────────────────────────────────────
 function UpgradeModal({ onClose }) {
   return (
@@ -63,7 +72,6 @@ function UpgradeModal({ onClose }) {
         width: "100%",
         position: "relative",
       }}>
-        {/* Close */}
         <button
           onClick={onClose}
           style={{
@@ -73,21 +81,17 @@ function UpgradeModal({ onClose }) {
           }}
         >✕</button>
 
-        {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>🚀</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text1)", marginBottom: 4 }}>
             Upgrade Your Plan
           </div>
           <div style={{ fontSize: 13, color: "var(--text3)", lineHeight: 1.6 }}>
-            Reach out to us and we’ll get you upgraded within minutes.
+            Reach out to us and we'll get you upgraded within minutes.
           </div>
         </div>
 
-        {/* Contact options */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-          {/* WhatsApp */}
           <a
             href="https://wa.me/918956419453?text=Hi%20Kartik%2C%20I%20want%20to%20upgrade%20my%20Exponent%20academy%20plan."
             target="_blank"
@@ -98,7 +102,6 @@ function UpgradeModal({ onClose }) {
               background: "rgba(37,211,102,0.1)",
               border: "1px solid rgba(37,211,102,0.3)",
               borderRadius: 12, textDecoration: "none",
-              transition: "background 0.15s",
             }}
           >
             <span style={{ fontSize: 28 }}>💬</span>
@@ -108,7 +111,6 @@ function UpgradeModal({ onClose }) {
             </div>
           </a>
 
-          {/* Call */}
           <a
             href="tel:+918956419453"
             style={{
@@ -126,7 +128,6 @@ function UpgradeModal({ onClose }) {
             </div>
           </a>
 
-          {/* Email */}
           <a
             href="mailto:aspirantth@gmail.com?subject=Upgrade%20Request%20%E2%80%94%20Exponent%20Plan&body=Hi%20Kartik%2C%0A%0AI%20would%20like%20to%20upgrade%20my%20academy%20plan.%0A%0AThank%20you."
             style={{
@@ -199,6 +200,14 @@ function Layout() {
   const [theme, setTheme]             = useState(() => localStorage.getItem("theme") || "dark");
   const [showUpgrade, setShowUpgrade] = useState(false);
   const mainRef = useRef(null);
+
+  // Detect mobile (≤768px) — used to show bottom nav
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   useEffect(() => {
     document.body.classList.toggle("light", theme === "light");
@@ -281,10 +290,25 @@ function Layout() {
   const brandTitle   = academyWords[0].toUpperCase();
   const brandSub     = academyWords.slice(1).join(" ") || "Portal";
 
+  // Filter bottom nav tabs to only show ones the user has access to
+  const visibleNavIds = new Set(nav.map(n => n.id));
+  const bottomTabs = BOTTOM_NAV_TABS.filter(t =>
+    t.id === "__more__" || visibleNavIds.has(t.id)
+  );
+
+  const handleBottomTab = (tabId) => {
+    if (tabId === "__more__") {
+      setSidebarOpen(true);
+    } else {
+      goTo(tabId);
+    }
+  };
+
   return (
     <div className="app-shell">
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
 
+      {/* Hamburger — only shown on desktop (hidden on mobile by mobile.css) */}
       <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
         {sidebarOpen ? "✕" : "☰"}
       </button>
@@ -356,6 +380,26 @@ function Layout() {
           <Page onNavigate={goTo} />
         </ErrorBoundary>
       </main>
+
+      {/* ── Mobile Bottom Navigation Bar ─────────────────────────────────────
+          Only visible on mobile (≤768px) via mobile.css.
+          Shows 4 quick-access tabs + "More" to open the full sidebar.     */}
+      <nav className="mobile-bottom-nav" aria-label="Bottom navigation">
+        {bottomTabs.map((tab) => {
+          const isActive = tab.id !== "__more__" && page === tab.id;
+          return (
+            <button
+              key={tab.id}
+              className={`mobile-bottom-nav-item ${isActive ? "active" : ""}`}
+              onClick={() => handleBottomTab(tab.id)}
+              aria-label={tab.label}
+            >
+              <span className="mobile-bottom-nav-icon">{tab.emoji}</span>
+              <span className="mobile-bottom-nav-label">{tab.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
