@@ -10,6 +10,16 @@ const EMPTY = {
   due_day: "10", batch_id: "", branch_id: "", status: "active", photo_url: ""
 };
 
+function useIsMobile() {
+  const [mob, setMob] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setMob(window.innerWidth <= 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+  return mob;
+}
+
 function PhotoUpload({ value, onChange }) {
   const inputRef = useRef();
   const [uploading, setUploading] = useState(false);
@@ -29,14 +39,13 @@ function PhotoUpload({ value, onChange }) {
       const base64 = e.target.result;
       setPreview(base64);
       try {
-        // /upload/platform works without auth and uploads to Cloudinary
         const { data } = await API.post("/upload/platform", { image: base64 });
         setPreview(data.url);
         onChange(data.url);
       } catch (err) {
         const msg = err?.response?.data?.error || err?.message || "Upload failed";
-        setUploadErr("⚠ Upload failed: " + msg);
-        onChange(base64); // keep local base64 as fallback
+        setUploadErr("\u26a0 Upload failed: " + msg);
+        onChange(base64);
       } finally {
         setUploading(false);
       }
@@ -58,7 +67,7 @@ function PhotoUpload({ value, onChange }) {
       >
         {preview
           ? <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <span style={{ fontSize: 28, color: "#fff" }}>👤</span>}
+          : <span style={{ fontSize: 28, color: "#fff" }}>\ud83d\udc64</span>}
         {uploading && (
           <div style={{
             position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)",
@@ -124,11 +133,105 @@ function AvatarCircle({ photoUrl, name, size = 36 }) {
     <div style={{
       width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0,
       background: "linear-gradient(135deg,#3b82f6,#06b6d4)",
-      display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.5,
+      display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4,
     }}>
       {photoUrl
         ? <img src={photoUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        : <span style={{ color: "#fff" }}>👤</span>}
+        : <span style={{ color: "#fff", fontWeight: 700, fontSize: size * 0.38 }}>
+            {name?.split(" ").map(w => w[0]).join("").substring(0,2).toUpperCase() || "\ud83d\udc64"}
+          </span>}
+    </div>
+  );
+}
+
+// ── Luminescent-style mobile student card (matches zip design exactly) ────────────────
+function StudentCardMobile({ s, i, page, LIMIT, user, onProfile, onEdit, onPortal, onDevices, onEmail, onDelete }) {
+  const isActive = s.status === "active";
+  return (
+    <div style={{
+      background: "#0d1321",
+      borderRadius: 16,
+      overflow: "hidden",
+      marginBottom: 12,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+    }}>
+      {/* Inner card */}
+      <div style={{ background: "#182030", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 0 }}>
+        {/* Top: avatar + name + status */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <AvatarCircle photoUrl={s.photo_url} name={s.name} size={56} />
+            <div>
+              <div
+                style={{ fontFamily: "Manrope, sans-serif", fontSize: 16, fontWeight: 700, color: "#e6ebfc", cursor: "pointer" }}
+                onClick={() => onProfile(s.id)}
+              >{s.name}</div>
+              <div style={{ fontSize: 12, color: "#a5abbb", marginTop: 2 }}>{s.email || s.phone || ""}</div>
+            </div>
+          </div>
+          <span style={{
+            background: isActive ? "#006d35" : "#a70138",
+            color: isActive ? "#3fff8b" : "#ff6e84",
+            fontSize: 10, fontWeight: 700, padding: "4px 12px",
+            borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.05em",
+            whiteSpace: "nowrap", flexShrink: 0, marginLeft: 8,
+          }}>{s.status || "active"}</span>
+        </div>
+
+        {/* Course + Branch rows */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16 }}>\ud83c\udf93</span>
+            <span style={{ fontSize: 13, color: "#a5abbb" }}>
+              Course: <span style={{ color: "#e6ebfc", fontWeight: 600 }}>{s.batch_name || "—"}</span>
+            </span>
+          </div>
+          {user.role === "super_admin" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 16 }}>\ud83d\udccd</span>
+              <span style={{ fontSize: 13, color: "#a5abbb" }}>
+                Branch: <span style={{ color: "#e6ebfc", fontWeight: 600 }}>{s.branch_name || "—"}</span>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons row */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8,
+          paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.05)"
+        }}>
+          {[
+            { label: "\u270f", title: "Edit", fn: () => onEdit(s), color: "#9ba8ff" },
+            { label: "\u2139", title: "Profile", fn: () => onProfile(s.id), color: "#9ba8ff" },
+            { label: "\ud83c\udf93", title: "Portal", fn: () => onPortal(s), color: "#3fff8b" },
+            { label: "\ud83d���", title: "Email", fn: () => onEmail(s), color: "#3fff8b" },
+            { label: "\ud83d\uddd1", title: "Delete", fn: () => onDelete(s.id), color: "#ff6e84" },
+          ].map((btn) => (
+            <button
+              key={btn.title}
+              title={btn.title}
+              onClick={btn.fn}
+              style={{
+                background: "#1d2637",
+                border: "none",
+                borderRadius: "50%",
+                width: 40, height: 40,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 17,
+                cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+                transition: "transform 0.15s",
+                margin: "0 auto",
+              }}
+              onTouchStart={e => e.currentTarget.style.transform = "scale(0.88)"}
+              onTouchEnd={e => e.currentTarget.style.transform = "scale(1)"}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -146,7 +249,7 @@ function DeviceSessionsModal({ student, onClose }) {
     try {
       const { data } = await API.get(`/auth/student-sessions/${student.id}`);
       setSessions(data.sessions); setDeviceLimit(data.device_limit); setNewLimit(data.device_limit);
-    } catch (e) { setMsg("⚠ " + (e.response?.data?.error || "Failed to load")); }
+    } catch (e) { setMsg("\u26a0 " + (e.response?.data?.error || "Failed to load")); }
     finally { setLoading(false); }
   };
 
@@ -154,20 +257,20 @@ function DeviceSessionsModal({ student, onClose }) {
 
   const revokeSession = async (tokenId) => {
     if (!window.confirm("Remove this device? The student will be logged out on that device.")) return;
-    try { await API.delete(`/auth/student-sessions/${tokenId}`); setMsg("✅ Device removed"); load(); }
-    catch { setMsg("⚠ Failed to remove"); }
+    try { await API.delete(`/auth/student-sessions/${tokenId}`); setMsg("\u2705 Device removed"); load(); }
+    catch { setMsg("\u26a0 Failed to remove"); }
   };
 
   const revokeAll = async () => {
     if (!window.confirm(`Log out ${student.name} from ALL devices?`)) return;
-    try { const { data } = await API.delete(`/auth/student-sessions-all/${student.id}`); setMsg(`✅ Revoked ${data.revoked} session(s)`); load(); }
-    catch { setMsg("⚠ Failed"); }
+    try { const { data } = await API.delete(`/auth/student-sessions-all/${student.id}`); setMsg(`\u2705 Revoked ${data.revoked} session(s)`); load(); }
+    catch { setMsg("\u26a0 Failed"); }
   };
 
   const updateLimit = async () => {
     setSavingLimit(true);
-    try { await API.patch(`/auth/student-device-limit/${student.id}`, { limit: parseInt(newLimit) }); setDeviceLimit(parseInt(newLimit)); setMsg(`✅ Limit updated to ${newLimit}`); }
-    catch { setMsg("⚠ Failed to update limit"); }
+    try { await API.patch(`/auth/student-device-limit/${student.id}`, { limit: parseInt(newLimit) }); setDeviceLimit(parseInt(newLimit)); setMsg(`\u2705 Limit updated to ${newLimit}`); }
+    catch { setMsg("\u26a0 Failed to update limit"); }
     finally { setSavingLimit(false); setTimeout(() => setMsg(""), 3000); }
   };
 
@@ -177,7 +280,7 @@ function DeviceSessionsModal({ student, onClose }) {
     <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
-          <div className="modal-title">📱 Device Sessions &mdash; {student.name}</div>
+          <div className="modal-title">\ud83d\udcf1 Device Sessions &mdash; {student.name}</div>
           <button className="modal-close" onClick={onClose}>&times;</button>
         </div>
         <div className="modal-body">
@@ -220,6 +323,7 @@ function DeviceSessionsModal({ student, onClose }) {
 
 export default function Students() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [students,       setStudents]       = useState([]);
   const [batches,        setBatches]        = useState([]);
   const [branches,       setBranches]       = useState([]);
@@ -312,16 +416,16 @@ export default function Students() {
   const sendEmail = async (s) => {
     if (!s.email) { alert("This student has no email address!"); return; }
     if (!window.confirm(`Send fee summary email to ${s.name} at ${s.email}?`)) return;
-    try { await API.post(`/students/${s.id}/send-email`); alert(`✅ Email sent to ${s.email}!`); }
-    catch (e) { alert("⚠ Failed: " + (e.response?.data?.error || e.message)); }
+    try { await API.post(`/students/${s.id}/send-email`); alert(`\u2705 Email sent to ${s.email}!`); }
+    catch (e) { alert("\u26a0 Failed: " + (e.response?.data?.error || e.message)); }
   };
 
   const savePortal = async () => {
-    if (!portalPassword || portalPassword.length < 4) { setPortalMsg("⚠ Password must be at least 4 characters"); return; }
+    if (!portalPassword || portalPassword.length < 4) { setPortalMsg("\u26a0 Password must be at least 4 characters"); return; }
     try {
       await API.post("/auth/set-student-password", { student_id: portalStudent.id, password: portalPassword });
-      setPortalMsg("✅ Portal password set!"); setPortalPassword("");
-    } catch (e) { setPortalMsg("⚠ Failed to set password"); }
+      setPortalMsg("\u2705 Portal password set!"); setPortalPassword("");
+    } catch (e) { setPortalMsg("\u26a0 Failed to set password"); }
   };
 
   if (profileId) return <StudentProfile studentId={profileId} onBack={() => setProfileId(null)} />;
@@ -336,6 +440,7 @@ export default function Students() {
         <button className="btn btn-primary" onClick={openAdd}>+ Add Student</button>
       </div>
 
+      {/* Filters */}
       <div className="filters-bar">
         <input className="search-input" placeholder="Search by name / phone / roll no / email..."
           value={search} onChange={(e) => handleSearch(e.target.value)} />
@@ -352,57 +457,90 @@ export default function Students() {
         </select>
       </div>
 
-      <div className="card">
-        {loading ? (
-          <div className="loading">Loading students...</div>
-        ) : students.length === 0 ? (
+      {loading ? (
+        <div className="loading">Loading students...</div>
+      ) : students.length === 0 ? (
+        <div className="card">
           <div className="empty-state">
-            <div className="empty-icon">👤</div>
+            <div className="empty-icon">\ud83d\udc64</div>
             <div className="empty-text">No students found</div>
             {search && <div className="empty-sub">Try a different search term</div>}
           </div>
-        ) : (
-          <>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th><th>Photo</th><th>Name</th><th>Batch</th>
-                    {user.role === "super_admin" && <th>Branch</th>}
-                    <th>Phone</th><th>Status</th><th>Actions</th>
+        </div>
+      ) : isMobile ? (
+        // ── MOBILE: Luminescent card layout (matches zip design exactly) ──
+        <div>
+          {students.map((s, i) => (
+            <StudentCardMobile
+              key={s.id}
+              s={s} i={i} page={page} LIMIT={LIMIT} user={user}
+              onProfile={setProfileId}
+              onEdit={openEdit}
+              onPortal={openPortal}
+              onDevices={setDevicesStudent}
+              onEmail={sendEmail}
+              onDelete={del}
+            />
+          ))}
+          {/* Add new student CTA card */}
+          <div
+            onClick={openAdd}
+            style={{
+              background: "#0d1321", borderRadius: 16, marginBottom: 12,
+              border: "2px dashed rgba(155,168,255,0.25)",
+              padding: 24, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 8,
+              cursor: "pointer", color: "#a5abbb",
+            }}
+          >
+            <span style={{ fontSize: 32 }}>\ud83d\udc64</span>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#e6ebfc" }}>Add New Student</div>
+            <div style={{ fontSize: 12, color: "#a5abbb" }}>Expand your academy</div>
+          </div>
+          <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPage={handlePage} />
+        </div>
+      ) : (
+        // ── DESKTOP: original table layout ──
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th><th>Photo</th><th>Name</th><th>Batch</th>
+                  {user.role === "super_admin" && <th>Branch</th>}
+                  <th>Phone</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((s, i) => (
+                  <tr key={s.id}>
+                    <td className="text-muted">{((page-1)*LIMIT)+i+1}</td>
+                    <td><AvatarCircle photoUrl={s.photo_url} name={s.name} size={36} /></td>
+                    <td>
+                      <div className="student-link" onClick={() => setProfileId(s.id)}>{s.name}</div>
+                      <div className="text-muted text-sm">{s.email}</div>
+                    </td>
+                    <td>{s.batch_name || <span className="text-muted">--</span>}</td>
+                    {user.role === "super_admin" && <td>{s.branch_name}</td>}
+                    <td className="mono">{s.phone}</td>
+                    <td><span className={`badge ${s.status==="active" ? "badge-green" : "badge-gray"}`}>{s.status}</span></td>
+                    <td>
+                      <div className="gap-row">
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                        <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Portal Password">\ud83c\udf93</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setDevicesStudent(s)} title="Device Sessions">\ud83d\udcf1</button>
+                        <button className="btn btn-success btn-sm" onClick={() => sendEmail(s)} title="Send Email">\ud83d���</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {students.map((s, i) => (
-                    <tr key={s.id}>
-                      <td className="text-muted">{((page-1)*LIMIT)+i+1}</td>
-                      <td><AvatarCircle photoUrl={s.photo_url} name={s.name} size={36} /></td>
-                      <td>
-                        <div className="student-link" onClick={() => setProfileId(s.id)}>{s.name}</div>
-                        <div className="text-muted text-sm">{s.email}</div>
-                      </td>
-                      <td>{s.batch_name || <span className="text-muted">--</span>}</td>
-                      {user.role === "super_admin" && <td>{s.branch_name}</td>}
-                      <td className="mono">{s.phone}</td>
-                      <td><span className={`badge ${s.status==="active" ? "badge-green" : "badge-gray"}`}>{s.status}</span></td>
-                      <td>
-                        <div className="gap-row">
-                          <button className="btn btn-secondary btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                          <button className="btn btn-success btn-sm" onClick={() => openPortal(s)} title="Portal Password">🎓</button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setDevicesStudent(s)} title="Device Sessions">📱</button>
-                          <button className="btn btn-success btn-sm" onClick={() => sendEmail(s)} title="Send Email">📧</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => del(s.id)}>Del</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPage={handlePage} />
-          </>
-        )}
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPage={handlePage} />
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget && setShowModal(false)}>
@@ -463,7 +601,7 @@ export default function Students() {
                   </div>
                 )}
               </div>
-              {error && <div className="error-msg" style={{ marginTop: 12 }}>⚠ {error}</div>}
+              {error && <div className="error-msg" style={{ marginTop: 12 }}>\u26a0 {error}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
@@ -479,7 +617,7 @@ export default function Students() {
         <div className="modal-overlay" onClick={(e) => e.target===e.currentTarget && setPortalStudent(null)}>
           <div className="modal" style={{ maxWidth: 400 }}>
             <div className="modal-header">
-              <div className="modal-title">🎓 Student Portal Access</div>
+              <div className="modal-title">\ud83c\udf93 Student Portal Access</div>
               <button className="modal-close" onClick={() => setPortalStudent(null)}>&times;</button>
             </div>
             <div className="modal-body">
