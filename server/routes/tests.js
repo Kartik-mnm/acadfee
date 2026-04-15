@@ -5,28 +5,64 @@ const { auth, branchFilter } = require("../middleware");
 // Ensure tests and test_results tables exist with all needed columns
 async function ensureTestsTables() {
   try {
+    // Create tables if they don't exist (new DB)
     await db.query(`CREATE TABLE IF NOT EXISTS tests (
       id SERIAL PRIMARY KEY,
-      branch_id INT REFERENCES branches(id) ON DELETE CASCADE,
-      batch_id  INT REFERENCES batches(id)  ON DELETE SET NULL,
-      name      TEXT NOT NULL,
-      subject   TEXT,
+      branch_id   INT REFERENCES branches(id) ON DELETE CASCADE,
+      batch_id    INT REFERENCES batches(id)  ON DELETE SET NULL,
+      name        TEXT NOT NULL,
+      subject     TEXT,
       total_marks NUMERIC NOT NULL DEFAULT 100,
-      test_date DATE NOT NULL DEFAULT CURRENT_DATE,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      test_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
     )`);
+
     await db.query(`CREATE TABLE IF NOT EXISTS test_results (
-      id SERIAL PRIMARY KEY,
+      id         SERIAL PRIMARY KEY,
       test_id    INT NOT NULL REFERENCES tests(id)    ON DELETE CASCADE,
       student_id INT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
       marks      NUMERIC,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(test_id, student_id)
     )`);
-    // Add any missing columns to existing tables
+
+    // FIX: Some old DBs were created with a "title" NOT NULL column instead of "name".
+    // This caused "null value in column title violates not-null constraint" on every INSERT.
+    // Strategy:
+    //   1. If "title" column exists and "name" does NOT → rename title → name
+    //   2. If "title" column exists and "name" also exists → drop the NOT NULL on title
+    //   3. Always ensure "name" column exists as TEXT
+
+    // Check which columns exist
+    const { rows: cols } = await db.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'tests' AND column_name IN ('title', 'name')
+    `);
+    const colNames = cols.map(r => r.column_name);
+    const hasTitle = colNames.includes("title");
+    const hasName  = colNames.includes("name");
+
+    if (hasTitle && !hasName) {
+      // Old schema: rename title → name
+      console.log("[tests] Migrating: renaming 'title' column to 'name'");
+      await db.query(`ALTER TABLE tests RENAME COLUMN title TO name`);
+    } else if (hasTitle && hasName) {
+      // Both exist — drop NOT NULL on title so INSERTs don't fail
+      console.log("[tests] Migrating: dropping NOT NULL constraint from 'title'");
+      await db.query(`ALTER TABLE tests ALTER COLUMN title DROP NOT NULL`);
+    } else if (!hasName) {
+      // Neither exists — add name column
+      await db.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS name TEXT`);
+      // Set a default for existing rows
+      await db.query(`UPDATE tests SET name = 'Unnamed Test' WHERE name IS NULL`);
+      await db.query(`ALTER TABLE tests ALTER COLUMN name SET NOT NULL`);
+    }
+
+    // Add any other missing columns to existing tables
     for (const col of ["subject TEXT", "batch_id INT", "branch_id INT"]) {
       await db.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS ${col}`).catch(() => {});
     }
+
   } catch (e) {
     console.error("[tests] table ensure error:", e.message);
   }
@@ -36,19 +72,15 @@ ensureTestsTables();
 // Normalize date to YYYY-MM-DD — handles both YYYY-MM-DD and DD-MM-YYYY
 function normalizeDate(raw) {
   if (!raw) return new Date().toISOString().split("T")[0];
-  // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  // DD-MM-YYYY → YYYY-MM-DD
   if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
     const [d, m, y] = raw.split("-");
     return `${y}-${m}-${d}`;
   }
-  // DD/MM/YYYY → YYYY-MM-DD
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
     const [d, m, y] = raw.split("/");
     return `${y}-${m}-${d}`;
   }
-  // fallback — let Postgres try to parse it
   return raw;
 }
 
@@ -103,7 +135,6 @@ router.post("/", auth, async (req, res) => {
       if (!brRows[0]) return res.status(403).json({ error: "Branch does not belong to your academy" });
     }
 
-    // Normalize date — handles DD-MM-YYYY from Indian locale browsers
     const safeDate = normalizeDate(test_date);
 
     const { rows } = await db.query(
