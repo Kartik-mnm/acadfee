@@ -16,7 +16,7 @@ function Field({ label, children, hint }) {
   );
 }
 
-function ImageUploader({ label, currentUrl, onUploaded }) {
+function ImageUploader({ label, currentUrl, onUploaded, isMobile }) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(currentUrl || null);
   const [error, setError] = useState("");
@@ -54,7 +54,7 @@ function ImageUploader({ label, currentUrl, onUploaded }) {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: 16 }}>
       <div style={{
         width: 64, height: 64, borderRadius: 12, overflow: "hidden",
         background: "var(--bg3)", border: "1px solid var(--border)",
@@ -168,6 +168,13 @@ export default function AcademySettings() {
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState("");
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   // Apply favicon from DB whenever it changes
   useEffect(() => {
@@ -220,16 +227,16 @@ export default function AcademySettings() {
           <input value={form.tagline} onChange={e => set("tagline", e.target.value)} placeholder="e.g. Excellence in Education" />
         </Field>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
           <Field label="Logo" hint="Shown in sidebar. Upload PNG or SVG.">
-            <ImageUploader label="Logo" currentUrl={form.logo_url} onUploaded={url => set("logo_url", url)} />
+            <ImageUploader label="Logo" currentUrl={form.logo_url} onUploaded={url => set("logo_url", url)} isMobile={isMobile} />
           </Field>
-          <Field label="Favicon" hint="Browser tab icon. Saved to DB — works on all browsers/devices.">
-            <ImageUploader label="Favicon" currentUrl={form.favicon_url} onUploaded={url => set("favicon_url", url)} />
+          <Field label="Favicon" hint="Browser tab icon.">
+            <ImageUploader label="Favicon" currentUrl={form.favicon_url} onUploaded={url => set("favicon_url", url)} isMobile={isMobile} />
           </Field>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
           <Field label="Primary Color">
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <input type="color" value={`#${form.primary_color}`}
@@ -274,7 +281,7 @@ export default function AcademySettings() {
 
         {/* ── Contact ── */}
         <div style={SECTION}>Contact Information</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
           <Field label="Email">
             <input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="academy@example.com" />
           </Field>
