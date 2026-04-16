@@ -43,13 +43,11 @@ const NAV_ICONS = {
   settings:    "⚙",
 };
 
-// Bottom nav tab definitions — 4 main tabs + "More" to open the full sidebar
 const BOTTOM_NAV_TABS = [
-  { id: "dashboard",  label: "Home",      emoji: "🏠" },
-  { id: "students",   label: "Students",  emoji: "👤" },
-  { id: "fees",       label: "Fees",      emoji: "💳" },
-  { id: "attendance", label: "Attendance",emoji: "✅" },
-  { id: "__more__",   label: "More",      emoji: "☰" },
+  { id: "dashboard",  label: "HOME",      icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> },
+  { id: "students",   label: "STUDENTS",  icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg> },
+  { id: "payments",   label: "PAYMENTS",  icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg> },
+  { id: "reports",    label: "ANALYTICS", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg> }
 ];
 
 // ── Upgrade Contact Modal ────────────────────────────────────────────────
@@ -382,21 +380,31 @@ function Layout() {
         </ErrorBoundary>
       </main>
 
-      {/* ── Mobile Bottom Navigation Bar ─────────────────────────────────────
-          Only visible on mobile (≤768px) via mobile.css.
-          Shows 4 quick-access tabs + "More" to open the full sidebar.     */}
-      <nav className="mobile-bottom-nav" aria-label="Bottom navigation">
-        {bottomTabs.map((tab) => {
-          const isActive = tab.id !== "__more__" && page === tab.id;
+      {/* ── Mobile Bottom Navigation Bar ───────────────────────────────────── */}
+      <nav className="mobile-bottom-nav" style={{ display: isMobile ? 'flex' : 'none', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#1b2234', position: 'fixed', bottom: 0, left: 0, right: 0, padding: '10px 10px 24px 10px', zIndex: 1000, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        {BOTTOM_NAV_TABS.map((tab) => {
+          const isActive = page === tab.id;
+          if (isActive && tab.id === 'payments') {
+            return (
+              <button key={tab.id} onClick={() => handleBottomTab(tab.id)} style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: 4 }}>
+                <div style={{ backgroundColor: 'rgba(22, 241, 215, 0.1)', color: '#16f1d7', width: 44, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {tab.icon}
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 800, color: '#16f1d7', letterSpacing: '0.05em' }}>{tab.label}</span>
+              </button>
+            )
+          }
+
           return (
             <button
               key={tab.id}
-              className={`mobile-bottom-nav-item ${isActive ? "active" : ""}`}
               onClick={() => handleBottomTab(tab.id)}
-              aria-label={tab.label}
+              style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: 4, color: isActive ? '#fff' : '#7c8b9d' }}
             >
-              <span className="mobile-bottom-nav-icon">{tab.emoji}</span>
-              <span className="mobile-bottom-nav-label">{tab.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 32 }}>
+                {tab.icon}
+              </div>
+              <span style={{ fontSize: 9, fontWeight: isActive ? 800 : 700, letterSpacing: '0.05em' }}>{tab.label}</span>
             </button>
           );
         })}

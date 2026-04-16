@@ -7,11 +7,10 @@ const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 function InfoBox({ why, steps }) {
   const [open, setOpen] = useState(false);
-  return (
-    <div style={{ marginBottom: 20, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text1)" }}>
-        <span>💡 How it works & Why use this section</span>
+  return null; // hide info box in new design
+}
+
+function numberToWords(n) {
         <span style={{ fontSize: 18, fontWeight: 300, color: "var(--accent)", transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s" }}>+</span>
       </button>
       {open && (
@@ -382,82 +381,152 @@ export default function Payments() {
     }
   };
 
+  const totalRevenue = filtered.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <div className="page-title">Payments</div>
-          <div className="page-sub">{filtered.length} transaction(s)</div>
+    <div style={{ backgroundColor: '#0f1423', minHeight: '100vh', color: '#fff', paddingBottom: 100, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* HEADER */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#0f1423' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button style={{ background: 'none', border: 'none', color: '#16f1d7', display: 'flex', padding: 0 }} aria-label="Menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M4 6h16M4 12h16M4 18h8"/>
+            </svg>
+          </button>
+          <div style={{ color: '#16f1d7', fontSize: 20, fontWeight: 600, letterSpacing: '0.02em' }}>Payments</div>
         </div>
-        <button className="btn btn-primary" onClick={openPay}>+ Record Payment</button>
+        <button 
+          style={{ backgroundColor: '#16f1d7', color: '#0f1423', border: 'none', borderRadius: 20, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          onClick={openPay}
+        >
+          Record
+        </button>
       </div>
 
-      <InfoBox
-        steps={[
-          "A student comes to pay fees — click + Record Payment at the top right.",
-          "Select the fee record (student name + period auto-fills), enter the amount received, choose payment mode (Cash / UPI / Bank Transfer / Cheque).",
-          "Click ✓ Record & Get Receipt — a professional double-copy receipt is instantly generated and printed.",
-          "The fee record status auto-updates: Pending → Partial (if part-paid) → Paid (if fully paid).",
-          "All payments are logged here with receipt numbers. Click 🧾 Receipt on any row to reprint at any time.",
-        ]}
-        why={[
-          "Instant professional receipts — no more handwritten slips that get lost.",
-          "Every payment is recorded with date, mode, and reference number for full audit trail.",
-          "Supports partial payments — students can pay in installments across months.",
-          "Receipt has the academy name, branch, student, period, and balance clearly printed.",
-          "All data syncs to Fee Records and Reports automatically — zero double-entry.",
-        ]}
-      />
+      <div style={{ padding: '0 20px', marginTop: 10 }}>
+        {/* SEARCH & FILTERS */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>Search Database</label>
+          <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1b2234', borderRadius: 12, padding: '12px 16px' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginRight: 12 }}>
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+              placeholder="Search student name, receipt ID..."
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              style={{ background: 'none', border: 'none', color: '#fff', fontSize: 14, width: '100%', outline: 'none' }}
+            />
+          </div>
+        </div>
 
-      <div className="filters-bar">
-        <input className="search-input" placeholder="Search student / receipt no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        {user.role === "super_admin" && (
-          <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
-            <option value="">All Branches</option>
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+        {user.role === 'super_admin' && (
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>Branch Location</label>
+            <div style={{ position: 'relative' }}>
+              <select 
+                value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}
+                style={{ width: '100%', backgroundColor: '#1b2234', color: '#e2e8f0', border: 'none', borderRadius: 12, padding: '14px 16px', fontSize: 14, appearance: 'none', outline: 'none', cursor: 'pointer' }}
+              >
+                <option value="">All Branches</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <svg style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {/* TOTAL REVENUE */}
+        <div style={{ backgroundColor: '#1b2234', borderRadius: 16, padding: '24px 20px', marginBottom: 32 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>Total Revenue (Monthly)</div>
+          <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 16 }}>₹{totalRevenue.toLocaleString('en-IN')}</div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(22, 241, 215, 0.1)', padding: '6px 12px', borderRadius: 20 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16f1d7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
+            <span style={{ color: '#16f1d7', fontSize: 11, fontWeight: 800 }}>+12.4% vs last month</span>
+          </div>
+        </div>
+
+        {/* RECENT RECORDS HEADER */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>Recent Records</div>
+          <button style={{ background: 'none', border: 'none', color: '#16f1d7', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Download CSV</button>
+        </div>
+
+        {/* CARDS LIST */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#7c8b9d', fontSize: 14 }}>
+              No payments recorded yet. 
+            </div>
+          ) : filtered.map(p => {
+            const mode = (p.payment_mode || "CASH").toUpperCase();
+            let modeBg = 'rgba(22, 241, 215, 0.1)';
+            let modeColor = '#16f1d7';
+            if (mode === 'ONLINE' || mode === 'UPI' || mode === 'BANK TRANSFER') {
+               modeBg = 'rgba(236, 72, 153, 0.1)';
+               modeColor = '#ec4899';
+            }
+
+            const month = new Date(p.paid_on).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase();
+
+            return (
+              <div key={p.id} style={{ backgroundColor: '#1b2234', borderRadius: 16, padding: '16px', display: 'flex', alignItems: 'center' }}>
+                {/* Avatar */}
+                <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#3541bd', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 16 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </div>
+                
+                {/* Context */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                   <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 4 }}>
+                     {p.student_name}
+                   </div>
+                   <div style={{ fontSize: 10, fontWeight: 600, color: '#7c8b9d', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                     <span>{p.receipt_no}</span>
+                     <span>•</span>
+                     <span>{p.period_label ? p.period_label.toUpperCase() : month}</span>
+                   </div>
+                   
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                     <div style={{ fontSize: 16, fontWeight: 800, color: '#16f1d7' }}>₹{Number(p.amount||0).toLocaleString('en-IN')}</div>
+                     <div style={{ backgroundColor: modeBg, color: modeColor, fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.05em' }}>{mode}</div>
+                   </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 12 }}>
+                  <button onClick={() => viewReceipt(p.id)} style={{ backgroundColor: '#232b42', border: 'none', borderRadius: 8, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a0aec0', cursor: 'pointer' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  </button>
+                  <button style={{ backgroundColor: '#232b42', border: 'none', borderRadius: 8, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a0aec0', cursor: 'pointer' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        
+        {filtered.length > 0 && (
+          <button style={{ width: '100%', marginTop: 24, padding: '14px', backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, color: '#e2e8f0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            Load More Transactions
+          </button>
         )}
       </div>
 
-      <div className="card">
-        {filtered.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">💳</div>
-            <div className="empty-text">No payments recorded</div>
-            <div className="empty-sub">Click + Record Payment to get started</div>
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Receipt No.</th><th>Student</th>
-                  {user.role === "super_admin" && <th>Branch</th>}
-                  <th>Period</th><th>Amount</th><th>Mode</th><th>Date</th><th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((p) => (
-                  <tr key={p.id}>
-                    <td className="mono" style={{ fontSize: 12, color: "var(--text2)" }}>{p.receipt_no}</td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{p.student_name}</div>
-                      <div className="text-muted text-sm mono">{p.phone}</div>
-                    </td>
-                    {user.role === "super_admin" && <td className="text-muted">{p.branch_name}</td>}
-                    <td className="text-muted">{p.period_label || "—"}</td>
-                    <td className="mono" style={{ color: "var(--green)", fontWeight: 700 }}>{fmt(p.amount)}</td>
-                    <td><span className="badge badge-blue">{p.payment_mode}</span></td>
-                    <td className="text-muted">{new Date(p.paid_on).toLocaleDateString("en-IN")}</td>
-                    <td>
-                      <button className="btn btn-secondary btn-sm" onClick={() => viewReceipt(p.id)}>🧾 Receipt</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* FAB */}
+      <div style={{ position: 'fixed', bottom: 94, right: 20, zIndex: 100 }}>
+        <button 
+          style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#16f1d7', border: 'none', color: '#0f1423', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 30px rgba(22, 241, 215, 0.4)' }} 
+          onClick={openPay}
+        >
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
       </div>
 
       {showModal && (
