@@ -149,7 +149,7 @@ function WhatsAppIntegration() {
 
 export default function AcademySettings() {
   const { academy } = useAcademy();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [form, setForm] = useState({
     name:          academy?.name || "",
     tagline:       academy?.tagline || "",
@@ -316,6 +316,22 @@ export default function AcademySettings() {
         <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ marginTop: 8 }}>
           {saving ? "Saving…" : "Save Settings"}
         </button>
+
+        {isMobile && (
+          <div style={{ marginTop: 40, paddingTop: 32, borderTop: "1px solid var(--border)" }}>
+            <div style={SECTION}>Account</div>
+            <button 
+              className="btn btn-danger" 
+              onClick={logout} 
+              style={{ width: "100%", padding: 16, justifyContent: "center", fontSize: 14 }}
+            >
+              Logout Account
+            </button>
+            <div style={{ textAlign: "center", fontSize: 11, color: "var(--text3)", marginTop: 12 }}>
+              Signed in as {user.name} ({user.role})
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
