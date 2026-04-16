@@ -4,15 +4,214 @@ import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 import QRCode from "qrcode";
 
+// ── Mobile detection hook ──────────────────────────────────────────────────────
+function useIsMobile() {
+  const [mob, setMob] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setMob(window.innerWidth <= 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+  return mob;
+}
+
+// ── Enquiry card — Luminescent design (matches reference image exactly) ────────
+function MobileEnquiryCard({ e, onApprove, onReject, onPreview, onPrint }) {
+  const isApproved = e.status === "approved";
+  const isRejected = e.status === "rejected";
+  const isPending  = e.status === "pending";
+
+  // initials from name
+  const initials = (e.name || "?")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const statusStyle = isApproved
+    ? { background: "#006d35", color: "#3fff8b" }
+    : isRejected
+    ? { background: "#a70138", color: "#ff6e84" }
+    : { background: "#5c4a00", color: "#fbbf24" };
+
+  const date = e.created_at
+    ? new Date(e.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+    : "—";
+
+  return (
+    <div style={{
+      background: "#121a28",
+      borderRadius: 16,
+      marginBottom: 14,
+      overflow: "hidden",
+    }}>
+      {/* Card inner */}
+      <div style={{ background: "#182030", borderRadius: 16, padding: "18px 16px" }}>
+
+        {/* Top row: avatar + name/id + status */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Avatar circle with initials */}
+            <div style={{
+              width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
+              background: "linear-gradient(135deg, #4963ff, #9ba8ff)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16, fontWeight: 700, color: "#fff",
+            }}>
+              {initials}
+            </div>
+            <div>
+              <div style={{ fontFamily: "Manrope, sans-serif", fontWeight: 700, fontSize: 16, color: "#e6ebfc" }}>
+                {e.name}
+              </div>
+              <div style={{ fontSize: 11, color: "#a5abbb", marginTop: 2 }}>
+                ID: #ENQ-{String(e.id).padStart(4, "0")}
+              </div>
+            </div>
+          </div>
+          {/* Status badge */}
+          <span style={{
+            ...statusStyle,
+            fontSize: 10, fontWeight: 700, padding: "4px 10px",
+            borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.05em",
+            whiteSpace: "nowrap", flexShrink: 0,
+          }}>
+            {e.status}
+          </span>
+        </div>
+
+        {/* Info rows */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+          {/* Phone */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ba8ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.62 2 2 0 0 1 3.58 1.44h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6.09 6.09l.87-.87a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            <span style={{ fontSize: 13, color: "#e6ebfc", fontFamily: "monospace" }}>{e.phone || "—"}</span>
+          </div>
+          {/* Branch */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ba8ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <span style={{ fontSize: 13, color: "#a5abbb" }}>{e.branch_name || "—"}</span>
+          </div>
+          {/* Course — bold, matches reference */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ba8ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+              <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+            </svg>
+            <span style={{ fontSize: 13, color: "#e6ebfc", fontWeight: 700 }}>{e.batch_name || "—"}</span>
+          </div>
+          {/* Date */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ba8ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <span style={{ fontSize: 13, color: "#a5abbb" }}>{date}</span>
+          </div>
+        </div>
+
+        {/* Action row */}
+        <div style={{
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          paddingTop: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          flexWrap: "wrap",
+        }}>
+          {/* Left: edit/pencil icon */}
+          <button
+            onClick={() => onPreview(e)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "6px 8px", borderRadius: 8,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+            title="Preview"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a5abbb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+
+          {/* Right: action buttons */}
+          <div style={{ display: "flex", gap: 8 }}>
+            {isPending && (
+              <>
+                <button
+                  onClick={() => onApprove(e.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "8px 16px", borderRadius: 10, border: "none", cursor: "pointer",
+                    background: "#006d35", color: "#3fff8b",
+                    fontSize: 13, fontWeight: 700,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  Approve
+                </button>
+                <button
+                  onClick={() => onReject(e.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "8px 16px", borderRadius: 10, border: "none", cursor: "pointer",
+                    background: "#a70138", color: "#ff6e84",
+                    fontSize: 13, fontWeight: 700,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                  Reject
+                </button>
+              </>
+            )}
+            {/* Print Enquiry button — shown for all statuses */}
+            <button
+              onClick={() => onPrint(e)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 10, border: "none", cursor: "pointer",
+                background: "#1d2637", color: "#9ba8ff",
+                fontSize: 13, fontWeight: 700,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9"/>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                <rect x="6" y="14" width="12" height="8"/>
+              </svg>
+              Print Enquiry
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Admissions() {
   const { user }    = useAuth();
   const { academy } = useAcademy();
+  const isMobile    = useIsMobile();
   const [enquiries, setEnquiries] = useState([]);
   const [loading,   setLoading]   = useState(false);
   const [msg,       setMsg]       = useState("");
   const [filter,    setFilter]    = useState("pending");
 
-  // ✅ Unique URL per academy — uses the academy slug
   const slug         = academy?.slug || "";
   const admissionUrl = slug
     ? `${window.location.origin}/apply?slug=${slug}`
@@ -76,7 +275,7 @@ export default function Admissions() {
     const academyName = academy?.name || "Academy";
 
     const printBtnHtml = showPrintButton
-      ? `<div class="no-print" style="text-align:center;margin-top:20px"><button onclick="window.print()" style="padding:10px 28px;background:${accentColor};color:white;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-weight:900">🖸 PRINT FORM</button></div>`
+      ? `<div class="no-print" style="text-align:center;margin-top:20px"><button onclick="window.print()" style="padding:10px 28px;background:${accentColor};color:white;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-weight:900">Print FORM</button></div>`
       : "";
 
     return `<!DOCTYPE html><html><head><title>${academyName} — Registration Form</title>
@@ -134,14 +333,14 @@ ${printBtnHtml}</body></html>`;
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">🎓 Admissions</div>
+          <div className="page-title">Admissions</div>
           <div className="page-sub">Manage admission enquiries for {academy?.name || "your academy"}</div>
         </div>
       </div>
 
-      {/* Unique admission link card */}
+      {/* Admission link card */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-title">📱 Your Academy's Admission Link</div>
+        <div className="card-title">Your Academy's Admission Link</div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
             {qrDataUrl ? (
@@ -151,31 +350,24 @@ ${printBtnHtml}</body></html>`;
             ) : (
               <div style={{ width: 160, height: 160, background: "var(--bg3)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text2)" }}>Generating…</div>
             )}
-            <button className="btn btn-secondary btn-sm" onClick={() => { const a = document.createElement("a"); a.href = qrDataUrl; a.download = "admission-qr.png"; a.click(); }}>⬇ Download QR</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => { const a = document.createElement("a"); a.href = qrDataUrl; a.download = "admission-qr.png"; a.click(); }}>Download QR</button>
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 13, marginBottom: 8, color: "var(--text2)" }}>
-              This link is <strong>unique to {academy?.name || "your academy"}</strong>. Share it with students — when they fill the form, it will only appear in your Admissions page, not other academies.
+              This link is <strong>unique to {academy?.name || "your academy"}</strong>. Share it with students.
             </div>
             <div style={{ background: "var(--bg3)", borderRadius: 8, padding: "10px 14px", fontFamily: "monospace", fontSize: 13, color: "var(--accent)", marginBottom: 10, wordBreak: "break-all" }}>
               {admissionUrl}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(admissionUrl).then(() => alert("Link copied!"))}>&#128203; Copy Link</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => window.open(admissionUrl, "_blank")}>🔗 Open Form</button>
+              <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(admissionUrl).then(() => alert("Link copied!"))}>Copy Link</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => window.open(admissionUrl, "_blank")}>Open Form</button>
               <button className="btn btn-secondary btn-sm" onClick={() => {
                 const w = window.open("", "_blank");
-                const accentColor = academy?.primary_color ? (academy.primary_color.startsWith("#") ? academy.primary_color : `#${academy.primary_color}`) : "#cc0000";
-                w.document.write(`<html><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f0f0f0;font-family:Arial"><div style="text-align:center;background:white;padding:32px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)"><div style="font-size:20px;font-weight:900;color:${accentColor};margin-bottom:4px">${academy?.name?.toUpperCase() || "ACADEMY"}</div><div style="font-size:13px;color:#555;margin-bottom:20px">Scan to fill Admission Form</div><img src="${qrDataUrl}" style="width:200px;height:200px"/><div style="font-size:11px;color:#888;margin-top:16px">${admissionUrl}</div></div></body></html>`);
+                const ac = academy?.primary_color ? (academy.primary_color.startsWith("#") ? academy.primary_color : `#${academy.primary_color}`) : "#cc0000";
+                w.document.write(`<html><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f0f0f0;font-family:Arial"><div style="text-align:center;background:white;padding:32px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)"><div style="font-size:20px;font-weight:900;color:${ac};margin-bottom:4px">${academy?.name?.toUpperCase() || "ACADEMY"}</div><div style="font-size:13px;color:#555;margin-bottom:20px">Scan to fill Admission Form</div><img src="${qrDataUrl}" style="width:200px;height:200px"/><div style="font-size:11px;color:#888;margin-top:16px">${admissionUrl}</div></div></body></html>`);
                 w.document.close(); setTimeout(() => w.print(), 400);
-              }}>🖸 Print QR</button>
-            </div>
-            <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(79,142,247,0.08)", borderRadius: 8, fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
-              <strong>How it works:</strong><br/>
-              1. Student scans QR or opens link → form opens showing only your batches<br/>
-              2. They fill their details and submit<br/>
-              3. Enquiry appears here for you to approve/reject<br/>
-              4. On approve → student is automatically created in your academy
+              }}>Print QR</button>
             </div>
           </div>
         </div>
@@ -183,7 +375,8 @@ ${printBtnHtml}</body></html>`;
 
       {msg && <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>{msg}</div>}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      {/* Filter tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {["all", "pending", "approved", "rejected"].map((s) => (
           <button key={s} className={`btn btn-sm ${filter === s ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilter(s)}>
             {s.charAt(0).toUpperCase() + s.slice(1)} ({enquiries.filter((e) => s === "all" ? true : e.status === s).length})
@@ -191,15 +384,43 @@ ${printBtnHtml}</body></html>`;
         ))}
       </div>
 
-      <div className="card">
-        <div className="card-title">Enquiries ({filtered.length})</div>
-        {loading ? <div className="loading">Loading…</div>
-        : filtered.length === 0 ? (
-          <div className="empty-state"><div className="empty-icon">📋</div><div className="empty-text">No {filter} enquiries</div></div>
-        ) : (
+      {/* Enquiries list */}
+      {loading ? (
+        <div className="loading">Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">📋</div>
+          <div className="empty-text">No {filter} enquiries</div>
+        </div>
+      ) : isMobile ? (
+        // ── MOBILE: Luminescent cards ──────────────────────────────────────
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#a5abbb", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+            Enquiries ({filtered.length})
+          </div>
+          {filtered.map((e) => (
+            <MobileEnquiryCard
+              key={e.id}
+              e={e}
+              onApprove={approve}
+              onReject={reject}
+              onPreview={previewForm}
+              onPrint={printForm}
+            />
+          ))}
+        </div>
+      ) : (
+        // ── DESKTOP: table ────────────────────────────────────────────────
+        <div className="card">
+          <div className="card-title">Enquiries ({filtered.length})</div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>#</th><th>Photo</th><th>Name</th><th>Phone</th><th>Branch</th><th>Course</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>#</th><th>Photo</th><th>Name</th><th>Phone</th>
+                  <th>Branch</th><th>Course</th><th>Date</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
               <tbody>
                 {filtered.map((e) => {
                   let thumbUrl = e.photo_url || "";
@@ -207,22 +428,26 @@ ${printBtnHtml}</body></html>`;
                   return (
                     <tr key={e.id}>
                       <td className="mono text-muted">{e.id}</td>
-                      <td><div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "var(--bg3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{thumbUrl ? <img src={thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👤"}</div></td>
-                      <td style={{ fontWeight: 600 }}>{e.name}</td>
+                      <td>
+                        <div style={{ width:36,height:36,borderRadius:"50%",overflow:"hidden",background:"var(--bg3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16 }}>
+                          {thumbUrl ? <img src={thumbUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} /> : "👤"}
+                        </div>
+                      </td>
+                      <td style={{ fontWeight:600 }}>{e.name}</td>
                       <td className="text-muted">{e.phone}</td>
                       <td className="text-muted">{e.branch_name || "—"}</td>
                       <td className="text-muted">{e.batch_name || "—"}</td>
                       <td className="text-muted">{new Date(e.created_at).toLocaleDateString("en-IN")}</td>
                       <td><span className={`badge ${statusColor(e.status)}`}>{e.status}</span></td>
                       <td>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
                           {e.status === "pending" && (<>
-                            <button className="btn btn-sm btn-secondary" onClick={() => previewForm(e)}>👁 Preview</button>
-                            <button className="btn btn-sm btn-success" onClick={() => approve(e.id)}>✅ Approve</button>
-                            <button className="btn btn-sm btn-danger"  onClick={() => reject(e.id)}>❌ Reject</button>
+                            <button className="btn btn-sm btn-secondary" onClick={() => previewForm(e)}>Preview</button>
+                            <button className="btn btn-sm btn-success"   onClick={() => approve(e.id)}>Approve</button>
+                            <button className="btn btn-sm btn-danger"    onClick={() => reject(e.id)}>Reject</button>
                           </>)}
-                          {e.status === "approved" && <button className="btn btn-sm btn-secondary" onClick={() => printForm(e)}>🖸 Print</button>}
-                          {e.status === "rejected" && <button className="btn btn-sm btn-secondary" onClick={() => previewForm(e)}>👁 Preview</button>}
+                          {e.status === "approved" && <button className="btn btn-sm btn-secondary" onClick={() => printForm(e)}>Print</button>}
+                          {e.status === "rejected" && <button className="btn btn-sm btn-secondary" onClick={() => previewForm(e)}>Preview</button>}
                         </div>
                       </td>
                     </tr>
@@ -231,8 +456,8 @@ ${printBtnHtml}</body></html>`;
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
