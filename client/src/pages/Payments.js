@@ -23,7 +23,7 @@ function numberToWords(n) {
   return numberToWords(Math.floor(n/10000000)) + " Crore" + (n%10000000 ? " " + numberToWords(n%10000000) : "");
 }
 
-function Receipt({ payment, onClose, academy }) {
+function Receipt({ payment, onClose, academy, isMobile }) {
   const p = payment;
   const academyName   = academy?.name   || "Academy";
   const academyPhone  = academy?.phone  || "";
@@ -200,7 +200,7 @@ body { font-family:Arial,sans-serif; background:#fff; color:#000; }
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 520 }}>
+      <div className="modal" style={{ maxWidth: 520, marginBottom: isMobile ? 80 : 0 }}>
         <div className="modal-header">
           <div className="modal-title">🧾 Fee Receipt — {p.receipt_no}</div>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -561,7 +561,7 @@ export default function Payments() {
         </div>
       )}
 
-      {receipt && <Receipt payment={receipt} onClose={() => setReceipt(null)} academy={academy} />}
+      {receipt && <Receipt payment={receipt} onClose={() => setReceipt(null)} academy={academy} isMobile={isMobile} />}
     </div>
   );
 }
