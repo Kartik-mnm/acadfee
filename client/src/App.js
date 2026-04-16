@@ -303,7 +303,12 @@ function Layout() {
       goTo(tabId);
     }
   };
-
+      {/* Hamburger — only shown on desktop (hidden on mobile by mobile.css) */}
+      {!isMobile && (
+        <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu" style={{ display: 'block' }}>
+          {sidebarOpen ? "✕" : "☰"}
+        </button>
+      )}
   return (
     <div className="app-shell">
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
