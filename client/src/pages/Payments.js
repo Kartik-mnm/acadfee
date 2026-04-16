@@ -360,15 +360,10 @@ export default function Payments() {
       {/* HEADER */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#0f1423' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button style={{ background: 'none', border: 'none', color: '#16f1d7', display: 'flex', padding: 0 }} aria-label="Menu">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M4 6h16M4 12h16M4 18h8"/>
-            </svg>
-          </button>
-          <div style={{ color: '#16f1d7', fontSize: 20, fontWeight: 600, letterSpacing: '0.02em' }}>Payments</div>
+          <div style={{ color: 'rgb(141, 156, 255)', fontSize: 20, fontWeight: 600, letterSpacing: '0.02em' }}>Payments</div>
         </div>
         <button 
-          style={{ backgroundColor: '#16f1d7', color: '#0f1423', border: 'none', borderRadius: 20, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          style={{ backgroundColor: 'rgb(141, 156, 255)', color: '#0f1423', border: 'none', borderRadius: 20, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
           onClick={openPay}
         >
           Record
@@ -414,19 +409,19 @@ export default function Payments() {
         <div style={{ backgroundColor: '#1b2234', borderRadius: 16, padding: '24px 20px', marginBottom: 32 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>Total Revenue (Monthly)</div>
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 16 }}>₹{totalRevenue.toLocaleString('en-IN')}</div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(22, 241, 215, 0.1)', padding: '6px 12px', borderRadius: 20 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16f1d7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(141, 156, 255, 0.1)', padding: '6px 12px', borderRadius: 20 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgb(141, 156, 255)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <line x1="7" y1="17" x2="17" y2="7"></line>
               <polyline points="7 7 17 7 17 17"></polyline>
             </svg>
-            <span style={{ color: '#16f1d7', fontSize: 11, fontWeight: 800 }}>+12.4% vs last month</span>
+            <span style={{ color: 'rgb(141, 156, 255)', fontSize: 11, fontWeight: 800 }}>+12.4% vs last month</span>
           </div>
         </div>
 
         {/* RECENT RECORDS HEADER */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>Recent Records</div>
-          <button style={{ background: 'none', border: 'none', color: '#16f1d7', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Download CSV</button>
+          <button style={{ background: 'none', border: 'none', color: 'rgb(141, 156, 255)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Download CSV</button>
         </div>
 
         {/* CARDS LIST */}
@@ -437,8 +432,8 @@ export default function Payments() {
             </div>
           ) : filtered.map(p => {
             const mode = (p.payment_mode || "CASH").toUpperCase();
-            let modeBg = 'rgba(22, 241, 215, 0.1)';
-            let modeColor = '#16f1d7';
+            let modeBg = 'rgba(141, 156, 255, 0.1)';
+            let modeColor = 'rgb(141, 156, 255)';
             if (mode === 'ONLINE' || mode === 'UPI' || mode === 'BANK TRANSFER') {
                modeBg = 'rgba(236, 72, 153, 0.1)';
                modeColor = '#ec4899';
@@ -465,7 +460,7 @@ export default function Payments() {
                    </div>
                    
                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                     <div style={{ fontSize: 16, fontWeight: 800, color: '#16f1d7' }}>₹{Number(p.amount||0).toLocaleString('en-IN')}</div>
+                     <div style={{ fontSize: 16, fontWeight: 800, color: 'rgb(141, 156, 255)' }}>₹{Number(p.amount||0).toLocaleString('en-IN')}</div>
                      <div style={{ backgroundColor: modeBg, color: modeColor, fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 6, letterSpacing: '0.05em' }}>{mode}</div>
                    </div>
                 </div>
@@ -494,7 +489,7 @@ export default function Payments() {
       {/* FAB */}
       <div style={{ position: 'fixed', bottom: 94, right: 20, zIndex: 100 }}>
         <button 
-          style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#16f1d7', border: 'none', color: '#0f1423', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 30px rgba(22, 241, 215, 0.4)' }} 
+          style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: 'rgb(141, 156, 255)', border: 'none', color: '#0f1423', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 30px rgba(141, 156, 255, 0.4)' }} 
           onClick={openPay}
         >
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>

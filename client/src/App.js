@@ -44,10 +44,11 @@ const NAV_ICONS = {
 };
 
 const BOTTOM_NAV_TABS = [
-  { id: "dashboard",  label: "HOME",      icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> },
-  { id: "students",   label: "STUDENTS",  icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg> },
-  { id: "payments",   label: "PAYMENTS",  icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg> },
-  { id: "reports",    label: "ANALYTICS", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg> }
+  { id: "dashboard",  label: "HOME",       icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> },
+  { id: "students",   label: "STUDENTS",   icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg> },
+  { id: "fees",       label: "FEES",       icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg> },
+  { id: "attendance", label: "ATTENDANCE", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> },
+  { id: "__more__",   label: "MORE",       icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg> }
 ];
 
 // ── Upgrade Contact Modal ────────────────────────────────────────────────
@@ -307,10 +308,7 @@ function Layout() {
     <div className="app-shell">
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
 
-      {/* Hamburger — only shown on desktop (hidden on mobile by mobile.css) */}
-      <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
-        {sidebarOpen ? "✕" : "☰"}
-      </button>
+
 
       <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
 
@@ -384,13 +382,15 @@ function Layout() {
       <nav className="mobile-bottom-nav" style={{ display: isMobile ? 'flex' : 'none', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#1b2234', position: 'fixed', bottom: 0, left: 0, right: 0, padding: '10px 10px 24px 10px', zIndex: 1000, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         {BOTTOM_NAV_TABS.map((tab) => {
           const isActive = page === tab.id;
-          if (isActive && tab.id === 'payments') {
+          const isActuallyActive = isActive || (tab.id === '__more__' && sidebarOpen);
+          
+          if (isActuallyActive) {
             return (
               <button key={tab.id} onClick={() => handleBottomTab(tab.id)} style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: 4 }}>
-                <div style={{ backgroundColor: 'rgba(22, 241, 215, 0.1)', color: '#16f1d7', width: 44, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ backgroundColor: 'rgba(141, 156, 255, 0.1)', color: 'rgb(141, 156, 255)', width: 44, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {tab.icon}
                 </div>
-                <span style={{ fontSize: 9, fontWeight: 800, color: '#16f1d7', letterSpacing: '0.05em' }}>{tab.label}</span>
+                <span style={{ fontSize: 9, fontWeight: 800, color: 'rgb(141, 156, 255)', letterSpacing: '0.05em' }}>{tab.label}</span>
               </button>
             )
           }
@@ -399,12 +399,12 @@ function Layout() {
             <button
               key={tab.id}
               onClick={() => handleBottomTab(tab.id)}
-              style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: 4, color: isActive ? '#fff' : '#7c8b9d' }}
+              style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', gap: 4, color: '#7c8b9d' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 32 }}>
                 {tab.icon}
               </div>
-              <span style={{ fontSize: 9, fontWeight: isActive ? 800 : 700, letterSpacing: '0.05em' }}>{tab.label}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.05em' }}>{tab.label}</span>
             </button>
           );
         })}
