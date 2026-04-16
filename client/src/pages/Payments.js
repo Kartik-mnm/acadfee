@@ -10,34 +10,6 @@ function InfoBox({ why, steps }) {
   return null; // hide info box in new design
 }
 
-function numberToWords(n) {
-        <span style={{ fontSize: 18, fontWeight: 300, color: "var(--accent)", transform: open ? "rotate(45deg)" : "none", transition: "transform 0.2s" }}>+</span>
-      </button>
-      {open && (
-        <div style={{ padding: "0 18px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div style={{ background: "rgba(79,142,247,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>ℹ️ How it works</div>
-            {steps.map((s, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
-                <div style={{ minWidth: 22, height: 22, borderRadius: "50%", background: "var(--accent)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
-                <span>{s}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ background: "rgba(16,185,129,0.07)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--green)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>✅ Why use this</div>
-            {why.map((w, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
-                <span style={{ color: "var(--green)", fontWeight: 700, flexShrink: 0 }}>✓</span>
-                <span>{w}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function numberToWords(n) {
   const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
