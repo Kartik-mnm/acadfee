@@ -278,6 +278,7 @@ export default function Payments() {
   const [search,       setSearch]       = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [receipt,      setReceipt]      = useState(null);
+  const [form, setForm] = useState({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
