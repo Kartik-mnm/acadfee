@@ -40,6 +40,7 @@ export default function IDCards() {
   const [backfilling,  setBackfilling]  = useState(false);
   const [backfillMsg,  setBackfillMsg]  = useState("");
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const [showAllMobile, setShowAllMobile] = useState(false);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -324,7 +325,7 @@ export default function IDCards() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
             {filtered.length === 0 ? (
                <div style={{ textAlign: 'center', color: '#7c8b9d', padding: '40px 0' }}>No students match your search.</div>
-            ) : filtered.map(s => {
+            ) : filtered.slice(0, showAllMobile ? filtered.length : 5).map(s => {
               const isSelected = selectedIds.has(s.id);
               return (
                 <div 
@@ -365,6 +366,18 @@ export default function IDCards() {
                 </div>
               );
             })}
+            
+            {!showAllMobile && filtered.length > 5 && (
+              <button 
+                onClick={() => setShowAllMobile(true)}
+                style={{ 
+                  width: '100%', padding: '14px', borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', 
+                  border: '1px dashed rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: 13, fontWeight: 600
+                }}
+              >
+                Show All {filtered.length} Students
+              </button>
+            )}
           </div>
 
           {/* PRINTER CONFIG SECTION */}
