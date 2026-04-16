@@ -278,14 +278,20 @@ export default function Payments() {
   const [search,       setSearch]       = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [receipt,      setReceipt]      = useState(null);
-  const [form, setForm] = useState({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
 
   const load = () => {
     const q = filterBranch ? `?branch_id=${filterBranch}` : "";
     API.get(`/payments${q}`).then((r) => setPayments(r.data));
   };
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   useEffect(() => {
     load();
@@ -498,7 +504,7 @@ export default function Payments() {
 
       {showModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="modal">
+          <div className="modal" style={{ marginBottom: isMobile ? 80 : 0 }}>
             <div className="modal-header">
               <div className="modal-title">Record Payment</div>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
