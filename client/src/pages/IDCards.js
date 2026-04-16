@@ -39,6 +39,13 @@ export default function IDCards() {
   const [loadingPrint, setLoadingPrint] = useState(false);
   const [backfilling,  setBackfilling]  = useState(false);
   const [backfillMsg,  setBackfillMsg]  = useState("");
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   const loadStudents = () => fetchAllStudents().then(setStudents);
 
@@ -252,9 +259,213 @@ export default function IDCards() {
     }
   };
 
+  if (isMobile) {
+    return (
+      <div style={{ backgroundColor: '#0f1423', minHeight: '100vh', color: '#fff', paddingBottom: 100, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        {/* HEADER */}
+        <div style={{ padding: '24px 20px 10px 20px' }}>
+          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: '#fff' }}>Bulk ID Cards</h1>
+          <p style={{ fontSize: 14, color: '#7c8b9d', marginTop: 4 }}>Generate and batch print cards</p>
+        </div>
+
+        <div style={{ padding: '0 20px' }}>
+          {/* SEARCH & FILTERS */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 8, textTransform: 'uppercase' }}>Search Students</label>
+            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1b2234', borderRadius: 12, padding: '12px 16px' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginRight: 12 }}>
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input 
+                placeholder="Name or roll no..."
+                value={search} onChange={(e) => setSearch(e.target.value)}
+                style={{ background: 'none', border: 'none', color: '#fff', fontSize: 14, width: '100%', outline: 'none' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+            {user.role === "super_admin" && (
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Branch</label>
+                <div style={{ position: 'relative' }}>
+                  <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 13, outline: 'none' }}>
+                    <option value="">All Branches</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                  <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+              </div>
+            )}
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Batch</label>
+              <div style={{ position: 'relative' }}>
+                <select value={filterBatch} onChange={(e) => setFilterBatch(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 13, outline: 'none' }}>
+                  <option value="">All Batches</option>
+                  {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+            </div>
+          </div>
+
+          {/* STUDENT SELECTION SECTION */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+             <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Select Students ({selectedIds.size}/{filtered.length})</h2>
+             <button 
+               onClick={toggleSelectAll}
+               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '6px 14px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+             >
+               {selectedIds.size === filtered.length ? "Deselect All" : "Select All"}
+             </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
+            {filtered.length === 0 ? (
+               <div style={{ textAlign: 'center', color: '#7c8b9d', padding: '40px 0' }}>No students match your search.</div>
+            ) : filtered.map(s => {
+              const isSelected = selectedIds.has(s.id);
+              return (
+                <div 
+                  key={s.id} 
+                  onClick={() => toggleSelect(s.id)}
+                  style={{ 
+                    backgroundColor: '#1b2234', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14,
+                    border: isSelected ? '1px solid rgb(141, 156, 255)' : '1px solid transparent', cursor: 'pointer', position: 'relative'
+                  }}
+                >
+                  <div style={{ 
+                    width: 20, height: 20, borderRadius: 6, border: isSelected ? 'none' : '2px solid #3d4f6e', 
+                    backgroundColor: isSelected ? 'rgb(141, 156, 255)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                  }}>
+                    {isSelected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0f1423" strokeWidth="4"><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
+                    <div style={{ fontSize: 12, color: '#7c8b9d', marginTop: 2 }}>{s.batch_name || "No batch"}</div>
+                  </div>
+
+                  <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                       <div style={{ fontSize: 12, fontWeight: 700, color: 'rgb(141, 156, 255)', fontFamily: 'monospace' }}>{getRollDisplay(s)}</div>
+                       {isBatchEnded(s) && <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 800 }}>INACTIVE</div>}
+                    </div>
+                    <button 
+                      onClick={(e) => previewSingleCard(e, s)}
+                      style={{ 
+                        width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', border: 'none', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* PRINTER CONFIG SECTION */}
+          <div style={{ backgroundColor: '#1b2234', borderRadius: 24, padding: '24px', marginBottom: 24 }}>
+             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Printer Setup</h2>
+             
+             <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 12, textTransform: 'uppercase' }}>Card Orientation</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                   <div 
+                     onClick={() => { setPrintLayout("vertical"); setCardWidth(54); setCardHeight(85); }}
+                     style={{ 
+                       padding: '16px', borderRadius: 16, border: `2px solid ${printLayout === "vertical" ? 'rgb(141, 156, 255)' : 'transparent'}`,
+                       backgroundColor: printLayout === "vertical" ? 'rgba(141, 156, 255, 0.1)' : 'rgba(255,255,255,0.03)', textAlign: 'center'
+                     }}
+                   >
+                     <div style={{ width: 24, height: 36, border: '1.5px solid currentColor', margin: '0 auto 8px', borderRadius: 2, color: printLayout === "vertical" ? 'rgb(141, 156, 255)' : '#7c8b9d' }}></div>
+                     <div style={{ fontSize: 13, fontWeight: 700, color: printLayout === "vertical" ? 'rgb(141, 156, 255)' : '#fff' }}>Vertical</div>
+                   </div>
+                   <div 
+                     onClick={() => { setPrintLayout("horizontal"); setCardWidth(85); setCardHeight(54); }}
+                     style={{ 
+                       padding: '16px', borderRadius: 16, border: `2px solid ${printLayout === "horizontal" ? 'rgb(141, 156, 255)' : 'transparent'}`,
+                       backgroundColor: printLayout === "horizontal" ? 'rgba(141, 156, 255, 0.1)' : 'rgba(255,255,255,0.03)', textAlign: 'center'
+                     }}
+                   >
+                     <div style={{ width: 36, height: 24, border: '1.5px solid currentColor', margin: '6px auto 14px', borderRadius: 2, color: printLayout === "horizontal" ? 'rgb(141, 156, 255)' : '#7c8b9d' }}></div>
+                     <div style={{ fontSize: 13, fontWeight: 700, color: printLayout === "horizontal" ? 'rgb(141, 156, 255)' : '#fff' }}>Horizontal</div>
+                   </div>
+                </div>
+             </div>
+
+             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                <div>
+                   <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Width (mm)</label>
+                   <input 
+                     type="number" value={cardWidth} onChange={(e) => setCardWidth(e.target.value)} 
+                     style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 12, padding: '12px', color: '#fff', outline: 'none' }} 
+                   />
+                </div>
+                <div>
+                   <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Height (mm)</label>
+                   <input 
+                     type="number" value={cardHeight} onChange={(e) => setCardHeight(e.target.value)} 
+                     style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 12, padding: '12px', color: '#fff', outline: 'none' }} 
+                   />
+                </div>
+             </div>
+
+             <button 
+               onClick={printCards}
+               disabled={loadingPrint || selectedIds.size === 0}
+               style={{ 
+                 width: '100%', padding: '18px', borderRadius: 16, backgroundColor: 'rgb(141, 156, 255)', color: '#0f1423', 
+                 border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
+               }}
+             >
+               {loadingPrint ? "⏳ Generating..." : `🖨 Bulk Print ${selectedIds.size} Cards`}
+             </button>
+          </div>
+        </div>
+
+        {/* PREVIEW MODAL */}
+        {previewHtml && (
+          <div 
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 9999, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }} 
+            onClick={() => setPreviewHtml(null)}
+          >
+            <div 
+              style={{ background: "#1b2234", padding: 24, borderRadius: 24, width: "100%", maxWidth: 450, position: 'relative' }} 
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 style={{ margin: 0, fontSize: 18, color: '#fff' }}>Card Preview</h3>
+                <button 
+                  onClick={() => setPreviewHtml(null)} 
+                  style={{ background: "rgba(255,255,255,0.05)", border: "none", borderRadius: '50%', width: 32, height: 32, color: "#fff", cursor: "pointer" }}
+                >&times;</button>
+              </div>
+              <iframe 
+                 title="Card Preview"
+                 srcDoc={previewHtml} 
+                 style={{ width: "100%", height: 380, border: "none", borderRadius: 12, background: "#fff" }} 
+              />
+              <button 
+                onClick={() => setPreviewHtml(null)}
+                style={{ width: '100%', marginTop: 20, padding: 14, borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: '#fff', border: 'none', fontWeight: 600 }}
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
+
         <div>
           <div className="page-title">Bulk ID Cards</div>
           <div className="page-sub">Generate, format, and batch print student ID cards</div>
