@@ -9,6 +9,7 @@ import Fees from "./pages/Fees";
 import Payments from "./pages/Payments";
 import Reports from "./pages/Reports";
 import Batches from "./pages/Batches";
+import { SkeletonBox } from "./components/Skeleton";
 import Users from "./pages/Users";
 import Attendance from "./pages/Attendance";
 import Performance from "./pages/Performance";
@@ -220,19 +221,7 @@ function Layout() {
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
-  if (loading) {
-    return (
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        height: "100vh", flexDirection: "column", gap: 16,
-        background: "var(--bg1)", color: "var(--text1)"
-      }}>
-        <div style={{ fontSize: 32, animation: "spin 1s linear infinite" }}>⟳</div>
-        <div style={{ fontSize: 14, color: "var(--text3)" }}>Loading...</div>
-      </div>
-    );
-  }
-
+  // Handle Auth and Session
   if (!user) return <Login />;
   if (user.role === "student") return (
     <ErrorBoundary page="Student Dashboard">
@@ -240,20 +229,19 @@ function Layout() {
     </ErrorBoundary>
   );
 
-  const f = academy?.features || {};
   const nav = [
     { id: "dashboard",   label: "Dashboard",   group: "overview", show: true },
     { id: "students",    label: "Students",    group: "academic", show: true },
-    { id: "admissions",  label: "Admissions",  group: "academic", show: f.admissions !== false },
+    { id: "admissions",  label: "Admissions",  group: "academic", show: !loading && (academy?.features?.admissions !== false) },
     { id: "batches",     label: "Batches",     group: "academic", show: true },
-    { id: "attendance",  label: "Attendance",  group: "academic", show: f.attendance !== false },
-    { id: "performance", label: "Performance", group: "academic", show: f.tests !== false },
+    { id: "attendance",  label: "Attendance",  group: "academic", show: !loading && (academy?.features?.attendance !== false) },
+    { id: "performance", label: "Performance", group: "academic", show: !loading && (academy?.features?.tests !== false) },
     { id: "fees",        label: "Fee Records", group: "finance",  show: true },
     { id: "payments",    label: "Payments",    group: "finance",  show: true },
-    { id: "expenses",    label: "Expenses",    group: "finance",  show: f.expenses !== false },
-    { id: "reports",     label: "Reports",     group: "finance",  show: f.reports !== false },
-    { id: "idcards",     label: "ID Cards",    group: "tools",    show: f.id_cards !== false },
-    { id: "qrscanner",   label: "QR Scanner",  group: "tools",    show: f.qr_scanner !== false },
+    { id: "expenses",    label: "Expenses",    group: "finance",  show: !loading && (academy?.features?.expenses !== false) },
+    { id: "reports",     label: "Reports",     group: "finance",  show: !loading && (academy?.features?.reports !== false) },
+    { id: "idcards",     label: "ID Cards",    group: "tools",    show: !loading && (academy?.features?.id_cards !== false) },
+    { id: "qrscanner",   label: "QR Scanner",  group: "tools",    show: !loading && (academy?.features?.qr_scanner !== false) },
     ...(user.role === "super_admin" ? [
       { id: "users",    label: "Users",    group: "tools", show: true },
       { id: "settings", label: "Settings", group: "tools", show: true },
@@ -378,9 +366,28 @@ function Layout() {
 
       <main className="main-content" ref={mainRef}>
         <TrialBanner academy={academy} onUpgrade={() => setShowUpgrade(true)} />
-        <ErrorBoundary page={page} onNavigate={goTo}>
-          <Page onNavigate={goTo} />
-        </ErrorBoundary>
+        {loading ? (
+          <div style={{ animation: "fadeUp 0.3s ease both" }}>
+            <div className="page-header">
+              <div>
+                <div className="skeleton-box" style={{ width: 200, height: 28, marginBottom: 8 }} />
+                <div className="skeleton-box" style={{ width: 140, height: 16 }} />
+              </div>
+            </div>
+            <div className="stat-grid">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="stat-card" style={{ border: "1px solid var(--border2)" }}>
+                   <SkeletonBox width="60%" height="12px" marginBottom="12px" />
+                   <SkeletonBox width="100%" height="32px" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <ErrorBoundary page={page} onNavigate={goTo}>
+            <Page onNavigate={goTo} />
+          </ErrorBoundary>
+        )}
       </main>
 
       {/* ── Mobile Bottom Navigation Bar ───────────────────────────────────── */}
