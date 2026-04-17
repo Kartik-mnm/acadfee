@@ -8,7 +8,7 @@ const { Resend } = require("resend");
 const { auth, superAdmin, getJwtSecret } = require("../middleware");
 
 const FROM_ADDRESS = "Exponent Platform <noreply@exponentgrow.in>";
-const APP_URL = "https://app.exponentgrow.in";
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
 setInterval(async () => {
   try {

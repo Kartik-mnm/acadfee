@@ -11,8 +11,8 @@ let lastFiredDate = "";
 // ── Keep-alive ────────────────────────────────────────────────────────────────────────
 function startKeepAlive() {
   const targets = [
-    "https://api.exponentgrow.in/health",
-    "https://app.exponentgrow.in",
+    process.env.APP_URL,
+    process.env.FRONTEND_URL,
   ].filter(Boolean);
 
   const ping = async () => {
@@ -201,7 +201,7 @@ async function emailDailyReports(todayIST) {
     </div>
     ${data.payments.length > 0 ? `<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;border-bottom:2px solid #6366f1;padding-bottom:4px;">\ud83d\udcb0 Payments (${data.payments.length})</div><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="background:#6366f1;color:#fff;"><th style="padding:5px 8px;text-align:left;">Student</th><th style="padding:5px 8px;text-align:left;">Branch</th><th style="padding:5px 8px;text-align:right;">Amount</th><th style="padding:5px 8px;text-align:left;">Mode</th></tr>${data.payments.map((p,i)=>`<tr style="${i%2===1?"background:#f5f5ff":""}"><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.student_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.branch_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#6366f1;">${fmt(p.amount)}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.payment_mode}</td></tr>`).join("")}</table></div>` : ""}
     ${data.new_students.length > 0 ? `<div style="font-size:12px;margin-bottom:12px;"><span style="font-weight:700;">\ud83c\udf93 New students:</span> ${data.new_students.map(st=>st.name).join(", ")}</div>` : ""}
-    <div style="margin-top:16px;padding:10px 14px;background:#f5f5ff;border-radius:8px;font-size:11px;color:#555;">Log in at <a href="https://app.exponentgrow.in" style="color:#6366f1;">app.exponentgrow.in</a> to download the full Excel report.</div>
+    <div style="margin-top:16px;padding:10px 14px;background:#f5f5ff;border-radius:8px;font-size:11px;color:#555;">Log in at your academy dashboard to download the full Excel report.</div>
   </div>
   <div style="background:#1a1f35;padding:12px 28px;text-align:center;font-size:10px;color:rgba(255,255,255,0.4);">Exponent Platform \u00b7 exponentgrow.in \u00b7 ${todayIST}</div>
 </div></body></html>`;

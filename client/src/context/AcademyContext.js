@@ -3,7 +3,7 @@ import axios from "axios";
 
 const AcademyCtx = createContext(null);
 
-const API_BASE = "https://api.exponentgrow.in";
+const API_BASE = process.env.REACT_APP_API_URL;
 
 // ── localStorage cache keys ──────────────────────────────────────────────────
 // We cache branding so new tabs / refreshes show the right logo instantly,
@@ -46,7 +46,7 @@ function applyFavicon(faviconUrl) {
 
 // Fetch platform-level branding and apply it (used when no academy is loaded)
 function applyPlatformBranding() {
-  fetch("https://api.exponentgrow.in/platform/auth/public-branding")
+  fetch(`${API_BASE}/platform/auth/public-branding`)
     .then(r => r.json())
     .then(data => {
       if (data.logo_url) {

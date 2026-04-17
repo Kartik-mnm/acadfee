@@ -1,7 +1,7 @@
 import { useState } from "react";
 import API from "../api";
 
-const API_URL = process.env.REACT_APP_API_URL || "https://acadfee.onrender.com";
+const API_URL = process.env.REACT_APP_API_URL;
 
 const FEATURE_LIST = [
   { key: "attendance",    label: "Attendance",    icon: "📋", desc: "Track daily student attendance" },
