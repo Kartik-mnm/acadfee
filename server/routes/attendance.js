@@ -27,7 +27,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
     const { rows } = await db.query(
       `SELECT a.*, s.name AS student_name, s.phone, s.photo_url,
               b.name AS batch_name, br.name AS branch_name,
-              LEAST(ROUND((a.present::numeric / NULLIF(a.total_days,0)) * 100, 1), 100) AS percentage
+              COALESCE(LEAST(ROUND((a.present::numeric / NULLIF(a.total_days,0)) * 100, 1), 100), 0) AS percentage
        FROM attendance a
        JOIN students s ON s.id = a.student_id
        LEFT JOIN batches b ON b.id = s.batch_id

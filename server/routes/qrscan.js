@@ -260,17 +260,28 @@ router.post("/scan", auth, async (req, res) => {
       scanType = "exit"; result = rows[0];
       // Only increment attendance on working days
       if (isWorkingDay) {
+        // Calculate days passed in month so far to initialize accurately
+        const { rows: wdCount } = await db.query(
+          `SELECT COUNT(*) AS cnt FROM working_days 
+           WHERE branch_id=$1 AND EXTRACT(YEAR FROM date)=$2 AND EXTRACT(MONTH FROM date)=$3 
+             AND is_working=false AND EXTRACT(DAY FROM date) <= EXTRACT(DAY FROM $4::date)`,
+          [branch_id, istYear, istMonth, today]
+        );
+        const holidaysSoFar = parseInt(wdCount[0]?.cnt || 0);
+        const daysPassed    = istMonth === new Date().getMonth() + 1 ? new Date().getDate() : new Date(istYear, istMonth, 0).getDate();
+        const workingDaysSoFar = Math.max(1, daysPassed - holidaysSoFar);
+
         await db.query(
           `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
-           VALUES ($1,$2,$3,$4,1,1)
+           VALUES ($1, $2, $3, $4, $5, 1)
            ON CONFLICT (student_id, month, year)
            DO UPDATE SET 
              present = LEAST(
                attendance.present + 1,
                GREATEST(attendance.total_days, attendance.present + 1, 1)
              ),
-             total_days = GREATEST(attendance.total_days, attendance.present + 1, 1)`,
-          [student_id, branch_id, istMonth, istYear]
+             total_days = GREATEST(attendance.total_days, attendance.present + 1, $5)`,
+          [student_id, branch_id, istMonth, istYear, workingDaysSoFar]
         );
       }
     } else {

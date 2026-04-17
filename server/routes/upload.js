@@ -1,7 +1,7 @@
 const router  = require("express").Router();
 const https   = require("https");
 const crypto  = require("crypto");
-const { auth } = require("../middleware");
+const { auth, authenticatePlatformOwner } = require("../middleware");
 
 const ALLOWED_MIME_TYPES = [
   "image/jpeg", "image/png", "image/webp",
@@ -60,8 +60,8 @@ router.post("/photo", auth, async (req, res) => {
   return handleUpload(req, res, "nishchay_students");
 });
 
-// ── POST /api/upload/platform — no auth required (logo, favicon, branding)
-router.post("/platform", async (req, res) => {
+// ── POST /api/upload/platform — platform owner only (logo, favicon, branding)
+router.post("/platform", authenticatePlatformOwner, async (req, res) => {
   return handleUpload(req, res, "academy_branding");
 });
 
