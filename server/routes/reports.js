@@ -107,10 +107,10 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
     ]);
 
     res.json({
-      active_students:    parseInt(students.rows[0].count),
-      total_collected:    parseFloat(collected.rows[0].total),
-      total_due:          parseFloat(due.rows[0].total),
-      overdue_count:      parseInt(overdue.rows[0].count),
+      active_students:    parseInt(students.rows[0]?.count || 0),
+      total_collected:    parseFloat(collected.rows[0]?.total || 0),
+      total_due:          parseFloat(due.rows[0]?.total || 0),
+      overdue_count:      parseInt(overdue.rows[0]?.count || 0),
       recent_payments:    recentPayments.rows,
       branch_performance: branchPerf.rows,
     });

@@ -145,30 +145,38 @@ router.post("/", auth, async (req, res) => {
     }
     const receipt_no = `RCP-${today}-${String(seq).padStart(4, "0")}`;
 
-    // INSERT — include merchant_id (academy_id in DB), branch_id, and collected_by
-    const { rows } = await db.query(
-      `INSERT INTO payments
-         (student_id, fee_record_id, amount, payment_mode, transaction_ref, notes, paid_on, receipt_no, merchant_id, branch_id, collected_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       RETURNING *`,
-      [student_id, fee_record_id, amount, payment_mode,
-       transaction_ref || null, finalNotes,
-       paymentDate, receipt_no, academyId, branch_id, req.user.id]
-    );
-    const payment = rows[0];
+    // ── TRANSACTION START ────────────────────────────────────────────────────
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
 
-    // Update fee record status
-    await db.query(
-      `UPDATE fee_records SET
-         amount_paid = LEAST(amount_due, amount_paid + $1),
-         status = CASE
-           WHEN amount_paid + $1 >= amount_due THEN 'paid'
-           WHEN amount_paid + $1 > 0           THEN 'partial'
-           ELSE status
-         END
-       WHERE id = $2`,
-      [amount, fee_record_id]
-    );
+      // INSERT — include merchant_id (academy_id in DB), branch_id, and collected_by
+      const { rows: pRows } = await client.query(
+        `INSERT INTO payments
+           (student_id, fee_record_id, amount, payment_mode, transaction_ref, notes, paid_on, receipt_no, merchant_id, branch_id, collected_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING *`,
+        [student_id, fee_record_id, amount, payment_mode,
+         transaction_ref || null, finalNotes,
+         paymentDate, receipt_no, academyId, branch_id, req.user.id]
+      );
+      const payment = pRows[0];
+
+      // Update fee record status
+      await client.query(
+        `UPDATE fee_records SET
+           amount_paid = LEAST(amount_due, amount_paid + $1),
+           status = CASE
+             WHEN amount_paid + $1 >= amount_due THEN 'paid'
+             WHEN amount_paid + $1 > 0           THEN 'partial'
+             ELSE status
+           END
+         WHERE id = $2`,
+        [amount, fee_record_id]
+      );
+
+      await client.query("COMMIT");
+      // ── TRANSACTION END ──────────────────────────────────────────────────────
 
     // Send FCM payment notification (non-blocking — never fails the request)
     const amtStr  = `\u20b9${Number(amount).toLocaleString("en-IN")}`;
@@ -193,7 +201,13 @@ router.post("/", auth, async (req, res) => {
       sendWhatsAppMessage(academyId, waPhone, waText).catch(e => console.error("WA Send Error:", e.message));
     }
 
-    res.json({ ...payment, receipt_no });
+      res.json({ ...payment, receipt_no });
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     console.error("Create payment error:", e.message, e.stack);
     res.status(500).json({ error: "Failed to record payment: " + e.message });
@@ -214,19 +228,29 @@ router.delete("/:id", auth, async (req, res) => {
       return res.status(403).json({ error: "Access denied: belongs to different academy" });
     }
     const p = rows[0];
-    await db.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
-    await db.query(
-      `UPDATE fee_records SET
-         amount_paid = GREATEST(0, amount_paid - $1),
-         status = CASE
-           WHEN GREATEST(0, amount_paid - $1) <= 0        THEN 'pending'
-           WHEN GREATEST(0, amount_paid - $1) < amount_due THEN 'partial'
-           ELSE 'paid'
-         END
-       WHERE id = $2`,
-      [p.amount, p.fee_record_id]
-    );
-    res.json({ success: true });
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
+      await client.query(
+        `UPDATE fee_records SET
+           amount_paid = GREATEST(0, amount_paid - $1),
+           status = CASE
+             WHEN GREATEST(0, amount_paid - $1) <= 0        THEN 'pending'
+             WHEN GREATEST(0, amount_paid - $1) < amount_due THEN 'partial'
+             ELSE 'paid'
+           END
+         WHERE id = $2`,
+        [p.amount, p.fee_record_id]
+      );
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     console.error("Delete payment error:", e.message);
     res.status(500).json({ error: "Failed to delete payment" });

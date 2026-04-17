@@ -305,9 +305,9 @@ router.get("/academies/:id/stats", authenticatePlatformOwner, async (req, res) =
       db.query(`SELECT COALESCE(SUM(p.amount),0) AS total FROM payments p JOIN students s ON s.id=p.student_id WHERE s.academy_id=$1 AND p.created_at>=date_trunc('month',NOW())`, [aid]),
     ]);
     res.json({
-      student_count:   parseInt(students.rows[0].count),
-      branch_count:    parseInt(branches.rows[0].count),
-      fees_this_month: parseFloat(fees.rows[0].total),
+      student_count:   parseInt(students.rows[0]?.count || 0),
+      branch_count:    parseInt(branches.rows[0]?.count || 0),
+      fees_this_month: parseFloat(fees.rows[0]?.total  || 0),
     });
   } catch (err) { res.status(500).json({ error: "Failed to fetch stats" }); }
 });
@@ -321,10 +321,10 @@ router.get("/stats", authenticatePlatformOwner, async (req, res) => {
       db.query(`SELECT COALESCE(SUM(amount),0) AS total_all_time, COALESCE(SUM(amount) FILTER (WHERE paid_on >= date_trunc('month', CURRENT_DATE)),0) AS this_month FROM platform_revenue`),
     ]);
     res.json({
-      academies:          acad.rows[0],
-      total_students:     students.rows[0].count,
-      revenue_all_time:   parseFloat(revenue.rows[0].total_all_time),
-      revenue_this_month: parseFloat(revenue.rows[0].this_month),
+      academies:          acad.rows[0] || {},
+      total_students:     students.rows[0]?.count || 0,
+      revenue_all_time:   parseFloat(revenue.rows[0]?.total_all_time || 0),
+      revenue_this_month: parseFloat(revenue.rows[0]?.this_month || 0),
     });
   } catch (err) { res.status(500).json({ error: "Failed to fetch platform stats" }); }
 });
