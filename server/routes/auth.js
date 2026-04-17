@@ -56,6 +56,7 @@ router.post("/login", loginLimiter, async (req, res) => {
       );
       if (acad[0] && !acad[0].is_active) {
         const isExpiredTrial = acad[0].plan === "trial" && acad[0].trial_ends_at && new Date(acad[0].trial_ends_at) < new Date();
+        console.warn(`[Auth] Access blocked for ${user.email} - Academy suspended (Plan: ${acad[0].plan}, Expired: ${isExpiredTrial})`);
         return res.status(403).json({
           error: isExpiredTrial
             ? "Your 7-day free trial has expired. Please contact us on WhatsApp to upgrade your plan."

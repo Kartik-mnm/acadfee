@@ -212,6 +212,8 @@ async function emailDailyReports(todayIST) {
           html,
         });
         console.log(`[daily-report] Sent to ${acad.email} (${acad.name})`);
+        // Add a 100ms delay to prevent saturating the DB pool / Email provider
+        await new Promise(r => setTimeout(r, 100));
       } catch (e) {
         console.error(`[daily-report] Failed for ${acad.name}:`, e.message);
       }
@@ -317,20 +319,30 @@ async function runNightlyJob() {
   const todayIST = istDate.toISOString().split("T")[0]; // YYYY-MM-DD in IST
 
   if (lastFiredDate === todayIST) {
-    console.log(`[Cron] Already ran for ${todayIST}, skipping.`);
     return;
   }
+  // Set flag early to prevent race condition if the job finishes extremely fast
   lastFiredDate = todayIST;
 
   const [y, m] = todayIST.split("-").map(Number);
   console.log(`\n[Cron] ⏰ Nightly job starting for ${todayIST}`);
 
-  await purgeStaleTokens();               // 1. Clear FCM tokens for logged-out students
-  await sendAbsentNotifications(todayIST); // 2. Push absent alerts
-  await autoGenerateAttendance(m, y);     // 3. Generate/update monthly attendance records
-  await enforceTrialExpiry();             // 4. Suspend expired trials
-  await backfillStudentAcademyIds();      // 5. Fix any missing academy_id values
-  await emailDailyReports(todayIST);      // 6. Email daily summaries to academy owners
+  const runTask = async (name, fn) => {
+    try {
+      console.log(`[Cron] [${name}] Starting...`);
+      await fn();
+      console.log(`[Cron] [${name}] Success.`);
+    } catch (err) {
+      console.error(`[Cron] [${name}] FATAL ERROR:`, err.message);
+    }
+  };
+
+  await runTask("PurgeStaleTokens",  () => purgeStaleTokens());
+  await runTask("AbsentNotifications", () => sendAbsentNotifications(todayIST));
+  await runTask("AttendanceGen",     () => autoGenerateAttendance(m, y));
+  await runTask("TrialEnforcement",  () => enforceTrialExpiry());
+  await runTask("BackfillIDs",       () => backfillStudentAcademyIds());
+  await runTask("DailyReports",      () => emailDailyReports(todayIST));
 
   console.log(`[Cron] ✅ Nightly job complete for ${todayIST}`);
 }
