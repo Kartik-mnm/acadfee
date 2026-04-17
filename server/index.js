@@ -12,6 +12,7 @@ const runMigration                        = require("./migrate");
 const { checkConnection, startDbHeartbeat } = require("./db");
 
 const allowedOrigins = [
+  process.env.FRONTEND_URL,
   "https://acadfee.onrender.com",
   "https://acadfee-app.onrender.com",
   "https://exponentgrow.in",
@@ -23,7 +24,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5000",
-];
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {

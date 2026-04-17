@@ -250,7 +250,7 @@ router.post("/:id/send-email", auth, async (req, res) => {
       db.query(`SELECT s.*, b.name AS batch_name, br.name AS branch_name FROM students s LEFT JOIN batches b ON b.id=s.batch_id LEFT JOIN branches br ON br.id=s.branch_id WHERE s.id=$1`, [req.params.id]),
       db.query("SELECT * FROM fee_records WHERE student_id=$1 ORDER BY due_date DESC", [req.params.id]),
       db.query(`SELECT p.*, fr.period_label FROM payments p JOIN fee_records fr ON fr.id=p.fee_record_id WHERE p.student_id=$1 ORDER BY p.paid_on DESC`, [req.params.id]),
-      db.query("SELECT * FROM attendance WHERE student_id=$1 ORDER BY year DESC, month DESC", [req.params.id]),
+      db.query(`SELECT a.*, LEAST(ROUND((a.present::numeric / NULLIF(a.total_days,0)) * 100, 1), 100) AS percentage FROM attendance a WHERE a.student_id=$1 ORDER BY a.year DESC, a.month DESC`, [req.params.id]),
       db.query(`SELECT tr.*, t.name AS test_name, t.subject, t.total_marks, t.test_date, ROUND((tr.marks/t.total_marks::numeric)*100,1) AS percentage FROM test_results tr JOIN tests t ON t.id=tr.test_id WHERE tr.student_id=$1 ORDER BY t.test_date DESC`, [req.params.id]),
       aid ? db.query(`SELECT name, phone, primary_color, accent_color FROM academies WHERE id=$1`, [aid]) : Promise.resolve({ rows: [{}] }),
     ]);

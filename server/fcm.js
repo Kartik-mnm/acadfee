@@ -25,7 +25,8 @@ function initFCM() {
 }
 
 function getAppUrl() {
-  return (process.env.APP_URL || "https://app.exponentgrow.in").replace(/\/$/, "");
+  const url = process.env.APP_URL || process.env.FRONTEND_URL || "https://app.exponentgrow.in";
+  return url.replace(/\/$/, "");
 }
 
 /**

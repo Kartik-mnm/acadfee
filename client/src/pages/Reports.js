@@ -7,13 +7,11 @@ const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 // Always use the same base URL that axios API uses — no hardcoding
 const API_BASE = (() => {
-  const base = process.env.REACT_APP_API_URL || "";
-  if (base) return base.replace(/\/$/, "");
-  // Derive from current hostname at runtime
-  const host = window.location.hostname;
-  if (host === "app.exponentgrow.in")   return "https://api.exponentgrow.in";
-  if (host === "acadfee-app.onrender.com") return "https://acadfee.onrender.com";
-  return "http://localhost:5000";
+  const envBase = process.env.REACT_APP_API_URL;
+  if (envBase) return envBase.replace(/\/$/, "");
+  
+  // Fallback for development if env is not set
+  return "https://acadfee.onrender.com"; 
 })();
 
 // ── WhatsApp reminder ──────────────────────────────────────────────────────────

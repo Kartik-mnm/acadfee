@@ -15,7 +15,7 @@ const OWNER_PHONE     = "8956419453";
 const OWNER_WHATSAPP  = "918956419453";
 const OWNER_EMAIL_CC  = "aspirantth@gmail.com";
 const FROM_ADDRESS    = "Exponent Platform <noreply@exponentgrow.in>";
-const APP_URL         = "https://app.exponentgrow.in";
+const APP_URL         = process.env.APP_URL || "https://app.exponentgrow.in";
 
 function makeSlug(name) {
   return name.toLowerCase().trim()

@@ -33,10 +33,9 @@ export default function AdmissionForm() {
     if (!slug) { setNotFound(true); return; }
 
     // Fetch academy branding via slug
-    fetch(`https://acadfee.onrender.com/api/academy/config?slug=${slug}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d && d.name) { setAcademy(d); }
+    API.get(`/academy/config?slug=${slug}`)
+      .then((r) => {
+        if (r.data && r.data.name) { setAcademy(r.data); }
         else { setNotFound(true); }
       })
       .catch(() => setNotFound(true));

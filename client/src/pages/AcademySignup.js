@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const API = "https://acadfee.onrender.com";
+import API from "../api";
 
 const S = {
   bg:     "#07090f",
@@ -44,14 +44,10 @@ export default function AcademySignup() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/onboarding/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner_name, email, phone, academy_name, password }),
+      const res = await API.post("/onboarding/signup", {
+        owner_name, email, phone, academy_name, password
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Signup failed. Please try again."); return; }
-      setSuccess(data);
+      setSuccess(res.data);
     } catch (_) {
       setError("Network error. Please check your connection and try again.");
     } finally {

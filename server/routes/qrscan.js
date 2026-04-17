@@ -262,12 +262,14 @@ router.post("/scan", auth, async (req, res) => {
       if (isWorkingDay) {
         await db.query(
           `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
-           VALUES ($1,$2,$3,$4,0,1)
+           VALUES ($1,$2,$3,$4,1,1)
            ON CONFLICT (student_id, month, year)
-           DO UPDATE SET present = LEAST(
-             attendance.present + 1,
-             GREATEST(attendance.total_days, attendance.present + 1)
-           )`,
+           DO UPDATE SET 
+             present = LEAST(
+               attendance.present + 1,
+               GREATEST(attendance.total_days, attendance.present + 1, 1)
+             ),
+             total_days = GREATEST(attendance.total_days, attendance.present + 1, 1)`,
           [student_id, branch_id, istMonth, istYear]
         );
       }

@@ -47,10 +47,10 @@ export default function Login() {
   );
   useEffect(() => {
     if (!academy) {
-      fetch("https://api.exponentgrow.in/platform/auth/public-branding")
-        .then(r => r.json())
-        .then(data => {
-          if (data.logo_url) {
+      API.get("/platform/auth/public-branding")
+        .then(res => {
+          const data = res.data;
+          if (data && data.logo_url) {
             setPlatformLogoUrl(data.logo_url);
             try { localStorage.setItem("exponent_logo_url", data.logo_url); } catch {}
           }

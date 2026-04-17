@@ -1,7 +1,7 @@
 import axios from "axios";
 
-const API_BASE        = "https://api.exponentgrow.in/api";
-const API_REFRESH_URL = "https://api.exponentgrow.in/api/auth/refresh";
+const API_BASE        = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api` : "https://api.exponentgrow.in/api";
+const API_REFRESH_URL = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api/auth/refresh` : "https://api.exponentgrow.in/api/auth/refresh";
 
 const API = axios.create({ baseURL: API_BASE });
 
