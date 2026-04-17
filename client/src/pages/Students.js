@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import StudentProfile from "./StudentProfile";
+import { SkeletonTable, SkeletonBox } from "../components/Skeleton";
 
 const EMPTY = {
   name: "", phone: "", parent_phone: "", email: "", address: "",
@@ -394,7 +395,28 @@ export default function Students() {
 
       {/* ── Content ── */}
       {loading ? (
-        <div className="loading">Loading students...</div>
+        isMobile ? (
+          <div>
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} style={{ background: "var(--bg3)", borderRadius: 16, padding: "20px 16px", marginBottom: 12, border: "1px solid var(--border2)" }}>
+                <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+                  <SkeletonBox width="56px" height="56px" borderRadius="50%" />
+                  <div style={{ flex: 1 }}>
+                    <SkeletonBox width="140px" height="16px" marginBottom="8px" />
+                    <SkeletonBox width="100px" height="12px" />
+                  </div>
+                </div>
+                <SkeletonBox width="100%" height="12px" marginBottom="8px" />
+                <SkeletonBox width="80%" height="12px" marginBottom="14px" />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+                  {[1, 2, 3, 4, 5].map(j => <SkeletonBox key={j} width="100%" height="32px" borderRadius="12px" />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <SkeletonTable rows={10} />
+        )
       ) : students.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">👤</div>

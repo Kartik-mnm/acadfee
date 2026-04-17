@@ -6,6 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Cell, CartesianGrid,
 } from "recharts";
+import { SkeletonStatGrid, SkeletonChart, SkeletonRecentPayments } from "../components/Skeleton";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 const fmtShort = (n) => {
@@ -231,7 +232,23 @@ export default function Dashboard({ onNavigate }) {
       API.get("/reports/by-branch").then(r => setBranchStats(r.data));
   }, [branchFilter, user]);
 
-  if (!data) return <div className="loading">Loading dashboard…</div>;
+  if (!data) {
+    return (
+      <div style={{ animation: "fadeUp 0.3s ease both" }}>
+        <div className="page-header">
+          <div>
+            <div className="page-title">Dashboard</div>
+            <div className="page-sub">Loading latest statistics...</div>
+          </div>
+        </div>
+        <SkeletonStatGrid />
+        <div className="grid-2">
+          <SkeletonChart />
+          <SkeletonRecentPayments />
+        </div>
+      </div>
+    );
+  }
 
   const statCards = [
     { key:"students",  color:"blue",   label:"Active Students", value:data.active_students,      suffix:"",         icon:"&#9673;", hint:"Total enrolled" },
