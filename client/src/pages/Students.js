@@ -40,7 +40,7 @@ function PhotoUpload({ value, onChange }) {
       const base64 = e.target.result;
       setPreview(base64);
       try {
-        const { data } = await API.post("/upload/platform", { image: base64 });
+        const { data } = await API.post("/upload/photo", { image: base64 });
         setPreview(data.url);
         onChange(data.url);
       } catch (err) {

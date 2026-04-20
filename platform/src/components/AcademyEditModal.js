@@ -50,9 +50,13 @@ function Toggle({ checked, onChange }) {
 
 // Upload helper using the /upload/platform endpoint (no academy auth required)
 async function uploadImage(base64DataUrl) {
+  const token = localStorage.getItem("token");
   const res = await fetch(`${API_URL}/api/upload/platform`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
     body: JSON.stringify({ image: base64DataUrl }),
   });
   const data = await res.json();

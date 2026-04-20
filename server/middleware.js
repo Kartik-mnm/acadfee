@@ -57,6 +57,24 @@ function authenticatePlatformOwner(req, res, next) {
   }
 }
 
+function authenticateBrandingAccess(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "No token provided" });
+  try {
+    const decoded = jwt.verify(token, getJwtSecret());
+    if (decoded.role !== "platform_owner" && decoded.role !== "super_admin")
+      return res.status(403).json({ error: "Access denied. Academy admin or Platform owner only." });
+    req.user = decoded;
+    next();
+  } catch (err) {
+    const isExpired = err.name === "TokenExpiredError";
+    res.status(401).json({
+      error: isExpired ? "Token expired. Please log in again." : "Invalid or expired token",
+      code:  isExpired ? "TOKEN_EXPIRED" : "INVALID_TOKEN",
+    });
+  }
+}
+
 function superAdmin(req, res, next) {
   if (req.user.role !== "super_admin") return res.status(403).json({ error: "Super admin only" });
   next();
@@ -81,4 +99,4 @@ function studentSelf(req, res, next) {
   next();
 }
 
-module.exports = { auth, superAdmin, branchFilter, studentSelf, getJwtSecret, authenticatePlatformOwner };
+module.exports = { auth, superAdmin, branchFilter, studentSelf, getJwtSecret, authenticatePlatformOwner, authenticateBrandingAccess };
