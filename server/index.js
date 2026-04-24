@@ -30,7 +30,10 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (origin.endsWith(".exponentgrow.in")) return callback(null, true);
+    // Allow all subdomains of exponentgrow.in (and the root domain)
+    if (/^https?:\/\/(?:[a-z0-9-]+\.)*exponentgrow\.in$/i.test(origin)) {
+      return callback(null, true);
+    }
     console.warn(`[CORS] Blocked: ${origin}`);
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
