@@ -112,30 +112,34 @@ function PaymentCard({ p, showBranch }) {
   return (
     <div style={{
       background: "var(--bg3, #1e293b)",
-      borderRadius: 14,
-      padding: "14px 16px",
-      marginBottom: 10,
+      borderRadius: 12,
+      padding: "8px 14px",
+      marginBottom: 6,
     }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom: 6 }}>
-        <div>
-          <span style={{ fontWeight:700, fontSize:14, color:"var(--text)" }}>{p.student_name}</span>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 2 }}>
+        <div style={{
+          fontWeight: 700, fontSize: 13, color: "var(--text)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "160px"
+        }}>
+          {p.student_name}
           {showBranch && (
-            <span style={{ fontSize:11, color:"var(--text3)", marginLeft:8, fontWeight:500, textTransform:"uppercase", letterSpacing:"0.05em" }}>{p.branch_name}</span>
+            <span style={{ fontSize:10, color:"var(--text3)", marginLeft:6, fontWeight:500, textTransform:"uppercase" }}>• {p.branch_name}</span>
           )}
         </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#3fff8b", fontFamily: "monospace" }}>
+          {fmt(p.amount)}
+        </div>
       </div>
-      <div style={{ fontSize:22, fontWeight:800, color:"#3fff8b", fontFamily:"monospace", marginBottom:8 }}>
-        {fmt(p.amount)}
-      </div>
-      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-        <span style={{
-          background:"#1d2637", color:"#9ba8ff",
-          borderRadius:100, padding:"3px 10px",
-          fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em",
-        }}>{p.payment_mode?.toUpperCase()}</span>
-        <span style={{ fontSize:12, color:"var(--text3)" }}>
-          {new Date(p.paid_on).toLocaleDateString("en-IN", { day:"numeric", month:"numeric", year:"numeric" })}
+      
+      <div style={{ display:"flex", alignItems:"center", justifyContent: "space-between" }}>
+        <span style={{ fontSize:11, color:"var(--text3)" }}>
+          {new Date(p.paid_on).toLocaleDateString("en-IN", { day:"numeric", month:"short" })}
         </span>
+        <span style={{
+          background:"rgba(155,168,255,0.08)", color:"#9ba8ff",
+          borderRadius:4, padding:"1px 6px",
+          fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.02em",
+        }}>{p.payment_mode?.toUpperCase()}</span>
       </div>
     </div>
   );
@@ -258,7 +262,7 @@ export default function Dashboard({ onNavigate }) {
   ];
 
   const showChecklist = isNewAcademy && user.role === "super_admin" && !checklistDismissed;
-  const recentPayments = (data.recent_payments || []).slice(0, 5);
+  const recentPayments = (data.recent_payments || []).slice(0, 8);
 
   return (
     <div>
