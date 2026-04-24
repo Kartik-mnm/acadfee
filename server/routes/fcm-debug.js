@@ -96,4 +96,27 @@ router.post("/test", auth, async (req, res) => {
   }
 });
 
+// POST /api/fcm-debug/trigger-absent — manually trigger the absent notification job (super_admin only)
+router.post("/trigger-absent", auth, async (req, res) => {
+  if (req.user.role !== "super_admin")
+    return res.status(403).json({ error: "Access denied: super_admin only" });
+
+  const { sendAbsentNotifications } = require("../cron");
+  
+  // Use today's date in IST
+  const now      = new Date();
+  const istMs    = now.getTime() + (5.5 * 60 * 60 * 1000);
+  const istDate  = new Date(istMs);
+  const todayIST = istDate.toISOString().split("T")[0];
+
+  try {
+    console.log(`[fcm-debug] Manual trigger for absent notifications: ${todayIST}`);
+    // We don't await this to avoid timeout, but we trigger it
+    sendAbsentNotifications(todayIST);
+    res.json({ success: true, message: `Absent notification job triggered for ${todayIST}. Check server logs for results.` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

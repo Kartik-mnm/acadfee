@@ -116,25 +116,23 @@ async function sendAbsentNotifications(todayIST) {
        JOIN branches br ON br.id = s.branch_id
        LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, br.academy_id)
        WHERE s.status = 'active'
-         AND (s.parent_fcm_token IS NOT NULL OR s.fcm_token IS NOT NULL)
+         AND (s.parent_fcm_token IS NOT NULL OR s.fcm_token IS NOT NULL OR s.phone IS NOT NULL OR s.parent_phone IS NOT NULL)
          AND s.id NOT IN (
            SELECT student_id FROM qr_scans
            WHERE scan_date = $1
-             AND exit_time IS NOT NULL
          )`,
       [todayIST]
     );
 
     // Filter out students whose branch is a holiday today
-    const notifyList = [];
-    for (const s of absentStudents) {
-      const { rows: wd } = await db.query(
-        `SELECT is_working FROM working_days WHERE branch_id=$1 AND date=$2`,
-        [s.branch_id, todayIST]
-      );
-      const isHoliday = wd.length > 0 && !wd[0].is_working;
-      if (!isHoliday) notifyList.push(s);
-    }
+    // Optimization: fetch all working days for today in one go
+    const { rows: holidays } = await db.query(
+      `SELECT branch_id FROM working_days WHERE date=$1 AND is_working=false`,
+      [todayIST]
+    );
+    const holidayBranchIds = new Set(holidays.map(h => h.branch_id));
+
+    const notifyList = absentStudents.filter(s => !holidayBranchIds.has(s.branch_id));
 
     console.log(`[Cron] ${notifyList.length} absent student(s) to notify on ${todayIST}`);
 
@@ -369,4 +367,4 @@ function startAbsentCron() {
   }, 60 * 1000);
 }
 
-module.exports = { startAbsentCron, runNightlyJob, runNightlyBackup, startKeepAlive, backfillStudentAcademyIds };
+module.exports = { startAbsentCron, runNightlyJob, runNightlyBackup, startKeepAlive, backfillStudentAcademyIds, sendAbsentNotifications };
