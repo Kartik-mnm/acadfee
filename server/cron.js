@@ -9,25 +9,41 @@ const { Resend }                 = require("resend");
 let lastFiredDate = "";
 
 // ── Keep-alive ────────────────────────────────────────────────────────────────────────
+// Pings the API and frontend every 8 minutes to prevent Render free tier from sleeping.
+// Hardcoded fallback URLs ensure this works even if env vars are not set.
 function startKeepAlive() {
+  const HARDCODED = [
+    "https://api.exponentgrow.in/health",
+    "https://app.exponentgrow.in",
+  ];
+
   const targets = [
-    process.env.APP_URL,
-    process.env.FRONTEND_URL,
-  ].filter(Boolean);
+    ...(process.env.APP_URL    ? [process.env.APP_URL]    : []),
+    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+    ...HARDCODED,
+  ];
+
+  // Deduplicate
+  const unique = [...new Set(targets)];
 
   const ping = async () => {
-    for (const url of targets) {
+    for (const url of unique) {
       try {
-        await fetch(url, { signal: AbortSignal.timeout(8000) });
-        console.log(`[keep-alive] \u2713 pinged ${url}`);
+        const ctrl = new AbortController();
+        const tid  = setTimeout(() => ctrl.abort(), 8000);
+        await fetch(url, { signal: ctrl.signal });
+        clearTimeout(tid);
+        console.log(`[keep-alive] \u2713 ${url}`);
       } catch (e) {
         console.warn(`[keep-alive] \u2717 ${url}: ${e.message}`);
       }
     }
   };
+
+  // Ping immediately on startup, then every 8 minutes
   ping();
-  setInterval(ping, 10 * 60 * 1000);
-  console.log("\u2705 Keep-alive started \u2014 pinging every 10 min");
+  setInterval(ping, 8 * 60 * 1000);
+  console.log(`\u2705 Keep-alive started \u2014 pinging ${unique.length} URL(s) every 8 min`);
 }
 
 // ── Backfill ─────────────────────────────────────────────────────────────────────────
@@ -77,8 +93,6 @@ async function autoGenerateAttendance(month, year) {
 }
 
 // ── Purge stale FCM tokens ───────────────────────────────────────────────────────────────────
-// Students who have logged out (no active refresh token) should not receive FCM notifications.
-// This runs before absent notifications so we don't push to phantom devices.
 async function purgeStaleTokens() {
   try {
     const { rowCount } = await db.query(`
@@ -102,13 +116,6 @@ async function purgeStaleTokens() {
 // ── Absent notifications ─────────────────────────────────────────────────────────────────────
 async function sendAbsentNotifications(todayIST) {
   try {
-    // A student is considered ABSENT if they have NO completed scan today.
-    // A completed scan = a qr_scans row with exit_time IS NOT NULL.
-    // Students who only scanned entry (no exit) are still absent — they didn't
-    // complete their attendance, so their attendance count was NOT incremented.
-    // BUG FIX: previous version dropped the exit_time IS NOT NULL check, meaning
-    // students who only tapped entry would be excluded from absent notifications
-    // but also have NO attendance credit — the worst of both worlds.
     const { rows: absentStudents } = await db.query(
       `SELECT s.id, s.name, s.branch_id, s.fcm_token, s.parent_fcm_token, s.phone, s.parent_phone,
               br.name AS branch_name, a.name AS academy_name, COALESCE(s.academy_id, br.academy_id) AS academy_id
@@ -124,14 +131,11 @@ async function sendAbsentNotifications(todayIST) {
       [todayIST]
     );
 
-    // Filter out students whose branch is a holiday today
-    // Optimization: fetch all working days for today in one go
     const { rows: holidays } = await db.query(
       `SELECT branch_id FROM working_days WHERE date=$1 AND is_working=false`,
       [todayIST]
     );
     const holidayBranchIds = new Set(holidays.map(h => h.branch_id));
-
     const notifyList = absentStudents.filter(s => !holidayBranchIds.has(s.branch_id));
 
     console.log(`[Cron] ${notifyList.length} absent student(s) to notify on ${todayIST}`);
@@ -141,27 +145,23 @@ async function sendAbsentNotifications(todayIST) {
       const dateLabel   = new Date(todayIST).toLocaleDateString("en-IN", {
         day: "numeric", month: "long", timeZone: "Asia/Kolkata"
       });
-
       if (student.fcm_token) {
-        await sendNotification(
-          student.fcm_token,
+        await sendNotification(student.fcm_token,
           `\u26a0\ufe0f You were absent today`,
-          `You did not attend ${academyName} on ${dateLabel}. Please contact your admin if this is a mistake.`,
+          `You did not attend ${academyName} on ${dateLabel}.`,
           { type: "absent_alert", student_id: String(student.id), date: todayIST }
         );
       }
       if (student.parent_fcm_token) {
-        await sendNotification(
-          student.parent_fcm_token,
+        await sendNotification(student.parent_fcm_token,
           `\u26a0\ufe0f ${student.name} was absent today`,
           `${student.name} did not attend ${academyName} on ${dateLabel}.`,
           { type: "absent_alert", student_id: String(student.id), date: todayIST }
         );
       }
-      
       const phone = student.parent_phone || student.phone;
       if (phone && student.academy_id) {
-        const text = `⚠️ *ABSENT ALERT*\n\nHi, ${student.name} did not attend ${academyName} on ${dateLabel}. Please contact the administration if you have questions.\n\n- ${academyName}`;
+        const text = `\u26a0\ufe0f *ABSENT ALERT*\n\nHi, ${student.name} did not attend ${academyName} on ${dateLabel}. Please contact the administration if you have questions.\n\n- ${academyName}`;
         await sendWhatsAppMessage(student.academy_id, phone, text);
       }
     }
@@ -197,8 +197,6 @@ async function emailDailyReports(todayIST) {
       ${[["Collected",fmt(s.total_collected)],["Expenses",fmt(s.total_expenses)],["Net Cash",fmt(s.net_cash_flow)],["Payments",s.payments_count],["New Students",s.new_students],["Present/Total",`${s.present_count}/${s.total_attendance}`]]
         .map(([l,v])=>`<div style="border:1px solid #eee;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:16px;font-weight:900;color:#6366f1;">${v}</div><div style="font-size:10px;color:#888;text-transform:uppercase;margin-top:3px;">${l}</div></div>`).join("")}
     </div>
-    ${data.payments.length > 0 ? `<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;border-bottom:2px solid #6366f1;padding-bottom:4px;">\ud83d\udcb0 Payments (${data.payments.length})</div><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="background:#6366f1;color:#fff;"><th style="padding:5px 8px;text-align:left;">Student</th><th style="padding:5px 8px;text-align:left;">Branch</th><th style="padding:5px 8px;text-align:right;">Amount</th><th style="padding:5px 8px;text-align:left;">Mode</th></tr>${data.payments.map((p,i)=>`<tr style="${i%2===1?"background:#f5f5ff":""}"><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.student_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.branch_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#6366f1;">${fmt(p.amount)}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;">${p.payment_mode}</td></tr>`).join("")}</table></div>` : ""}
-    ${data.new_students.length > 0 ? `<div style="font-size:12px;margin-bottom:12px;"><span style="font-weight:700;">\ud83c\udf93 New students:</span> ${data.new_students.map(st=>st.name).join(", ")}</div>` : ""}
     <div style="margin-top:16px;padding:10px 14px;background:#f5f5ff;border-radius:8px;font-size:11px;color:#555;">Log in at your academy dashboard to download the full Excel report.</div>
   </div>
   <div style="background:#1a1f35;padding:12px 28px;text-align:center;font-size:10px;color:rgba(255,255,255,0.4);">Exponent Platform \u00b7 exponentgrow.in \u00b7 ${todayIST}</div>
@@ -210,7 +208,6 @@ async function emailDailyReports(todayIST) {
           html,
         });
         console.log(`[daily-report] Sent to ${acad.email} (${acad.name})`);
-        // Add a 100ms delay to prevent saturating the DB pool / Email provider
         await new Promise(r => setTimeout(r, 100));
       } catch (e) {
         console.error(`[daily-report] Failed for ${acad.name}:`, e.message);
@@ -222,85 +219,36 @@ async function emailDailyReports(todayIST) {
 }
 
 // ── Nightly database backup ───────────────────────────────────────────────────
-// Exports all critical tables as a JSON file and emails it to BACKUP_EMAIL.
-// Runs at 2:00 AM IST — safely after the 10 PM nightly job completes.
-// Requires RESEND_API_KEY and BACKUP_EMAIL environment variables.
 async function runNightlyBackup(dateStr) {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn("[backup] Skipped — RESEND_API_KEY not set");
-    return;
-  }
+  if (!process.env.RESEND_API_KEY) { console.warn("[backup] Skipped — RESEND_API_KEY not set"); return; }
   const backupEmail = process.env.BACKUP_EMAIL || "kartik@exponent.app";
   console.log(`[backup] Starting nightly backup for ${dateStr}...`);
-
   try {
-    // Tables to back up — in dependency order
-    const tables = [
-      "academies",
-      "branches",
-      "users",
-      "batches",
-      "students",
-      "fee_records",
-      "payments",
-      "expenses",
-      "admission_enquiries",
-      "platform_admins",
-      "platform_revenue",
-    ];
-
+    const tables = ["academies","branches","users","batches","students","fee_records","payments","expenses","admission_enquiries","platform_admins","platform_revenue"];
     const backup = { exported_at: new Date().toISOString(), date: dateStr, tables: {} };
     const summary = [];
-
     for (const table of tables) {
       try {
         const { rows } = await db.query(`SELECT * FROM ${table} ORDER BY id`);
         backup.tables[table] = rows;
         summary.push(`${table}: ${rows.length} rows`);
       } catch (e) {
-        // Table might not exist yet — skip silently
         backup.tables[table] = [];
         summary.push(`${table}: skipped (${e.message})`);
       }
     }
-
-    const jsonStr    = JSON.stringify(backup, null, 2);
-    const jsonBuffer = Buffer.from(jsonStr, "utf-8");
+    const jsonBuffer = Buffer.from(JSON.stringify(backup, null, 2), "utf-8");
     const totalRows  = Object.values(backup.tables).reduce((acc, t) => acc + t.length, 0);
     const sizeKB     = (jsonBuffer.length / 1024).toFixed(1);
-
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
       from: "Exponent Backup <noreply@exponentgrow.in>",
       to:   backupEmail,
-      subject: `🗄️ DB Backup ${dateStr} — ${totalRows} rows, ${sizeKB} KB`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
-          <div style="background:linear-gradient(135deg,#1a1f35,#2d3561);padding:20px 24px;border-radius:10px 10px 0 0;">
-            <div style="font-size:18px;font-weight:900;color:#fff;">🗄️ Nightly Database Backup</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:4px;">${dateStr} — Exponent Platform</div>
-          </div>
-          <div style="padding:20px 24px;border:1px solid #eee;border-top:none;border-radius:0 0 10px 10px;">
-            <p style="margin:0 0 12px;color:#333;">
-              Your automated backup is attached as <strong>backup-${dateStr}.json</strong>.
-              To restore, contact your developer with this file.
-            </p>
-            <div style="background:#f5f5ff;border-radius:8px;padding:12px 16px;font-size:12px;color:#444;margin-bottom:16px;">
-              <strong>Summary:</strong><br/>
-              ${summary.map(s => `• ${s}`).join("<br/>")}
-            </div>
-            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 16px;font-size:12px;color:#166534;">
-              ✅ Total: <strong>${totalRows} rows</strong> exported &nbsp;|&nbsp; File size: <strong>${sizeKB} KB</strong>
-            </div>
-          </div>
-        </div>`,
-      attachments: [{
-        filename: `backup-${dateStr}.json`,
-        content:  jsonBuffer.toString("base64"),
-      }],
+      subject: `\ud83d\uddc4\ufe0f DB Backup ${dateStr} \u2014 ${totalRows} rows`,
+      html: `<p>Backup attached: <strong>${totalRows} rows</strong>, <strong>${sizeKB} KB</strong></p><ul>${summary.map(s=>`<li>${s}</li>`).join("")}</ul>`,
+      attachments: [{ filename: `backup-${dateStr}.json`, content: jsonBuffer.toString("base64") }],
     });
-
-    console.log(`[backup] ✅ Backup emailed to ${backupEmail} — ${totalRows} rows, ${sizeKB} KB`);
+    console.log(`[backup] \u2705 Emailed to ${backupEmail} \u2014 ${totalRows} rows, ${sizeKB} KB`);
   } catch (e) {
     console.error("[backup] Failed:", e.message);
   }
@@ -310,57 +258,39 @@ let lastBackupDate = "";
 
 // ── Main nightly job ───────────────────────────────────────────────────────────────────────────
 async function runNightlyJob() {
-  // Calculate IST date using UTC+5:30 arithmetic — reliable across all Node/V8 versions
   const now      = new Date();
   const istMs    = now.getTime() + (5.5 * 60 * 60 * 1000);
   const istDate  = new Date(istMs);
-  const todayIST = istDate.toISOString().split("T")[0]; // YYYY-MM-DD in IST
-
-  if (lastFiredDate === todayIST) {
-    return;
-  }
-  // Set flag early to prevent race condition if the job finishes extremely fast
+  const todayIST = istDate.toISOString().split("T")[0];
+  if (lastFiredDate === todayIST) return;
   lastFiredDate = todayIST;
-
   const [y, m] = todayIST.split("-").map(Number);
-  console.log(`\n[Cron] ⏰ Nightly job starting for ${todayIST}`);
-
+  console.log(`\n[Cron] \u23f0 Nightly job starting for ${todayIST}`);
   const runTask = async (name, fn) => {
-    try {
-      console.log(`[Cron] [${name}] Starting...`);
-      await fn();
-      console.log(`[Cron] [${name}] Success.`);
-    } catch (err) {
-      console.error(`[Cron] [${name}] FATAL ERROR:`, err.message);
-    }
+    try { console.log(`[Cron] [${name}] Starting...`); await fn(); console.log(`[Cron] [${name}] Done.`); }
+    catch (err) { console.error(`[Cron] [${name}] ERROR:`, err.message); }
   };
-
-  await runTask("PurgeStaleTokens",  () => purgeStaleTokens());
+  await runTask("PurgeStaleTokens",    () => purgeStaleTokens());
   await runTask("AbsentNotifications", () => sendAbsentNotifications(todayIST));
-  await runTask("AttendanceGen",     () => autoGenerateAttendance(m, y));
-  await runTask("TrialEnforcement",  () => enforceTrialExpiry());
-  await runTask("BackfillIDs",       () => backfillStudentAcademyIds());
-  await runTask("DailyReports",      () => emailDailyReports(todayIST));
-
-  console.log(`[Cron] ✅ Nightly job complete for ${todayIST}`);
+  await runTask("AttendanceGen",       () => autoGenerateAttendance(m, y));
+  await runTask("TrialEnforcement",    () => enforceTrialExpiry());
+  await runTask("BackfillIDs",         () => backfillStudentAcademyIds());
+  await runTask("DailyReports",        () => emailDailyReports(todayIST));
+  console.log(`[Cron] \u2705 Nightly job complete for ${todayIST}`);
 }
 
 // ── Start schedulers ──────────────────────────────────────────────────────────
 function startAbsentCron() {
-  console.log("✅ Nightly cron started — fires at 10:00 PM IST");
-  console.log("✅ Backup cron started  — fires at 02:00 AM IST");
+  console.log("\u2705 Nightly cron started \u2014 fires at 10:00 PM IST");
+  console.log("\u2705 Backup cron started  \u2014 fires at 02:00 AM IST");
   setInterval(() => {
-    const now     = new Date();
-    const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-    const istHour = istDate.getUTCHours();
-    const istMin  = istDate.getUTCMinutes();
+    const now      = new Date();
+    const istDate  = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+    const istHour  = istDate.getUTCHours();
+    const istMin   = istDate.getUTCMinutes();
     const todayIST = istDate.toISOString().split("T")[0];
-
-    // Nightly job — 10:00 PM IST
     if (istHour === 22 && istMin === 0) runNightlyJob();
-
-    // Backup — 2:00 AM IST (runs once per day)
-    if (istHour === 2 && istMin === 0 && lastBackupDate !== todayIST) {
+    if (istHour === 2  && istMin === 0 && lastBackupDate !== todayIST) {
       lastBackupDate = todayIST;
       runNightlyBackup(todayIST);
     }
