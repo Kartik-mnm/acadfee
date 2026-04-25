@@ -262,7 +262,7 @@ export default function Dashboard({ onNavigate }) {
   ];
 
   const showChecklist = isNewAcademy && user.role === "super_admin" && !checklistDismissed;
-  const recentPayments = (data.recent_payments || []).slice(0, 8);
+  const recentPayments = (data.recent_payments || []).slice(0, 4);
 
   return (
     <div>
