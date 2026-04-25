@@ -146,7 +146,7 @@ router.post("/", auth, async (req, res) => {
     const receipt_no = `RCP-${today}-${String(seq).padStart(4, "0")}`;
 
     // ── TRANSACTION START ────────────────────────────────────────────────────
-    const client = await db.connect();
+    const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
 
@@ -228,7 +228,7 @@ router.delete("/:id", auth, async (req, res) => {
       return res.status(403).json({ error: "Access denied: belongs to different academy" });
     }
     const p = rows[0];
-    const client = await db.connect();
+    const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
       await client.query("DELETE FROM payments WHERE id=$1", [req.params.id]);
