@@ -314,8 +314,11 @@ async function runMigration() {
       date        DATE NOT NULL,
       is_working  BOOLEAN DEFAULT true,
       note        TEXT,
+      marked_by   INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(branch_id, date)
     )`, "create working_days");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_working_days_branch_date ON working_days(branch_id, date)`, "idx_working_days");
 
     // ═══════════════════════════════════════════════════════════════════════
     // PHASE 2 — ADD MISSING COLUMNS TO EXISTING TABLES
@@ -376,6 +379,9 @@ async function runMigration() {
 
     await safe(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS favicon_url TEXT`, "platform_admins.favicon_url");
     await safe(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS logo_url TEXT`, "platform_admins.logo_url");
+
+    await safe(`ALTER TABLE working_days ADD COLUMN IF NOT EXISTS marked_by INT REFERENCES users(id) ON DELETE SET NULL`, "working_days.marked_by");
+    await safe(`ALTER TABLE working_days ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`, "working_days.created_at");
 
     // ═══════════════════════════════════════════════════════════════════════
     // PHASE 3 — SEED DEFAULT DATA
