@@ -1,3 +1,17 @@
+// Auto-create table on startup — no shell/psql needed
+db.query(`
+  CREATE TABLE IF NOT EXISTS working_days (
+    id SERIAL PRIMARY KEY,
+    branch_id INT REFERENCES branches(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    is_working BOOLEAN DEFAULT true,
+    note TEXT,
+    UNIQUE(branch_id, date)
+  )
+`).catch(e => console.error("[working-days] table init:", e.message));
+
+
+
 const router = require("express").Router();
 const db     = require("../db");
 const { auth, branchFilter } = require("../middleware");
