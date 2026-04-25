@@ -2,27 +2,56 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#020617" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080e1a" />
     <meta name="description" content="Academy Management Platform" />
-    <title>Exponent App</title>
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-    <!-- Firebase SDK (compat version — works with service worker) -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js"></script>
+    <!-- Inline SVG favicon shown instantly — no network needed -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%234f46e5'/><stop offset='100%25' stop-color='%239333ea'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M10 10H22M10 16H18M10 22H22' stroke='white' stroke-width='3' stroke-linecap='round'/></svg>" />
+
+    <title>Academy</title>
+
     <script>
-      // Initialize Firebase — same config as the service worker
-      firebase.initializeApp({
-        apiKey:            "AIzaSyCZhx8olWYNqaqDwOz2wiGYz6VGeQpHkEM",
-        authDomain:        "nishchay-academy-11698.firebaseapp.com",
-        projectId:         "nishchay-academy-11698",
-        storageBucket:     "nishchay-academy-11698.firebasestorage.app",
-        messagingSenderId: "872165691943",
-        appId:             "1:872165691943:web:98006936d0158e9fa77402",
-      });
+      // Apply cached favicon/title immediately — zero network
+      try {
+        var f = localStorage.getItem('academy_favicon_url');
+        if (f) { var l = document.createElement('link'); l.rel='icon'; l.href=f; document.head.appendChild(l); }
+        var t = localStorage.getItem('academy_name');
+        if (t) document.title = t;
+      } catch(e) {}
+
+      // Refresh branding from API with 5s timeout — silent on any error
+      // This fixes the CORS / 502 console errors on cold start
+      try {
+        var slug = new URLSearchParams(window.location.search).get('slug')
+                || localStorage.getItem('academy_slug');
+        if (slug) {
+          var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          var tid  = setTimeout(function(){ if(ctrl) ctrl.abort(); }, 5000);
+          fetch('https://api.exponentgrow.in/api/academy/config?slug=' + encodeURIComponent(slug),
+            ctrl ? { signal: ctrl.signal } : {}
+          )
+          .then(function(r){ clearTimeout(tid); return r.ok ? r.json() : null; })
+          .then(function(d){
+            if (!d) return;
+            if (d.favicon_url) {
+              var lk = document.createElement('link'); lk.rel='icon'; lk.href=d.favicon_url;
+              document.head.appendChild(lk);
+              try { localStorage.setItem('academy_favicon_url', d.favicon_url); } catch(e){}
+            }
+            if (d.name) { document.title = d.name; try { localStorage.setItem('academy_name', d.name); } catch(e){} }
+            if (d.slug) { try { localStorage.setItem('academy_slug', d.slug); } catch(e){} }
+          })
+          .catch(function(){ clearTimeout(tid); }); // 502 / CORS / timeout = silent
+        }
+      } catch(e) {}
     </script>
   </head>
   <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
   </body>
 </html>
