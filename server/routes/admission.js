@@ -5,14 +5,31 @@ const rateLimit = require("express-rate-limit");
 
 async function initAdmissionColumns() {
   try {
+    // Ensure basic columns exist
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS photo_url   TEXT`);
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS academy_id  INT REFERENCES academies(id) ON DELETE CASCADE`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS enquiry_no TEXT`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS batch_name TEXT`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS course     TEXT`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS email      TEXT`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS notes      TEXT`);
+
+    // Force the status check constraint to be exactly what we expect
+    try {
+      await db.query(`ALTER TABLE admission_enquiries DROP CONSTRAINT IF EXISTS admission_enquiries_status_check`);
+      await db.query(`ALTER TABLE admission_enquiries ADD CONSTRAINT admission_enquiries_status_check CHECK (status IN ('pending', 'approved', 'rejected'))`);
+    } catch (e) {
+      console.warn("[admissions] status constraint sync:", e.message);
+    }
+
     await db.query(`CREATE INDEX IF NOT EXISTS idx_admission_enquiries_academy ON admission_enquiries(academy_id)`);
+    
     // Ensure students table has all columns the approve route needs
     await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS roll_no VARCHAR(30)`);
     await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS due_day  INT DEFAULT 1`);
     await db.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT`);
-    console.log("\u2705 admission columns ready");
+    
+    console.log("✅ admission system ready");
   } catch (e) { console.error("Admission migration error:", e.message); }
 }
 initAdmissionColumns();
@@ -72,14 +89,24 @@ router.post("/enquiry", enquiryLimiter, async (req, res) => {
         photoUrl = ex.photo_url || null;
       } catch {}
     }
+    // Auto-generate enquiry number if academy_id is known
+    let enquiryNo = null;
+    if (resolvedAcademyId) {
+      const { rows: cnt } = await db.query(
+        `SELECT COUNT(*) AS c FROM admission_enquiries WHERE academy_id = $1`, [resolvedAcademyId]
+      );
+      const seq = String(parseInt(cnt[0].c) + 1).padStart(4, "0");
+      enquiryNo = `ENQ-${seq}`;
+    }
+
     const { rows } = await db.query(
       `INSERT INTO admission_enquiries
-       (name, phone, parent_phone, email, batch_id, address, branch_id, extra, photo_url, academy_id, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending') RETURNING *`,
+       (name, phone, parent_phone, email, batch_id, address, branch_id, extra, photo_url, academy_id, enquiry_no, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending') RETURNING *`,
       [name, phone, parent_phone || null, email || null,
        batch_id || null, address || null, branch_id || null,
        typeof extra === "string" ? extra : JSON.stringify(extra || {}),
-       photoUrl, resolvedAcademyId]
+       photoUrl, resolvedAcademyId, enquiryNo]
     );
     res.json({ success: true, enquiry_id: rows[0].id });
   } catch (e) {
@@ -207,7 +234,7 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
 });
 
 // ── Admin: reject enquiry ─────────────────────────────────────────────────────────
-router.patch("/enquiries/:id/reject", auth, async (req, res) => {
+router.post("/enquiries/:id/reject", auth, async (req, res) => {
   try {
     const academyId = req.academyId;
     const whereClause = academyId
