@@ -13,6 +13,8 @@ async function initAdmissionColumns() {
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS course     TEXT`);
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS email      TEXT`);
     await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS notes      TEXT`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS dob        DATE`);
+    await db.query(`ALTER TABLE admission_enquiries ADD COLUMN IF NOT EXISTS gender     TEXT`);
 
     // Force the status check constraint to be exactly what we expect
     try {
@@ -99,14 +101,24 @@ router.post("/enquiry", enquiryLimiter, async (req, res) => {
       enquiryNo = `ENQ-${seq}`;
     }
 
+    // Extract dob/gender from extra if present
+    let dob = null, gender = null;
+    if (extra) {
+      try {
+        const ex = typeof extra === "string" ? JSON.parse(extra) : extra;
+        dob = ex.dob || null;
+        gender = ex.gender || null;
+      } catch {}
+    }
+
     const { rows } = await db.query(
       `INSERT INTO admission_enquiries
-       (name, phone, parent_phone, email, batch_id, address, branch_id, extra, photo_url, academy_id, enquiry_no, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending') RETURNING *`,
+       (name, phone, parent_phone, email, batch_id, address, branch_id, extra, photo_url, academy_id, enquiry_no, status, dob, gender)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending', $12, $13) RETURNING *`,
       [name, phone, parent_phone || null, email || null,
        batch_id || null, address || null, branch_id || null,
        typeof extra === "string" ? extra : JSON.stringify(extra || {}),
-       photoUrl, resolvedAcademyId, enquiryNo]
+       photoUrl, resolvedAcademyId, enquiryNo, dob, gender]
     );
     res.json({ success: true, enquiry_id: rows[0].id });
   } catch (e) {
@@ -200,12 +212,23 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
     );
     const rollNo = String(parseInt(countRows[0]?.cnt || 0) + 1).padStart(4, "0");
 
+    // Resolve dob and gender from enquiry columns or extra
+    let dob = e.dob || null;
+    let gender = e.gender || null;
+    if ((!dob || !gender) && e.extra) {
+      try {
+        const ex = typeof e.extra === "string" ? JSON.parse(e.extra) : e.extra;
+        if (!dob) dob = ex.dob || null;
+        if (!gender) gender = ex.gender || null;
+      } catch {}
+    }
+
     // Create student — using only columns guaranteed to exist
     const { rows: stuRows } = await db.query(
       `INSERT INTO students
          (branch_id, batch_id, name, phone, parent_phone, email, address,
-          admission_date, status, photo_url, academy_id, roll_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9, $10)
+          admission_date, status, photo_url, academy_id, roll_no, dob, gender)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9, $10, $11, $12)
        RETURNING *`,
       [
         resolvedBranchId,
@@ -218,6 +241,8 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
         photoUrl,
         resolvedAcademyId,
         rollNo,
+        dob,
+        gender
       ]
     );
 
