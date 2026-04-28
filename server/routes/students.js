@@ -185,14 +185,32 @@ router.post("/", auth, async (req, res) => {
       `INSERT INTO students (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
         admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, roll_no, academy_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [bid, batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date,
-       fee_type, admission_fee || 0, discount || 0, discount_reason, dueDaySafe, photo_url || null, rollNo, aid]
+      [
+        bid,
+        batch_id,
+        name,
+        phone           || null,
+        parent_phone    || null,
+        email           || null,
+        address         || null,
+        dob             || null,
+        gender          || null,
+        admission_date  || null,
+        fee_type        || 'monthly',
+        admission_fee   || 0,
+        discount        || 0,
+        discount_reason || null,
+        dueDaySafe,
+        photo_url       || null,
+        rollNo,
+        aid
+      ]
     );
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
     res.json(rows[0]);
   } catch (e) {
     console.error("Create student error:", e.message);
-    res.status(500).json({ error: "Failed to create student" });
+    res.status(500).json({ error: "Failed to create student: " + e.message });
   }
 });
 
@@ -200,26 +218,53 @@ router.put("/:id", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    const { batch_id, name, phone, parent_phone, email, address, dob, gender,
+    const { batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date,
             fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url } = req.body;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
-    const whereClause = aid ? "WHERE id=$16 AND academy_id=$17" : "WHERE id=$16";
+    
+    // Explicitly handle empty strings for date/numeric fields to prevent PG 500 errors
     const params = [
-      batch_id, name, phone, parent_phone, email, address, dob, gender, fee_type,
-      admission_fee, discount, discount_reason, status, dueDaySafe, photo_url || null,
-      req.params.id,
+      batch_id || null, 
+      name, 
+      phone || null, 
+      parent_phone || null, 
+      email || null, 
+      address || null, 
+      dob || null, 
+      gender || null, 
+      admission_date || null,
+      fee_type || 'monthly', 
+      admission_fee || 0, 
+      discount || 0, 
+      discount_reason || null, 
+      status || 'active', 
+      dueDaySafe, 
+      photo_url || null,
+      req.params.id
     ];
-    if (aid) params.push(aid);
+
+    let idx = 18;
+    let whereClause = "WHERE id=$17";
+    if (aid) {
+      whereClause += ` AND academy_id=$${idx}`;
+      params.push(aid);
+    }
+
     const { rows } = await db.query(
       `UPDATE students SET batch_id=$1, name=$2, phone=$3, parent_phone=$4, email=$5, address=$6,
-        dob=$7, gender=$8, fee_type=$9, admission_fee=$10, discount=$11, discount_reason=$12,
-        status=$13, due_day=$14, photo_url=$15 ${whereClause} RETURNING *`,
+        dob=$7, gender=$8, admission_date=$9, fee_type=$10, admission_fee=$11, discount=$12, 
+        discount_reason=$13, status=$14, due_day=$15, photo_url=$16 
+        ${whereClause} RETURNING *`,
       params
     );
+
     if (!rows[0]) return res.status(404).json({ error: "Student not found in your academy" });
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: "Failed to update student" }); }
+  } catch (e) { 
+    console.error("Update student error:", e.message);
+    res.status(500).json({ error: "Failed to update student: " + e.message }); 
+  }
 });
 
 router.delete("/:id", auth, async (req, res) => {
