@@ -104,7 +104,10 @@ export default function Login() {
         // After all retries failed — friendly message
         setError("Server is busy. Please wait a moment and try again.");
       } else {
-        const msg = err?.response?.data?.error || "Invalid credentials. Please try again.";
+        let msg = err?.response?.data?.error || "Invalid credentials. Please try again.";
+        if (msg.toLowerCase().includes("invalid credentials") || msg.toLowerCase().includes("not found")) {
+          msg = "Wrong credential! Try resetting password using email (Forgot Password feature use karein).";
+        }
         setError(msg);
       }
     } finally {
