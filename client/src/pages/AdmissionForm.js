@@ -29,18 +29,13 @@ export default function AdmissionForm() {
   const slug = resolveSlug();
 
   useEffect(() => {
-    // If no slug, show a "invalid link" message
     if (!slug) { setNotFound(true); return; }
-
-    // Fetch academy branding via slug
     API.get(`/academy/config?slug=${slug}`)
       .then((r) => {
         if (r.data && r.data.name) { setAcademy(r.data); }
         else { setNotFound(true); }
       })
       .catch(() => setNotFound(true));
-
-    // Fetch branches & batches SCOPED to this academy via slug
     API.get(`/admission/form-data?slug=${slug}`)
       .then((r) => {
         setBranches(r.data.branches);
@@ -48,11 +43,11 @@ export default function AdmissionForm() {
         if (r.data.academy_id) setAcademyId(r.data.academy_id);
       })
       .catch(() => {});
-  }, []);
+  }, [slug]);
 
   const accentColor  = academy?.primary_color
     ? (academy.primary_color.startsWith("#") ? academy.primary_color : `#${academy.primary_color}`)
-    : "#cc0000";
+    : "#3b82f6";
   const academyName  = academy?.name   || "Academy";
   const academyPhone = academy?.phone  || "";
   const academyPhone2= academy?.phone2 || "";
@@ -75,9 +70,7 @@ export default function AdmissionForm() {
         const { data } = await API.post("/upload/photo", { image: base64 });
         f("photo_url", data.url);
         setPhotoPreview(data.url);
-      } catch {
-        f("photo_url", base64);
-      }
+      } catch { f("photo_url", base64); }
       setUploadingPhoto(false);
     };
     reader.readAsDataURL(file);
@@ -96,14 +89,12 @@ export default function AdmissionForm() {
         medium: form.medium, class_name: form.class_name, percent: form.percent,
         guardian_name: form.guardian_name, photo_url: form.photo_url,
       };
-      // ✅ Pass both slug and academy_id so the backend links this enquiry to the correct academy
       await API.post("/admission/enquiry", {
         name: form.name, phone: form.phone,
         parent_phone: form.parent_phone, email: form.email,
         address: form.address, batch_id: form.batch_id, branch_id: form.branch_id,
         extra: JSON.stringify(extraData),
-        slug,           // so backend can resolve academy even if academy_id is null
-        academy_id: academyId, // direct ID if available
+        slug, academy_id: academyId,
       });
       setSubmitted(true);
     } catch (e) {
@@ -116,13 +107,13 @@ export default function AdmissionForm() {
     const batchName  = batches.find((b)  => b.id == form.batch_id)?.name  || "";
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html><html><head><title>Registration Form</title>
-    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#e8e8e8;padding:20px 16px}@media print{body{background:white;padding:0}.no-print{display:none}}.form-wrap{max-width:720px;margin:0 auto;background:white;box-shadow:0 4px 32px rgba(0,0,0,0.18);border-radius:4px}.header{padding:20px 28px 16px;border-bottom:4px solid ${accentColor}}.academy-name{font-size:32px;font-weight:900;color:${accentColor};letter-spacing:2px;line-height:1}.academy-addr{font-size:11px;color:#333;margin-top:8px;line-height:1.8;text-align:center}.form-title-bar{text-align:center;padding:10px;border-bottom:2px solid ${accentColor}}.form-title-text{font-size:17px;font-weight:900;color:${accentColor};letter-spacing:3px;text-decoration:underline}.body{padding:18px 28px}.top-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:20px}.photo-box{width:100px;height:120px;border:2px solid #333;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fafafa;border-radius:2px;flex-shrink:0;font-size:13px;font-weight:900;color:#333}.inp{width:100%;padding:3px 2px;border:none;border-bottom:1.5px solid #333;background:transparent;font-size:13px}.lbl{font-size:12px;font-weight:700;color:#111;white-space:nowrap}.field-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}.num{font-size:12px;font-weight:700;color:#111;min-width:22px}.divider{border-top:1px solid #ccc;margin-bottom:14px}.addr-box{flex:1;min-height:55px;border:1px solid #999;padding:6px 8px;border-radius:2px;font-size:13px;white-space:pre-wrap}.declaration{border:2px solid #333;border-radius:4px;padding:14px 18px;margin-bottom:18px}.decl-title{text-align:center;font-size:13px;font-weight:900;color:${accentColor};text-decoration:underline;margin-bottom:12px;letter-spacing:1px}.decl-text{font-size:12px;line-height:2;color:#111}.blank{display:inline-block;border-bottom:1px solid #333}.sign-row{display:flex;justify-content:space-between;margin-top:20px;font-size:12px}.footer-note{text-align:center;font-size:11px;color:#888;margin-top:10px;padding-bottom:16px}</style>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#e8e8e8;padding:20px 16px}@media print{body{background:white;padding:0}.no-print{display:none}}.form-wrap{max-width:720px;margin:0 auto;background:white;box-shadow:0 4px 32px rgba(0,0,0,0.18);border-radius:4px}.header{padding:20px 28px 16px;border-bottom:4px solid ${accentColor}}.academy-name{font-size:32px;font-weight:900;color:${accentColor};letter-spacing:2px;line-height:1;text-align:center}.academy-addr{font-size:11px;color:#333;margin-top:8px;line-height:1.8;text-align:center}.form-title-bar{text-align:center;padding:10px;border-bottom:2px solid ${accentColor}}.form-title-text{font-size:17px;font-weight:900;color:${accentColor};letter-spacing:3px;text-decoration:underline}.body{padding:18px 28px}.top-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:20px}.photo-box{width:100px;height:120px;border:2px solid #333;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fafafa;border-radius:2px;flex-shrink:0;font-size:13px;font-weight:900;color:#333}.inp{width:100%;padding:3px 2px;border:none;border-bottom:1.5px solid #333;background:transparent;font-size:13px}.lbl{font-size:12px;font-weight:700;color:#111;white-space:nowrap}.field-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}.num{font-size:12px;font-weight:700;color:#111;min-width:22px}.divider{border-top:1px solid #ccc;margin-bottom:14px}.addr-box{flex:1;min-height:55px;border:1px solid #999;padding:6px 8px;border-radius:2px;font-size:13px;white-space:pre-wrap}.declaration{border:2px solid #333;border-radius:4px;padding:14px 18px;margin-bottom:18px}.decl-title{text-align:center;font-size:13px;font-weight:900;color:${accentColor};text-decoration:underline;margin-bottom:12px;letter-spacing:1px}.decl-text{font-size:12px;line-height:2;color:#111}.blank{display:inline-block;border-bottom:1px solid #333}.sign-row{display:flex;justify-content:space-between;margin-top:20px;font-size:12px}.footer-note{text-align:center;font-size:11px;color:#888;margin-top:10px;padding-bottom:16px}</style>
     </head><body><div class="form-wrap">
-      <div class="header"><div style="text-align:center">
+      <div class="header">
         <div class="academy-name">${academyName.toUpperCase()}</div>
         ${academyAddr ? `<div class="academy-addr">${academyAddr}</div>` : ""}
         ${contactLine ? `<div class="academy-addr">Mob: ${contactLine}${academyEmail ? " | " + academyEmail : ""}</div>` : ""}
-      </div></div>
+      </div>
       <div class="form-title-bar"><span class="form-title-text">REGISTRATION FORM</span></div>
       <div class="body">
         <div class="top-row"><div style="flex:1">
@@ -154,94 +145,388 @@ export default function AdmissionForm() {
     w.document.close();
   };
 
-  const inp = { width: "100%", padding: "5px 2px", border: "none", borderBottom: "1.5px solid #333", background: "transparent", fontSize: 13, outline: "none", fontFamily: "Arial, sans-serif", color: "#000" };
-  const lbl = { fontSize: 12, fontWeight: 700, color: "#111", whiteSpace: "nowrap" };
-
-  // Invalid link
   if (notFound) return (
     <div style={{ minHeight: "100vh", background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "white", borderRadius: 16, padding: "40px", textAlign: "center", maxWidth: 400, boxShadow: "0 4px 24px rgba(0,0,0,0.1)" }}>
         <div style={{ fontSize: 60, marginBottom: 16 }}>❌</div>
         <div style={{ fontSize: 20, fontWeight: 900, color: "#0a1628", marginBottom: 8 }}>Invalid Admission Link</div>
-        <div style={{ fontSize: 14, color: "#555", lineHeight: 1.7 }}>This admission form link is invalid or the academy no longer exists. Please contact the academy directly for the correct link.</div>
       </div>
     </div>
   );
 
-  // Loading
-  if (!academy) return (
-    <div style={{ minHeight: "100vh", background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ fontSize: 14, color: "#555" }}>Loading form…</div>
-    </div>
-  );
+  if (!academy) return null;
 
   if (submitted) return (
     <div style={{ minHeight: "100vh", background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "white", borderRadius: 16, padding: "40px", textAlign: "center", maxWidth: 400, boxShadow: "0 4px 24px rgba(0,0,0,0.1)" }}>
         <div style={{ fontSize: 60, marginBottom: 16 }}>✅</div>
         <div style={{ fontSize: 20, fontWeight: 900, color: "#0a1628", marginBottom: 8 }}>Form Submitted!</div>
-        <div style={{ fontSize: 14, color: "#555", lineHeight: 1.7 }}>Thank you for registering at<br/><strong>{academyName}</strong>.<br/>Our team will contact you shortly.</div>
-        {contactLine && <div style={{ marginTop: 20, padding: "12px", background: "#f0f7ff", borderRadius: 8, fontSize: 13, color: accentColor }}>📞 {contactLine}</div>}
+        <div style={{ fontSize: 14, color: "#555", lineHeight: 1.7 }}>Thank you for registering at<br/><strong>{academyName}</strong>.</div>
       </div>
     </div>
   );
 
   return (
-    <div style={{ background: "#e8e8e8", minHeight: "100vh", padding: "20px 16px" }}>
-      <style>{`.admission-form input,.admission-form select,.admission-form textarea{color:#000!important;-webkit-text-fill-color:#000!important}.admission-form input::placeholder{color:#999!important}.admission-form select option{color:#000;background:white}`}</style>
-      <div className="admission-form" style={{ maxWidth: 720, margin: "0 auto", background: "white", boxShadow: "0 4px 32px rgba(0,0,0,0.18)", borderRadius: 4 }}>
-        <div style={{ padding: "20px 28px 16px", borderBottom: `4px solid ${accentColor}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20 }}>
-            {academy?.logo_url ? (<img src={academy.logo_url} alt={academyName} style={{ width: 80, height: 80, objectFit: "contain", flexShrink: 0 }} />) : (<div style={{ width: 72, height: 72, borderRadius: 12, background: accentColor, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 32, fontWeight: 900, flexShrink: 0 }}>{academyName[0]?.toUpperCase()}</div>)}
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 900, color: accentColor, letterSpacing: 2, lineHeight: 1 }}>{academyName.toUpperCase()}</div>
-              {academyAddr && <div style={{ fontSize: 11, color: "#333", marginTop: 6, lineHeight: 1.8 }}>{academyAddr}</div>}
-              {contactLine && <div style={{ fontSize: 11, color: "#333", marginTop: 4 }}>Mob: {contactLine}{academyEmail ? ` | ${academyEmail}` : ""}</div>}
+    <div className="admission-page-wrap">
+      <style>{`
+        .admission-page-wrap {
+          background: #e8e8e8;
+          min-height: 100vh;
+          padding: 20px 10px;
+          font-family: Arial, sans-serif;
+          color: #111;
+        }
+        .form-card {
+          max-width: 760px;
+          margin: 0 auto;
+          background: white;
+          box-shadow: 0 4px 32px rgba(0,0,0,0.15);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        .form-header {
+          padding: 24px 28px 16px;
+          border-bottom: 4px solid ${accentColor};
+          display: flex;
+          align-items: center;
+          gap: 20px;
+        }
+        .academy-logo {
+          width: 80px;
+          height: 80px;
+          object-fit: contain;
+          flex-shrink: 0;
+        }
+        .academy-info {
+          flex: 1;
+        }
+        .academy-name {
+          font-size: 28px;
+          font-weight: 900;
+          color: ${accentColor};
+          letter-spacing: 2px;
+          line-height: 1;
+        }
+        .academy-meta {
+          font-size: 10px;
+          color: #444;
+          margin-top: 6px;
+          line-height: 1.6;
+        }
+        .form-title-bar {
+          text-align: center;
+          padding: 12px;
+          border-bottom: 2px solid ${accentColor};
+          font-size: 17px;
+          font-weight: 900;
+          color: ${accentColor};
+          letter-spacing: 3px;
+          text-decoration: underline;
+        }
+        .form-body {
+          padding: 24px 28px;
+        }
+        .top-grid {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 20px;
+          margin-bottom: 12px;
+        }
+        .photo-upload {
+          width: 110px;
+          height: 130px;
+          border: 2px solid #333;
+          background: #fafafa;
+          border-radius: 2px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          position: relative;
+          flex-shrink: 0;
+          text-align: center;
+        }
+        .photo-upload img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .field-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 14px;
+          width: 100%;
+        }
+        .field-num {
+          font-size: 13px;
+          font-weight: 900;
+          min-width: 24px;
+        }
+        .field-label {
+          font-size: 13px;
+          font-weight: 800;
+          white-space: nowrap;
+          color: #111;
+        }
+        .field-input {
+          flex: 1;
+          border: none;
+          border-bottom: 1.5px solid #333;
+          background: transparent !important;
+          padding: 4px 2px;
+          font-size: 14px;
+          font-family: inherit;
+          color: #000 !important;
+          outline: none;
+          border-radius: 0;
+          -webkit-appearance: none;
+          box-shadow: none !important;
+        }
+        .field-input:focus {
+          border-bottom-color: ${accentColor};
+        }
+        .select-input {
+          cursor: pointer;
+        }
+        .address-box {
+          flex: 1;
+          min-height: 60px;
+          border: 1.5px solid #333;
+          padding: 8px;
+          font-size: 13px;
+          background: white;
+          border-radius: 2px;
+          resize: none;
+        }
+        .declaration-box {
+          border: 2px solid #333;
+          border-radius: 4px;
+          padding: 16px;
+          margin: 20px 0;
+          background: white;
+        }
+        .btn-submit {
+          width: 100%;
+          padding: 14px;
+          background: ${accentColor};
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 16px;
+          font-weight: 900;
+          cursor: pointer;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+        }
+        .btn-print {
+          width: 100%;
+          padding: 10px;
+          background: #0a1628;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+          margin-bottom: 12px;
+        }
+
+        @media (max-width: 600px) {
+          .admission-page-wrap { padding: 0; }
+          .form-card { border-radius: 0; box-shadow: none; }
+          .form-header { padding: 20px 16px; gap: 12px; }
+          .academy-logo { width: 60px; height: 60px; }
+          .academy-name { font-size: 20px; }
+          .form-body { padding: 20px 16px; }
+          .top-grid { flex-direction: column-reverse; align-items: center; }
+          .photo-upload { margin-bottom: 20px; }
+          
+          /* CRITICAL ALIGNMENT FIX FOR MOBILE */
+          .field-row {
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 18px;
+          }
+          .field-label {
+            min-width: auto !important;
+            width: auto;
+          }
+          .field-input {
+            width: 100%;
+            flex: none;
+          }
+          .field-num { min-width: 20px; }
+          
+          /* Special case for Date/Age row */
+          .responsive-row {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 16px;
+          }
+          .responsive-row > div {
+            width: 100%;
+          }
+        }
+      `}</style>
+
+      <div className="form-card">
+        <div className="form-header">
+          {academy?.logo_url ? (
+            <img src={academy.logo_url} className="academy-logo" alt="Logo" />
+          ) : (
+            <div className="academy-logo" style={{ background: accentColor, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 32, fontWeight: 900 }}>
+              {academyName[0]}
+            </div>
+          )}
+          <div className="academy-info">
+            <div className="academy-name">{academyName.toUpperCase()}</div>
+            <div className="academy-meta">
+              {academyAddr}<br/>
+              Mob: {contactLine} {academyEmail && `| ${academyEmail}`}
             </div>
           </div>
         </div>
-        <div style={{ textAlign: "center", padding: "10px", borderBottom: `2px solid ${accentColor}` }}>
-          <span style={{ fontSize: 17, fontWeight: 900, color: accentColor, letterSpacing: 3, textDecoration: "underline" }}>REGISTRATION FORM</span>
-        </div>
-        <div style={{ padding: "18px 28px" }}>
-          {error && <div style={{ background: "#fff0f0", border: `1px solid ${accentColor}`, borderRadius: 6, padding: "8px 12px", marginBottom: 12, color: accentColor, fontSize: 13 }}>⚠️ {error}</div>}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, gap: 20 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><span style={lbl}>AADHAR NO. :</span><input style={{ ...inp }} value={form.aadhar} onChange={(e) => f("aadhar", e.target.value)} /></div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><span style={{ ...lbl, minWidth: 60 }}>BRANCH :</span><select style={{ ...inp, cursor: "pointer", background: "white" }} value={form.branch_id} onChange={(e) => { f("branch_id", e.target.value); f("batch_id", ""); }}><option value="">Select Branch</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ ...lbl, minWidth: 60 }}>COURSE :</span><select style={{ ...inp, cursor: "pointer", background: "white" }} value={form.batch_id} onChange={(e) => f("batch_id", e.target.value)}><option value="">{form.branch_id ? "Select Course" : "Select Branch First"}</option>{filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <div onClick={() => !uploadingPhoto && photoRef.current.click()} style={{ width: 100, height: 120, border: "2px solid #333", cursor: uploadingPhoto ? "default" : "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fafafa", borderRadius: 2, position: "relative", flexShrink: 0 }}>
-                {photoPreview ? <img src={photoPreview} alt="Photo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <><div style={{ fontSize: 13, fontWeight: 900, color: "#333", letterSpacing: 1 }}>PHOTO</div><div style={{ fontSize: 10, color: "#888", marginTop: 4, textAlign: "center", padding: "0 4px" }}>Click to upload</div></>}
-                {uploadingPhoto && <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 10, gap: 4 }}><div style={{ width: 20, height: 20, border: `2px solid ${accentColor}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Uploading…</div>}
+
+        <div className="form-title-bar">REGISTRATION FORM</div>
+
+        <div className="form-body">
+          {error && <div style={{ color: 'red', fontSize: 13, marginBottom: 12, fontWeight: 700 }}>⚠️ {error}</div>}
+          
+          <div className="top-grid">
+            <div style={{ flex: 1, width: '100%' }}>
+              <div className="field-row">
+                <span className="field-label" style={{ minWidth: 100 }}>AADHAR NO. :</span>
+                <input className="field-input" value={form.aadhar} onChange={e => f('aadhar', e.target.value)} />
               </div>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-              {photoPreview && !uploadingPhoto && <button type="button" onClick={() => { setPhotoPreview(""); f("photo_url", ""); }} style={{ fontSize: 10, color: accentColor, background: "none", border: "none", cursor: "pointer", padding: 0 }}>Remove</button>}
-              <input ref={photoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handlePhoto(e.target.files[0])} />
+              <div className="field-row">
+                <span className="field-label" style={{ minWidth: 100 }}>BRANCH :</span>
+                <select className="field-input select-input" value={form.branch_id} onChange={e => { f('branch_id', e.target.value); f('batch_id', ''); }}>
+                  <option value="">Select Branch</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div className="field-row">
+                <span className="field-label" style={{ minWidth: 100 }}>COURSE :</span>
+                <select className="field-input select-input" value={form.batch_id} onChange={e => f('batch_id', e.target.value)}>
+                  <option value="">{form.branch_id ? "Select Course" : "Select Branch First"}</option>
+                  {filteredBatches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+            </div>
+            
+            <div className="photo-upload" onClick={() => !uploadingPhoto && photoRef.current.click()}>
+              {photoPreview ? (
+                <img src={photoPreview} alt="Student" />
+              ) : (
+                <div style={{ padding: 10 }}>
+                  <div style={{ fontWeight: 900, fontSize: 14 }}>PHOTO</div>
+                  <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>Click to upload</div>
+                </div>
+              )}
+              {uploadingPhoto && <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>Uploading...</div>}
+              <input ref={photoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handlePhoto(e.target.files[0])} />
             </div>
           </div>
-          <div style={{ borderTop: "1px solid #ccc", marginBottom: 14 }} />
-          {[{num:"1)",label:"FULL NAME OF STUDENT :",key:"name",required:true},{num:"2)",label:"FATHER NAME :",key:"father_name"},{num:"3)",label:"MOTHER NAME :",key:"mother_name"}].map((row) => (<div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><span style={{ ...lbl, minWidth: 22 }}>{row.num}</span><span style={{ ...lbl, minWidth: 190 }}>{row.label}{row.required && <span style={{ color: accentColor }}> *</span>}</span><input style={{ ...inp, flex: 1 }} value={form[row.key]} onChange={(e) => f(row.key, e.target.value)} /></div>))}
-          <div style={{ display: "flex", gap: 16, marginBottom: 12, alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 2 }}><span style={{ ...lbl, minWidth: 22 }}>4)</span><span style={{ ...lbl, minWidth: 130 }}>DATE OF BIRTH :</span><input type="date" style={{ ...inp, flex: 1 }} value={form.dob} onChange={(e) => f("dob", e.target.value)} /></div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}><span style={{ ...lbl, minWidth: 22 }}>5)</span><span style={lbl}>AGE :</span><input style={{ ...inp, width: 60 }} value={form.age} onChange={(e) => f("age", e.target.value)} placeholder="yrs" /></div>
+
+          <div style={{ height: 1, background: '#ccc', margin: '20px 0' }} />
+
+          {/* Form Rows */}
+          {[
+            { num: "1)", label: "FULL NAME OF STUDENT :", key: "name", required: true },
+            { num: "2)", label: "FATHER NAME :", key: "father_name" },
+            { num: "3)", label: "MOTHER NAME :", key: "mother_name" }
+          ].map(row => (
+            <div key={row.key} className="field-row">
+              <span className="field-num">{row.num}</span>
+              <span className="field-label" style={{ minWidth: 200 }}>{row.label}{row.required && <span style={{ color: accentColor }}> *</span>}</span>
+              <input className="field-input" value={form[row.key]} onChange={e => f(row.key, e.target.value)} />
+            </div>
+          ))}
+
+          <div className="field-row responsive-row">
+            <div style={{ display: 'flex', alignItems: 'center', flex: 2, gap: 10 }}>
+              <span className="field-num">4)</span>
+              <span className="field-label" style={{ minWidth: 140 }}>DATE OF BIRTH :</span>
+              <input type="date" className="field-input" value={form.dob} onChange={e => f('dob', e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: 10 }}>
+              <span className="field-num">5)</span>
+              <span className="field-label">AGE :</span>
+              <input className="field-input" style={{ width: 60 }} value={form.age} onChange={e => f('age', e.target.value)} placeholder="yrs" />
+            </div>
           </div>
-          {[{num:"6)",label:"MOTHER TONGUE :",key:"mother_tongue"},{num:"7)",label:"PREVIOUS SCHOOL :",key:"previous_school"}].map((row) => (<div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><span style={{ ...lbl, minWidth: 22 }}>{row.num}</span><span style={{ ...lbl, minWidth: 190 }}>{row.label}</span><input style={{ ...inp, flex: 1 }} value={form[row.key]} onChange={(e) => f(row.key, e.target.value)} /></div>))}
-          <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}><span style={{ ...lbl, minWidth: 22 }}>8)</span><span style={lbl}>MEDIUM :</span><input style={{ ...inp, width: 100 }} value={form.medium} onChange={(e) => f("medium", e.target.value)} /><span style={lbl}>CLASS :</span><input style={{ ...inp, width: 80 }} value={form.class_name} onChange={(e) => f("class_name", e.target.value)} /><span style={lbl}>PERCENT :</span><input style={{ ...inp, width: 80 }} value={form.percent} onChange={(e) => f("percent", e.target.value)} /></div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><span style={{ ...lbl, minWidth: 22 }}>9)</span><span style={{ ...lbl, minWidth: 230 }}>NAME OF PARENT OR GUARDIAN :</span><input style={{ ...inp, flex: 1 }} value={form.guardian_name} onChange={(e) => f("guardian_name", e.target.value)} /></div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}><span style={{ ...lbl, minWidth: 22 }}>10)</span><span style={{ ...lbl, minWidth: 80 }}>ADDRESS :</span><textarea style={{ flex: 1, resize: "none", height: 55, border: "1px solid #999", padding: "6px 8px", borderRadius: 2, fontSize: 13, outline: "none", fontFamily: "Arial, sans-serif", color: "#000", background: "white" }} value={form.address} onChange={(e) => f("address", e.target.value)} /></div>
-          <div style={{ borderTop: "1px solid #ccc", marginBottom: 14 }} />
-          {[{num:"11)",label:"STUDENT MOBILE NUMBER :",key:"phone",required:true,type:"tel"},{num:"12)",label:"PARENT MOBILE NUMBER :",key:"parent_phone",required:true,type:"tel"},{num:"13)",label:"EMAIL ID :",key:"email",type:"email"}].map((row) => (<div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><span style={{ ...lbl, minWidth: 22 }}>{row.num}</span><span style={{ ...lbl, minWidth: 220 }}>{row.label}{row.required && <span style={{ color: accentColor }}> *</span>}</span><input type={row.type || "text"} style={{ ...inp, flex: 1 }} value={form[row.key]} onChange={(e) => f(row.key, e.target.value)} /></div>))}
-          <div style={{ borderTop: "2px solid #333", margin: "18px 0" }} />
-          <div style={{ border: "2px solid #333", borderRadius: 4, padding: "14px 18px", marginBottom: 18 }}>
-            <div style={{ textAlign: "center", fontSize: 13, fontWeight: 900, color: accentColor, textDecoration: "underline", marginBottom: 12, letterSpacing: 1 }}>DECLARATION BY PARENTS / GUARDIAN</div>
-            <div style={{ fontSize: 12, lineHeight: 2, color: "#111" }}>I <span style={{ display: "inline-block", minWidth: 180, borderBottom: "1px solid #333" }}>&nbsp;</span> REQUEST TO ADMIT MY SON / DAUGHTER IN CLASS <span style={{ display: "inline-block", minWidth: 60, borderBottom: "1px solid #333" }}>&nbsp;</span> OF {academyName.toUpperCase()}. I AGREE TO THE TERMS AND CONDITIONS OF THE INSTITUTE AND ASSURE TO ABIDE BY THEM. I ALSO UNDERTAKE TO PAY THE FEES LEVIED.</div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}><div style={{ fontSize: 12 }}>DATE : <span style={{ display: "inline-block", minWidth: 130, borderBottom: "1px solid #333" }}>&nbsp;</span></div><div style={{ fontSize: 12 }}>SIGNATURE : ___________________</div></div>
+
+          {[
+            { num: "6)", label: "MOTHER TONGUE :", key: "mother_tongue" },
+            { num: "7)", label: "PREVIOUS SCHOOL :", key: "previous_school" }
+          ].map(row => (
+            <div key={row.key} className="field-row">
+              <span className="field-num">{row.num}</span>
+              <span className="field-label" style={{ minWidth: 200 }}>{row.label}</span>
+              <input className="field-input" value={form[row.key]} onChange={e => f(row.key, e.target.value)} />
+            </div>
+          ))}
+
+          <div className="field-row responsive-row">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="field-num">8)</span>
+              <span className="field-label">MEDIUM :</span>
+              <input className="field-input" style={{ width: 80 }} value={form.medium} onChange={e => f('medium', e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="field-label">CLASS :</span>
+              <input className="field-input" style={{ width: 80 }} value={form.class_name} onChange={e => f('class_name', e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="field-label">PERCENT :</span>
+              <input className="field-input" style={{ width: 80 }} value={form.percent} onChange={e => f('percent', e.target.value)} />
+            </div>
           </div>
-          <button onClick={printForm} type="button" style={{ width: "100%", padding: "10px", background: "#0a1628", color: "white", border: "none", borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: "pointer", letterSpacing: 1, marginBottom: 10 }}>🖸 Print This Form</button>
-          <button onClick={submit} disabled={saving || uploadingPhoto} style={{ width: "100%", padding: "13px", background: (saving || uploadingPhoto) ? "#999" : accentColor, color: "white", border: "none", borderRadius: 6, fontSize: 15, fontWeight: 900, cursor: (saving || uploadingPhoto) ? "not-allowed" : "pointer", letterSpacing: 2 }}>{saving ? "SUBMITTING…" : uploadingPhoto ? "PLEASE WAIT — UPLOADING PHOTO…" : "SUBMIT REGISTRATION FORM"}</button>
-          <div style={{ textAlign: "center", fontSize: 11, color: "#888", marginTop: 10, paddingBottom: 16 }}>For Official Use : 200/- Form Fees &nbsp;|&nbsp; Receiver Sign : _______________</div>
+
+          <div className="field-row">
+            <span className="field-num">9)</span>
+            <span className="field-label" style={{ minWidth: 240 }}>NAME OF PARENT OR GUARDIAN :</span>
+            <input className="field-input" value={form.guardian_name} onChange={e => f('guardian_name', e.target.value)} />
+          </div>
+
+          <div className="field-row" style={{ alignItems: 'flex-start' }}>
+            <span className="field-num">10)</span>
+            <span className="field-label" style={{ minWidth: 80 }}>ADDRESS :</span>
+            <textarea className="address-box" value={form.address} onChange={e => f('address', e.target.value)} />
+          </div>
+
+          <div style={{ height: 1, background: '#ccc', margin: '20px 0' }} />
+
+          {[
+            { num: "11)", label: "STUDENT MOBILE NUMBER :", key: "phone", required: true, type: 'tel' },
+            { num: "12)", label: "PARENT MOBILE NUMBER :", key: "parent_phone", required: true, type: 'tel' },
+            { num: "13)", label: "EMAIL ID :", key: "email", type: 'email' }
+          ].map(row => (
+            <div key={row.key} className="field-row">
+              <span className="field-num">{row.num}</span>
+              <span className="field-label" style={{ minWidth: 220 }}>{row.label}{row.required && <span style={{ color: accentColor }}> *</span>}</span>
+              <input type={row.type || 'text'} className="field-input" value={form[row.key]} onChange={e => f(row.key, e.target.value)} />
+            </div>
+          ))}
+
+          <div className="declaration-box">
+            <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 900, color: accentColor, textDecoration: 'underline', marginBottom: 12 }}>DECLARATION BY PARENTS / GUARDIAN</div>
+            <div style={{ fontSize: 12, lineHeight: 2 }}>
+              I REQUEST TO ADMIT MY SON / DAUGHTER IN CLASS <span style={{ borderBottom: '1px solid #333', minWidth: 60, display: 'inline-block' }}>&nbsp;</span> OF {academyName.toUpperCase()}. I AGREE TO THE TERMS AND CONDITIONS OF THE INSTITUTE.
+            </div>
+          </div>
+
+          <button onClick={printForm} type="button" className="btn-print">🖸 Print This Form</button>
+          <button onClick={submit} disabled={saving || uploadingPhoto} className="btn-submit">
+            {saving ? "Submitting..." : uploadingPhoto ? "Uploading Photo..." : "Submit Registration Form"}
+          </button>
+          
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#888', marginTop: 16 }}>
+            For Official Use : 200/- Form Fees &nbsp;|&nbsp; Receiver Sign : _______________
+          </div>
         </div>
       </div>
     </div>
