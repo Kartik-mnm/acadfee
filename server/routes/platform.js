@@ -3,7 +3,7 @@ const express = require("express");
 const router  = express.Router();
 const db      = require("../db");
 const bcrypt  = require("bcryptjs");
-const { authenticatePlatformOwner } = require("../middleware");
+const { authenticatePlatformOwner, requirePlatformOwner } = require("../middleware");
 
 const DEFAULT_FEATURES = {
   attendance: true, tests: true, expenses: true, admissions: true,
@@ -69,7 +69,7 @@ router.get("/leads", authenticatePlatformOwner, async (req, res) => {
 });
 
 // PATCH /platform/leads/:id/convert
-router.patch("/leads/:id/convert", authenticatePlatformOwner, async (req, res) => {
+router.patch("/leads/:id/convert", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   try {
     const { rows: lead } = await db.query("SELECT * FROM academies WHERE id=$1 AND plan='lead'", [req.params.id]);
     if (!lead[0]) return res.status(404).json({ error: "Lead not found" });
@@ -86,7 +86,7 @@ router.patch("/leads/:id/convert", authenticatePlatformOwner, async (req, res) =
 });
 
 // DELETE /platform/leads/:id
-router.delete("/leads/:id", authenticatePlatformOwner, async (req, res) => {
+router.delete("/leads/:id", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query("SELECT name FROM academies WHERE id=$1 AND plan='lead'", [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: "Lead not found" });
@@ -112,7 +112,7 @@ router.get("/academies/:id", authenticatePlatformOwner, async (req, res) => {
 });
 
 // POST /platform/academies
-router.post("/academies", authenticatePlatformOwner, async (req, res) => {
+router.post("/academies", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   const { name, slug, tagline, city, state, pincode, phone, phone2, email, website,
           address, logo_url, favicon_url, primary_color="2563EB", accent_color="38BDF8",
           plan="basic", max_students=200, max_branches=3, features } = req.body;
@@ -136,7 +136,7 @@ router.post("/academies", authenticatePlatformOwner, async (req, res) => {
 });
 
 // PUT /platform/academies/:id
-router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
+router.put("/academies/:id", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   try {
     const { rows: cur } = await db.query("SELECT * FROM academies WHERE id=$1", [req.params.id]);
     if (!cur[0]) return res.status(404).json({ error: "Academy not found" });
@@ -171,7 +171,7 @@ router.put("/academies/:id", authenticatePlatformOwner, async (req, res) => {
 });
 
 // PATCH /platform/academies/:id/extend
-router.patch("/academies/:id/extend", authenticatePlatformOwner, async (req, res) => {
+router.patch("/academies/:id/extend", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   const days = parseInt(req.body.days) || 30;
   try {
     const { rows: cur } = await db.query("SELECT name, trial_ends_at FROM academies WHERE id=$1", [req.params.id]);
@@ -192,7 +192,7 @@ router.patch("/academies/:id/extend", authenticatePlatformOwner, async (req, res
 });
 
 // DELETE /platform/academies/:id/hard — FIX: delete all child records first to avoid FK violation
-router.delete("/academies/:id/hard", authenticatePlatformOwner, async (req, res) => {
+router.delete("/academies/:id/hard", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   const aid = req.params.id;
   const client = await db.pool.connect();
   try {
@@ -252,7 +252,7 @@ router.delete("/academies/:id/hard", authenticatePlatformOwner, async (req, res)
 });
 
 // DELETE /platform/academies/:id — soft suspend
-router.delete("/academies/:id", authenticatePlatformOwner, async (req, res) => {
+router.delete("/academies/:id", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   try {
     const { rows } = await db.query("SELECT name FROM academies WHERE id=$1", [req.params.id]);
     await db.query("UPDATE academies SET is_active=false, updated_at=NOW() WHERE id=$1", [req.params.id]);
@@ -262,7 +262,7 @@ router.delete("/academies/:id", authenticatePlatformOwner, async (req, res) => {
 });
 
 // POST /platform/academies/:id/admin
-router.post("/academies/:id/admin", authenticatePlatformOwner, async (req, res) => {
+router.post("/academies/:id/admin", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password)
     return res.status(400).json({ error: "name, email and password are required" });
@@ -343,7 +343,7 @@ router.get("/revenue", authenticatePlatformOwner, async (req, res) => {
 });
 
 // POST /platform/revenue
-router.post("/revenue", authenticatePlatformOwner, async (req, res) => {
+router.post("/revenue", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   const { academy_id, academy_name, amount, plan, note, paid_on } = req.body;
   if (!amount || amount <= 0) return res.status(400).json({ error: "amount is required and must be > 0" });
   try {
@@ -365,7 +365,7 @@ router.post("/revenue", authenticatePlatformOwner, async (req, res) => {
 });
 
 // DELETE /platform/revenue/:id
-router.delete("/revenue/:id", authenticatePlatformOwner, async (req, res) => {
+router.delete("/revenue/:id", authenticatePlatformOwner, requirePlatformOwner, async (req, res) => {
   try {
     await db.query("DELETE FROM platform_revenue WHERE id=$1", [req.params.id]);
     res.json({ success: true });

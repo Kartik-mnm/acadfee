@@ -44,7 +44,7 @@ function authenticatePlatformOwner(req, res, next) {
   if (!token) return res.status(401).json({ error: "No token provided" });
   try {
     const decoded = jwt.verify(token, getJwtSecret());
-    if (decoded.role !== "platform_owner")
+    if (decoded.role !== "platform_owner" && decoded.role !== "viewer")
       return res.status(403).json({ error: "Access denied. Platform owner only." });
     req.platformAdmin = decoded;
     next();
@@ -55,6 +55,13 @@ function authenticatePlatformOwner(req, res, next) {
       code:  isExpired ? "TOKEN_EXPIRED" : "INVALID_TOKEN",
     });
   }
+}
+
+function requirePlatformOwner(req, res, next) {
+  if (req.platformAdmin?.role !== "platform_owner") {
+    return res.status(403).json({ error: "Access denied. Read-only viewer cannot modify data." });
+  }
+  next();
 }
 
 function authenticateBrandingAccess(req, res, next) {
@@ -99,4 +106,4 @@ function studentSelf(req, res, next) {
   next();
 }
 
-module.exports = { auth, superAdmin, branchFilter, studentSelf, getJwtSecret, authenticatePlatformOwner, authenticateBrandingAccess };
+module.exports = { auth, superAdmin, branchFilter, studentSelf, getJwtSecret, authenticatePlatformOwner, requirePlatformOwner, authenticateBrandingAccess };

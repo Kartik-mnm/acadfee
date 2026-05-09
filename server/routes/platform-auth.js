@@ -23,11 +23,11 @@ router.post("/login", async (req, res) => {
     if (!admin || !(await bcrypt.compare(password, admin.password_hash)))
       return res.status(401).json({ error: "Invalid email or password" });
     const token = jwt.sign(
-      { id: admin.id, email: admin.email, name: admin.name, role: "platform_owner" },
+      { id: admin.id, email: admin.email, name: admin.name, role: admin.role || "platform_owner" },
       getPlatformSecret(),
       { expiresIn: "7d" }
     );
-    res.json({ token, admin: { id: admin.id, name: admin.name, email: admin.email } });
+    res.json({ token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role || "platform_owner" } });
   } catch (e) {
     console.error("Platform login error:", e.message);
     res.status(500).json({ error: "Login failed" });
