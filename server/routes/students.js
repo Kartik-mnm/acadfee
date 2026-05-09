@@ -31,7 +31,7 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
     const { rows: students } = await db.query(
       `SELECT s.id, s.branch_id, br.name AS branch_name, br.roll_prefix AS branch_prefix
        FROM students s JOIN branches br ON br.id = s.branch_id
-       WHERE (s.roll_no IS NULL OR s.roll_no ~ '^[0-9]+$') ${aidCond} 
+       WHERE (s.roll_no IS NULL OR s.roll_no = '' OR s.roll_no ~ '^[0-9]+$') ${aidCond} 
        ORDER BY s.branch_id, s.id ASC`
     );
     let academyPrefix = "";
