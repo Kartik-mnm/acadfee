@@ -273,23 +273,34 @@ export default function AdmissionForm() {
         }
         .field-input {
           flex: 1;
-          border: none;
-          border-bottom: 1.5px solid #333;
+          border: none !important;
+          border-bottom: 1.5px solid #333 !important;
           background: transparent !important;
-          padding: 4px 2px;
-          font-size: 14px;
-          font-family: inherit;
+          padding: 4px 2px !important;
+          font-size: 14px !important;
+          font-family: inherit !important;
           color: #000 !important;
-          outline: none;
-          border-radius: 0;
-          -webkit-appearance: none;
+          outline: none !important;
+          border-radius: 0 !important;
+          -webkit-appearance: none !important;
           box-shadow: none !important;
+          min-height: unset !important;
         }
         .field-input:focus {
-          border-bottom-color: ${accentColor};
+          border-bottom-color: ${accentColor} !important;
         }
         .select-input {
           cursor: pointer;
+          background-image: none !important;
+        }
+        /* Override global App.css input styles */
+        .form-card input, .form-card select, .form-card textarea {
+          background-color: transparent !important;
+          border-radius: 0 !important;
+          border: none !important;
+          border-bottom: 1.5px solid #333 !important;
+          color: #000 !important;
+          height: auto !important;
         }
         .address-box {
           flex: 1;
