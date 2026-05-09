@@ -384,7 +384,17 @@ async function runMigration() {
     await safe(`ALTER TABLE working_days ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`, "working_days.created_at");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 3 — SEED DEFAULT DATA
+    // PHASE 3 — BACKFILLS & CLEANUP
+    // ═══════════════════════════════════════════════════════════════════════
+    // Backfill academy_id from branches where missing
+    await safe(`UPDATE branches b SET academy_id = (SELECT id FROM academies LIMIT 1) WHERE academy_id IS NULL`, "backfill branches.academy_id");
+    await safe(`UPDATE users u SET academy_id = b.academy_id FROM branches b WHERE b.id = u.branch_id AND u.academy_id IS NULL`, "backfill users.academy_id");
+    await safe(`UPDATE students s SET academy_id = b.academy_id FROM branches b WHERE b.id = s.branch_id AND s.academy_id IS NULL`, "backfill students.academy_id");
+    await safe(`UPDATE expenses e SET academy_id = b.academy_id FROM branches b WHERE b.id = e.branch_id AND e.academy_id IS NULL`, "backfill expenses.academy_id");
+    await safe(`UPDATE admission_enquiries a SET academy_id = b.academy_id FROM branches b WHERE b.id = a.branch_id AND a.academy_id IS NULL`, "backfill admission.academy_id");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 4 — SEED DEFAULT DATA
     // ═══════════════════════════════════════════════════════════════════════
     const hash = await bcrypt.hash("Exponent@2025", 10);
     await safe(

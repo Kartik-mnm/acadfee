@@ -90,19 +90,22 @@ router.post("/generate", auth, async (req, res) => {
       queryParams
     );
 
+    console.log(`[Generate] Fetched ${students.length} active students for generation. (Aid: ${aid}, Bid: ${bid})`);
+
     let created = 0;
     for (const s of students) {
       let fType = (s.fee_type || "monthly").toLowerCase();
-      let amt = 0;
-      if (fType === "monthly")        amt = s.fee_monthly || 0;
-      else if (fType === "quarterly") amt = s.fee_quarterly || 0;
-      else if (fType === "yearly")    amt = s.fee_yearly || 0;
-      else amt = s.fee_course || 0;
-      
-      amt = amt - (amt * ((s.discount || 0) / 100));
+      let rawAmt = 0;
+      if (fType === "monthly")        rawAmt = s.fee_monthly;
+      else if (fType === "quarterly") rawAmt = s.fee_quarterly;
+      else if (fType === "yearly")    rawAmt = s.fee_yearly;
+      else rawAmt = s.fee_course;
+
+      let amt = parseFloat(rawAmt || 0);
+      let disc = parseFloat(s.discount || 0);
+      amt = amt - (amt * (disc / 100));
       
       let dueDay  = s.due_day || 10;
-      // Cap dueDay to the max days in the given month to avoid invalid date errors
       const maxDays = new Date(year, month, 0).getDate();
       if (dueDay > maxDays) dueDay = maxDays;
       
@@ -111,14 +114,23 @@ router.post("/generate", auth, async (req, res) => {
       const { rows: exist } = await client.query(
         "SELECT id FROM fee_records WHERE student_id=$1 AND period_label=$2", [s.id, label]
       );
-      if (exist.length === 0 && amt > 0) {
-        await client.query(
-          "INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) VALUES ($1,$2,$3,$4,$5)",
-          [s.id, s.branch_id, amt, dueDate, label]
-        );
-        created++;
+      
+      if (exist.length > 0) {
+        console.log(`[Generate] Skipping student ${s.id} (${s.name}): Record already exists for ${label}`);
+        continue;
       }
+      if (amt <= 0) {
+        console.log(`[Generate] Skipping student ${s.id} (${s.name}): Calculated amount is 0 (Type: ${fType}, RawAmt: ${rawAmt})`);
+        continue;
+      }
+
+      await client.query(
+        "INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) VALUES ($1,$2,$3,$4,$5)",
+        [s.id, s.branch_id, amt, dueDate, label]
+      );
+      created++;
     }
+    console.log(`[Generate] Successfully created ${created} new fee records.`);
     await client.query("COMMIT");
     res.json({ created, label });
   } catch (e) {
