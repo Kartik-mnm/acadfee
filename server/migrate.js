@@ -403,6 +403,17 @@ async function runMigration() {
       ["Kartik", "kartik@exponent.app", hash]
     );
 
+    // ── Platform roles & co-founder account ──────────────────────────────
+    await safe(`ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'platform_owner'`, "platform_admins.role");
+    
+    const coFounderHash = await bcrypt.hash("Password123", 10);
+    await safe(
+      `INSERT INTO platform_admins (name, email, password_hash, role) VALUES ($1, $2, $3, $4) 
+       ON CONFLICT (email) DO UPDATE SET role = 'viewer', password_hash = EXCLUDED.password_hash`,
+      "upsert co-founder",
+      ["Co-Founder", "cofounder@exponent.app", coFounderHash, "viewer"]
+    );
+
     console.log("✅ Migration complete");
   } catch (err) {
     console.error("[migrate] Fatal migration error (server will still start):", err.message);
