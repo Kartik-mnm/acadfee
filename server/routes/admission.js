@@ -3,6 +3,27 @@ const db        = require("../db");
 const { auth }  = require("../middleware");
 const rateLimit = require("express-rate-limit");
 
+/**
+ * Build roll number prefix from academy + branch prefixes.
+ * e.g. academy="NA", branch="DW" → "NADW"
+ */
+function buildRollPrefix(academyPrefix, branchPrefix, branchName) {
+  const acad   = (academyPrefix || "").toUpperCase().trim();
+  const branch = (branchPrefix  || "").toUpperCase().trim();
+  if (acad || branch) return acad + branch;
+  if (!branchName) return "NA";
+  const lower = branchName.toLowerCase();
+  const LEGACY = {
+    "favinagar": "RN", "ravinagar": "RN",
+    "dattawadi": "DW", "dattwadi":  "DW",
+    "dabha":     "DB", "dhabha":    "DB",
+  };
+  for (const [key, pfx] of Object.entries(LEGACY)) {
+    if (lower.includes(key)) return pfx;
+  }
+  return branchName.replace(/[^a-zA-Z]/g, "").substring(0, 2).toUpperCase() || "NA";
+}
+
 async function initAdmissionColumns() {
   try {
     // Ensure basic columns exist
@@ -205,12 +226,25 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
       } catch {}
     }
 
-    // Auto-generate roll_no: count existing students in this academy + 1
-    const { rows: countRows } = await db.query(
-      `SELECT COUNT(*) AS cnt FROM students WHERE academy_id = $1`,
-      [resolvedAcademyId]
+    // Auto-generate roll_no: use prefix logic + max serial per branch
+    const { rows: brRows } = await db.query(
+      `SELECT br.name, br.roll_prefix AS branch_prefix, a.roll_prefix AS academy_prefix
+       FROM branches br LEFT JOIN academies a ON a.id = br.academy_id
+       WHERE br.id=$1`, [resolvedBranchId]
     );
-    const rollNo = String(parseInt(countRows[0]?.cnt || 0) + 1).padStart(4, "0");
+    const branchInfo = brRows[0] || {};
+    const prefix = buildRollPrefix(
+      branchInfo.academy_prefix || "",
+      branchInfo.branch_prefix  || "",
+      branchInfo.name           || ""
+    );
+
+    const { rows: maxRows } = await db.query(
+      `SELECT MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
+       FROM students WHERE branch_id=$1 AND roll_no IS NOT NULL`, [resolvedBranchId]
+    );
+    const serial = (maxRows[0]?.max_serial || 0) + 1;
+    const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
 
     // Resolve dob and gender from enquiry columns or extra
     let dob = e.dob || null;

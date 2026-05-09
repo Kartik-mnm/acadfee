@@ -31,7 +31,8 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
     const { rows: students } = await db.query(
       `SELECT s.id, s.branch_id, br.name AS branch_name, br.roll_prefix AS branch_prefix
        FROM students s JOIN branches br ON br.id = s.branch_id
-       WHERE s.roll_no IS NULL ${aidCond} ORDER BY s.branch_id, s.id ASC`
+       WHERE (s.roll_no IS NULL OR s.roll_no ~ '^[0-9]+$') ${aidCond} 
+       ORDER BY s.branch_id, s.id ASC`
     );
     let academyPrefix = "";
     if (aid) {
@@ -53,7 +54,7 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
         const serial = (maxSerial[s.branch_id] || 0) + 1;
         maxSerial[s.branch_id] = serial;
         const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
-        await client.query(`UPDATE students SET roll_no=$1 WHERE id=$2 AND roll_no IS NULL`, [rollNo, s.id]);
+        await client.query(`UPDATE students SET roll_no=$1 WHERE id=$2`, [rollNo, s.id]);
         updated++;
       }
       await client.query("COMMIT");
