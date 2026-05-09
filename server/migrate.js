@@ -285,6 +285,17 @@ async function runMigration() {
       details     JSONB,
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )`, "create platform_audit_log");
+    
+    await safe(`CREATE TABLE IF NOT EXISTS platform_settings (
+      key   TEXT PRIMARY KEY,
+      value JSONB NOT NULL
+    )`, "create platform_settings");
+    
+    await safe(
+      `INSERT INTO platform_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+      "seed platform_settings",
+      ["allow_viewer_access", JSON.stringify(true)]
+    );
 
     await safe(`CREATE TABLE IF NOT EXISTS platform_revenue (
       id           SERIAL PRIMARY KEY,

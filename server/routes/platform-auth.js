@@ -22,6 +22,16 @@ router.post("/login", async (req, res) => {
     const admin = rows[0];
     if (!admin || !(await bcrypt.compare(password, admin.password_hash)))
       return res.status(401).json({ error: "Invalid email or password" });
+
+    // Check if viewer access is allowed
+    if (admin.role === "viewer") {
+      const { rows: settings } = await db.query("SELECT value FROM platform_settings WHERE key = 'allow_viewer_access'");
+      const allowed = settings[0] ? settings[0].value : true;
+      if (!allowed) {
+        return res.status(403).json({ error: "Access Denied: Co-founder access is currently disabled by the Platform Owner." });
+      }
+    }
+
     const token = jwt.sign(
       { id: admin.id, email: admin.email, name: admin.name, role: admin.role || "platform_owner" },
       getPlatformSecret(),
@@ -97,10 +107,50 @@ router.get("/public-branding", async (req, res) => {
     const { rows } = await db.query(
       "SELECT favicon_url, logo_url FROM platform_admins ORDER BY id ASC LIMIT 1"
     );
-    res.json(rows[0] || { favicon_url: null, logo_url: null });
+    // Also fetch viewer access status for the login screen
+    const { rows: settings } = await db.query("SELECT value FROM platform_settings WHERE key = 'allow_viewer_access'");
+    const viewerAllowed = settings[0] ? settings[0].value : true;
+
+    res.json({ 
+      favicon_url: rows[0]?.favicon_url || null, 
+      logo_url: rows[0]?.logo_url || null,
+      viewer_allowed: viewerAllowed
+    });
   } catch (e) {
     // Silently return empty — client falls back to defaults
-    res.json({ favicon_url: null, logo_url: null });
+    res.json({ favicon_url: null, logo_url: null, viewer_allowed: true });
+  }
+});
+
+// ── Platform Settings (Allow/Disallow Co-Founder) ──────────────────────────────────────────
+
+// GET /platform/auth/settings — authenticated (Super Admin Only)
+router.get("/settings", authenticatePlatformOwner, async (req, res) => {
+  if (req.platformAdmin.role !== "platform_owner") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { rows } = await db.query("SELECT * FROM platform_settings");
+    const config = {};
+    rows.forEach(r => config[r.key] = r.value);
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch settings" });
+  }
+});
+
+// PUT /platform/auth/settings — authenticated (Super Admin Only)
+router.put("/settings", authenticatePlatformOwner, async (req, res) => {
+  if (req.platformAdmin.role !== "platform_owner") return res.status(403).json({ error: "Access denied" });
+  const { allow_viewer_access } = req.body;
+  try {
+    if (allow_viewer_access !== undefined) {
+      await db.query(
+        "INSERT INTO platform_settings (key, value) VALUES ('allow_viewer_access', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        [JSON.stringify(allow_viewer_access)]
+      );
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to update settings" });
   }
 });
 
