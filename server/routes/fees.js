@@ -96,10 +96,18 @@ router.post("/generate", auth, async (req, res) => {
     for (const s of students) {
       let fType = (s.fee_type || "monthly").toLowerCase();
       let rawAmt = 0;
-      if (fType === "monthly")        rawAmt = s.fee_monthly;
-      else if (fType === "quarterly") rawAmt = s.fee_quarterly;
-      else if (fType === "yearly")    rawAmt = s.fee_yearly;
-      else rawAmt = s.fee_course;
+
+      // Priority 1: Use student-specific admission_fee if it is set (custom override)
+      if (s.admission_fee && parseFloat(s.admission_fee) > 0) {
+        rawAmt = s.admission_fee;
+      } 
+      // Priority 2: Fall back to batch-defined fees based on fee_type
+      else {
+        if (fType === "monthly")        rawAmt = s.fee_monthly;
+        else if (fType === "quarterly") rawAmt = s.fee_quarterly;
+        else if (fType === "yearly")    rawAmt = s.fee_yearly;
+        else rawAmt = s.fee_course;
+      }
 
       let amt = parseFloat(rawAmt || 0);
       let disc = parseFloat(s.discount || 0);
