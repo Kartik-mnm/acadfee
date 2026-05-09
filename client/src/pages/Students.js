@@ -347,6 +347,28 @@ export default function Students() {
     : user.role==="branch_manager" ? batches.filter((b) => b.branch_id==user.branch_id) : batches;
 
   const f = (k,v) => setForm((p) => ({ ...p, [k]:v }));
+
+  const handleBatchChange = (batchId) => {
+    f("batch_id", batchId);
+    if (!batchId) return;
+
+    const selectedBatch = batches.find(b => b.id == batchId);
+    if (selectedBatch) {
+      // If the batch has a per-course fee, auto-fill admission_fee and set type to course
+      if (selectedBatch.fee_course > 0) {
+        setForm(prev => ({
+          ...prev,
+          batch_id: batchId,
+          admission_fee: selectedBatch.fee_course,
+          fee_type: "course"
+        }));
+      } else if (selectedBatch.fee_monthly > 0) {
+        // If it's a monthly batch, we can still set it to monthly just in case
+        f("fee_type", "monthly");
+      }
+    }
+  };
+
   const openPortal = (s) => { setPortalStudent(s); setPortalPassword(""); setPortalMsg(""); };
 
   const sendEmail = async (s) => {
@@ -528,7 +550,7 @@ export default function Students() {
                   </div>
                 )}
                 <div className="form-group"><label>Batch</label>
-                  <select value={form.batch_id} onChange={(e) => f("batch_id",e.target.value)}>
+                  <select value={form.batch_id} onChange={(e) => handleBatchChange(e.target.value)}>
                     <option value="">Select Batch</option>
                     {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>

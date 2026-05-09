@@ -223,12 +223,30 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
       } catch {}
     }
 
+    // Fetch batch details to get fees
+    let admissionFee = 0;
+    let feeType = "monthly";
+    if (e.batch_id) {
+      const { rows: batchRows } = await db.query(
+        "SELECT fee_monthly, fee_course FROM batches WHERE id = $1",
+        [e.batch_id]
+      );
+      if (batchRows[0]) {
+        if (parseFloat(batchRows[0].fee_course) > 0) {
+          admissionFee = batchRows[0].fee_course;
+          feeType = "course";
+        } else if (parseFloat(batchRows[0].fee_monthly) > 0) {
+          feeType = "monthly";
+        }
+      }
+    }
+
     // Create student — using only columns guaranteed to exist
     const { rows: stuRows } = await db.query(
       `INSERT INTO students
          (branch_id, batch_id, name, phone, parent_phone, email, address,
-          admission_date, status, photo_url, academy_id, roll_no, dob, gender)
-       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9, $10, $11, $12)
+          admission_date, status, photo_url, academy_id, roll_no, dob, gender, admission_fee, fee_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, CURRENT_DATE, 'active', $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         resolvedBranchId,
@@ -242,7 +260,9 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
         resolvedAcademyId,
         rollNo,
         dob,
-        gender
+        gender,
+        admissionFee,
+        feeType
       ]
     );
 
