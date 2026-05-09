@@ -69,31 +69,52 @@ router.post("/generate", auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
-    // BUG FIX: scope by academy_id so fee generation only affects this academy's students
+    
+    // Support filtering by branch_id if provided, else all branches for the academy
+    let queryParams = [];
+    let whereClauses = ["s.status='active'"];
+    if (aid) {
+      queryParams.push(aid);
+      whereClauses.push(`s.academy_id=$${queryParams.length}`);
+    }
+    if (bid) {
+      queryParams.push(bid);
+      whereClauses.push(`s.branch_id=$${queryParams.length}`);
+    }
+    const whereStr = "WHERE " + whereClauses.join(" AND ");
+
     const { rows: students } = await client.query(
       `SELECT s.*, bt.fee_monthly, bt.fee_quarterly, bt.fee_yearly, bt.fee_course
        FROM students s LEFT JOIN batches bt ON bt.id=s.batch_id
-       WHERE s.branch_id=$1 AND s.status='active'
-       ${aid ? "AND s.academy_id=$2" : ""}`,
-      aid ? [bid, aid] : [bid]
+       ${whereStr}`,
+      queryParams
     );
+
     let created = 0;
     for (const s of students) {
+      let fType = (s.fee_type || "monthly").toLowerCase();
       let amt = 0;
-      if (s.fee_type === "monthly")        amt = s.fee_monthly || 0;
-      else if (s.fee_type === "quarterly") amt = s.fee_quarterly || 0;
-      else if (s.fee_type === "yearly")    amt = s.fee_yearly || 0;
+      if (fType === "monthly")        amt = s.fee_monthly || 0;
+      else if (fType === "quarterly") amt = s.fee_quarterly || 0;
+      else if (fType === "yearly")    amt = s.fee_yearly || 0;
       else amt = s.fee_course || 0;
-      amt = amt - (amt * (s.discount / 100));
-      const dueDay  = s.due_day || 10;
+      
+      amt = amt - (amt * ((s.discount || 0) / 100));
+      
+      let dueDay  = s.due_day || 10;
+      // Cap dueDay to the max days in the given month to avoid invalid date errors
+      const maxDays = new Date(year, month, 0).getDate();
+      if (dueDay > maxDays) dueDay = maxDays;
+      
       const dueDate = `${year}-${String(month).padStart(2,"0")}-${String(dueDay).padStart(2,"0")}`;
+      
       const { rows: exist } = await client.query(
         "SELECT id FROM fee_records WHERE student_id=$1 AND period_label=$2", [s.id, label]
       );
       if (exist.length === 0 && amt > 0) {
         await client.query(
           "INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) VALUES ($1,$2,$3,$4,$5)",
-          [s.id, bid, amt, dueDate, label]
+          [s.id, s.branch_id, amt, dueDate, label]
         );
         created++;
       }
