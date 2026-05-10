@@ -26,6 +26,9 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
     let pcIdx = 1;
     if (aid) { pcParts.push(`p.merchant_id=$${pcIdx++}`); pcParams.push(aid); }
     if (bid) { pcParts.push(`p.branch_id=$${pcIdx++}`); pcParams.push(bid); }
+    if (req.query.time_range === "this_month") {
+      pcParts.push(`p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)`);
+    }
     const pcWhere = pcParts.length ? "WHERE " + pcParts.join(" AND ") : "";
 
     // ── fee_records (no academy_id — join through students) ───────────────────
@@ -34,12 +37,18 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
     let frIdx = 1;
     if (aid) { frParts.push(`s.academy_id=$${frIdx++}`); frParams.push(aid); }
     if (bid) { frParts.push(`fr.branch_id=$${frIdx++}`); frParams.push(bid); }
+    if (req.query.time_range === "this_month") {
+      frParts.push(`fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')`);
+    }
 
     const ovParts = ["fr.status='overdue'"];
     const ovParams = [];
     let ovIdx = 1;
     if (aid) { ovParts.push(`s.academy_id=$${ovIdx++}`); ovParams.push(aid); }
     if (bid) { ovParts.push(`fr.branch_id=$${ovIdx++}`); ovParams.push(bid); }
+    if (req.query.time_range === "this_month") {
+      ovParts.push(`fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')`);
+    }
 
     // ── recent payments ───────────────────────────────────────────────────────
     const recentParts = [];
@@ -47,6 +56,9 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
     let ri = 1;
     if (aid) { recentParts.push(`p.merchant_id=$${ri++}`); recentParams.push(aid); }
     if (bid) { recentParts.push(`p.branch_id=$${ri++}`);  recentParams.push(bid); }
+    if (req.query.time_range === "this_month") {
+      recentParts.push(`p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)`);
+    }
     const recentWhere = recentParts.length ? "AND " + recentParts.join(" AND ") : "";
 
     const [students, collected, due, overdue, recentPayments, branchPerf] = await Promise.all([
@@ -95,10 +107,11 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
                   SELECT SUM(fr2.amount_due - fr2.amount_paid)
                   FROM fee_records fr2
                   WHERE fr2.branch_id = br.id AND fr2.status != 'paid'
+                  ${req.query.time_range === 'this_month' ? "AND fr2.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr2.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')" : ""}
                 ), 0) AS pending
          FROM branches br
          LEFT JOIN students s ON s.branch_id = br.id AND s.status = 'active'
-         LEFT JOIN payments p ON p.branch_id = br.id
+         LEFT JOIN payments p ON p.branch_id = br.id ${req.query.time_range === 'this_month' ? "AND p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)" : ""}
          WHERE br.academy_id = $1
          GROUP BY br.id, br.name
          ORDER BY br.id`,
@@ -125,13 +138,19 @@ router.get("/by-branch", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
+    let timeFilterP = "";
+    let timeFilterFr = "";
+    if (req.query.time_range === "this_month") {
+      timeFilterP = " AND p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)";
+      timeFilterFr = " AND fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')";
+    }
     const { rows } = await db.query(
       `SELECT br.name AS branch,
               COUNT(DISTINCT s.id) AS students,
-              COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.branch_id=br.id), 0) AS collected,
+              COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.branch_id=br.id${timeFilterP}), 0) AS collected,
               COALESCE((SELECT SUM(fr.amount_due - fr.amount_paid)
                         FROM fee_records fr
-                        WHERE fr.branch_id=br.id AND fr.status != 'paid'), 0) AS pending
+                        WHERE fr.branch_id=br.id AND fr.status != 'paid'${timeFilterFr}), 0) AS pending
        FROM branches br
        LEFT JOIN students s ON s.branch_id=br.id AND s.status='active'
        WHERE br.academy_id = $1

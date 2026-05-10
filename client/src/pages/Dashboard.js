@@ -198,6 +198,7 @@ export default function Dashboard({ onNavigate }) {
   const [branchStats, setBranchStats] = useState([]);
   const [trend, setTrend]             = useState([]);
   const [branchFilter, setBranchFilter] = useState("");
+  const [timeRange, setTimeRange] = useState("this_month");
   const [branches, setBranches]       = useState([]);
   const [isNewAcademy, setIsNewAcademy] = useState(false);
   const [completedSteps, setCompletedSteps] = useState([]);
@@ -229,12 +230,16 @@ export default function Dashboard({ onNavigate }) {
   }, [user]);
 
   useEffect(() => {
-    const q = branchFilter ? `?branch_id=${branchFilter}` : "";
+    const params = new URLSearchParams();
+    if (branchFilter) params.append("branch_id", branchFilter);
+    if (timeRange) params.append("time_range", timeRange);
+    const q = `?${params.toString()}`;
+
     API.get(`/reports/dashboard${q}`).then(r => setData(r.data));
-    API.get(`/reports/monthly-trend${q}`).then(r => setTrend(r.data));
+    API.get(`/reports/monthly-trend${branchFilter ? `?branch_id=${branchFilter}` : ""}`).then(r => setTrend(r.data));
     if (user.role === "super_admin" && !branchFilter)
-      API.get("/reports/by-branch").then(r => setBranchStats(r.data));
-  }, [branchFilter, user]);
+      API.get(`/reports/by-branch${q}`).then(r => setBranchStats(r.data));
+  }, [branchFilter, timeRange, user]);
 
   if (!data) {
     return (
@@ -256,9 +261,9 @@ export default function Dashboard({ onNavigate }) {
 
   const statCards = [
     { key:"students",  color:"blue",   label:"Active Students", value:data.active_students,      suffix:"",         icon:"&#9673;", hint:"Total enrolled" },
-    { key:"collected", color:"green",  label:"Total Collected", value:fmt(data.total_collected), suffix:"",         icon:"&#11041;", hint:"All time" },
-    { key:"due",       color:"yellow", label:"Pending Dues",    value:fmt(data.total_due),       suffix:"",         icon:"&#9678;", hint:"Outstanding" },
-    { key:"overdue",   color:"red",    label:"Overdue",         value:data.overdue_count,        suffix:" records", icon:"&#9650;", hint:"Needs attention" },
+    { key:"collected", color:"green",  label:"Total Collected", value:fmt(data.total_collected), suffix:"",         icon:"&#11041;", hint: timeRange === "this_month" ? "This month" : "All time" },
+    { key:"due",       color:"yellow", label:"Pending Dues",    value:fmt(data.total_due),       suffix:"",         icon:"&#9678;", hint: timeRange === "this_month" ? "This month" : "Outstanding" },
+    { key:"overdue",   color:"red",    label:"Overdue",         value:data.overdue_count,        suffix:" records", icon:"&#9650;", hint: timeRange === "this_month" ? "This month" : "Needs attention" },
   ];
 
   const showChecklist = isNewAcademy && user.role === "super_admin" && !checklistDismissed;
@@ -271,12 +276,18 @@ export default function Dashboard({ onNavigate }) {
           <div className="page-title">Dashboard</div>
           <div className="page-sub">{user.role === "super_admin" ? "All branches overview" : `Branch: ${user.branch_name}`}</div>
         </div>
-        {user.role === "super_admin" && (
-          <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} style={{ width:200 }}>
-            <option value="">All Branches</option>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        <div style={{ display: "flex", gap: 12 }}>
+          <select value={timeRange} onChange={e => setTimeRange(e.target.value)} style={{ width:140 }}>
+            <option value="this_month">This Month</option>
+            <option value="all_time">All Time</option>
           </select>
-        )}
+          {user.role === "super_admin" && (
+            <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} style={{ width:200 }}>
+              <option value="">All Branches</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       {showChecklist && (
