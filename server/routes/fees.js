@@ -219,4 +219,34 @@ router.patch("/mark-overdue", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed to mark overdue records" }); }
 });
 
+// Delete fee record
+router.delete("/:id", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const aid = req.academyId;
+    const { id } = req.params;
+
+    // Verify record exists and belongs to this academy
+    const { rows: record } = await db.query(
+      `SELECT fr.* FROM fee_records fr
+       JOIN students s ON s.id = fr.student_id
+       WHERE fr.id = $1 ${aid ? "AND s.academy_id = $2" : ""}`,
+      aid ? [id, aid] : [id]
+    );
+
+    if (!record[0]) return res.status(404).json({ error: "Fee record not found" });
+
+    // Prevent deletion if payments are attached
+    if (parseFloat(record[0].amount_paid || 0) > 0) {
+      return res.status(400).json({ error: "Cannot delete a record that has payments. Void the payments first." });
+    }
+
+    await db.query("DELETE FROM fee_records WHERE id = $1", [id]);
+    res.json({ success: true, message: "Fee record deleted" });
+  } catch (e) {
+    console.error("Delete fee error:", e.message);
+    res.status(500).json({ error: "Failed to delete fee record" });
+  }
+});
+
 module.exports = router;

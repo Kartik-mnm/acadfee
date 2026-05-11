@@ -39,27 +39,39 @@ export default function StudentProfile({ studentId, onBack }) {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
 
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
+        API.get(`/students/${studentId}`),
+        API.get(`/fees?student_id=${studentId}`),
+        API.get(`/payments?student_id=${studentId}`),
+        API.get(`/attendance?student_id=${studentId}`),
+        API.get(`/tests/student/${studentId}`),
+      ]);
+      setStudent(stuRes.data);
+      setFees(feeRes.data);
+      setPayments(payRes.data);
+      setAttendance(attRes.data);
+      setTests(testRes.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
-          API.get(`/students/${studentId}`),
-          API.get(`/fees?student_id=${studentId}`),
-          API.get(`/payments?student_id=${studentId}`),
-          API.get(`/attendance?student_id=${studentId}`),
-          API.get(`/tests/student/${studentId}`),
-        ]);
-        setStudent(stuRes.data);
-        setFees(feeRes.data);
-        setPayments(payRes.data);
-        setAttendance(attRes.data);
-        setTests(testRes.data);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    };
     load();
   }, [studentId]);
+
+  const handleDeleteFee = async (feeId) => {
+    if (!window.confirm("Are you sure you want to delete this fee record? This cannot be undone.")) return;
+    try {
+      await API.delete(`/fees/${feeId}`);
+      alert("✅ Fee record deleted successfully!");
+      load(); // Refresh data
+    } catch (e) {
+      alert("⚠ Failed: " + (e.response?.data?.error || e.message));
+    }
+  };
 
   if (loading) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300 }}>
@@ -192,7 +204,59 @@ export default function StudentProfile({ studentId, onBack }) {
         </div>
       )}
 
-      {tab==="fees" && (<div className="card"><div className="card-title">📋 Fee Records</div>{fees.length===0?<div className="empty-state"><div className="empty-text">No fee records</div></div>:<div className="table-wrap"><table><thead><tr><th>Period</th><th>Amount Due</th><th>Amount Paid</th><th>Balance</th><th>Due Date</th><th>Status</th></tr></thead><tbody>{fees.map((f)=>(<tr key={f.id}><td style={{fontWeight:600}}>{f.period_label}</td><td className="mono">{fmt(f.amount_due)}</td><td className="mono" style={{color:"var(--green)"}}>{fmt(f.amount_paid)}</td><td className="mono" style={{color:f.amount_due-f.amount_paid>0?"var(--red)":"var(--green)",fontWeight:700}}>{fmt(f.amount_due-f.amount_paid)}</td><td className="text-muted">{new Date(f.due_date).toLocaleDateString("en-IN")}</td><td><span className={`badge ${f.status==="paid"?"badge-green":f.status==="overdue"?"badge-red":"badge-yellow"}`}>{f.status}</span></td></tr>))}</tbody></table></div>}</div>)}
+      {tab==="fees" && (
+        <div className="card">
+          <div className="card-title">📋 Fee Records</div>
+          {fees.length===0 ? (
+            <div className="empty-state"><div className="empty-text">No fee records</div></div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Period</th>
+                    <th>Amount Due</th>
+                    <th>Amount Paid</th>
+                    <th>Balance</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    {user?.role !== "student" && <th>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {fees.map((f) => (
+                    <tr key={f.id}>
+                      <td style={{fontWeight:600}}>{f.period_label}</td>
+                      <td className="mono">{fmt(f.amount_due)}</td>
+                      <td className="mono" style={{color:"var(--green)"}}>{fmt(f.amount_paid)}</td>
+                      <td className="mono" style={{color:f.amount_due-f.amount_paid>0?"var(--red)":"var(--green)",fontWeight:700}}>{fmt(f.amount_due-f.amount_paid)}</td>
+                      <td className="text-muted">{new Date(f.due_date).toLocaleDateString("en-IN")}</td>
+                      <td>
+                        <span className={`badge ${f.status==="paid"?"badge-green":f.status==="overdue"?"badge-red":"badge-yellow"}`}>
+                          {f.status}
+                        </span>
+                      </td>
+                      {user?.role !== "student" && (
+                        <td>
+                          <button 
+                            className="btn btn-red btn-sm"
+                            style={{ padding: "4px 8px", fontSize: 11 }}
+                            onClick={() => handleDeleteFee(f.id)}
+                            disabled={parseFloat(f.amount_paid) > 0}
+                            title={parseFloat(f.amount_paid) > 0 ? "Cannot delete record with payments" : "Delete record"}
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
       {tab==="payments" && (<div className="card"><div className="card-title">💳 Payment History</div>{payments.length===0?<div className="empty-state"><div className="empty-text">No payments recorded</div></div>:<div className="table-wrap"><table><thead><tr><th>Receipt No.</th><th>Period</th><th>Amount</th><th>Mode</th><th>Txn ID</th><th>Date</th></tr></thead><tbody>{payments.map((p)=>(<tr key={p.id}><td className="mono" style={{color:"var(--accent)",fontWeight:700}}>{p.receipt_no}</td><td>{p.period_label}</td><td className="mono" style={{color:"var(--green)",fontWeight:700}}>{fmt(p.amount_paid)}</td><td><span className="badge badge-blue">{p.mode}</span></td><td className="mono text-muted text-sm">{p.transaction_ref||"—"}</td><td className="text-muted">{new Date(p.payment_date).toLocaleDateString("en-IN")}</td></tr>))}</tbody></table></div>}</div>)}
       {tab==="attendance" && (<div className="card"><div className="card-title">📅 Attendance History</div>{attendance.length===0?<div className="empty-state"><div className="empty-text">No attendance records</div></div>:<div className="table-wrap"><table><thead><tr><th>Month</th><th>Year</th><th>Total Days</th><th>Present</th><th>Absent</th><th>Percentage</th></tr></thead><tbody>{attendance.map((a)=>(<tr key={a.id}><td style={{fontWeight:600}}>{MONTHS[a.month-1]}</td><td>{a.year}</td><td>{a.total_days}</td><td style={{color:"var(--green)",fontWeight:600}}>{a.present}</td><td style={{color:"var(--red)",fontWeight:600}}>{a.total_days-a.present}</td><td><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,background:"var(--bg3)",borderRadius:4,height:6}}><div style={{width:`${a.percentage}%`,background:pctColor(a.percentage),height:"100%",borderRadius:4}}/></div><span style={{color:pctColor(a.percentage),fontWeight:700,minWidth:40}}>{a.percentage}%</span></div></td></tr>))}</tbody></table></div>}</div>)}
       {tab==="performance" && (<div className="card"><div className="card-title">📊 Test Performance</div>{tests.length===0?<div className="empty-state"><div className="empty-text">No test records</div></div>:<div className="table-wrap"><table><thead><tr><th>Test Name</th><th>Subject</th><th>Marks</th><th>Out of</th><th>Percentage</th><th>Grade</th><th>Date</th></tr></thead><tbody>{tests.map((t,i)=>(<tr key={i}><td style={{fontWeight:600}}>{t.test_name}</td><td className="text-muted">{t.subject||"—"}</td><td className="mono" style={{fontWeight:700}}>{t.marks}</td><td className="mono text-muted">{t.total_marks}</td><td style={{color:gradeColor(t.percentage),fontWeight:700}}>{t.percentage}%</td><td><span style={{background:gradeColor(t.percentage),color:"#fff",padding:"2px 10px",borderRadius:6,fontSize:12,fontWeight:800}}>{grade(t.percentage)}</span></td><td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td></tr>))}</tbody></table></div>}</div>)}
