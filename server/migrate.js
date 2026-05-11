@@ -425,6 +425,41 @@ async function runMigration() {
       ["Co-Founder", "cofounder@exponent.app", coFounderHash, "viewer"]
     );
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 5 — PERFORMANCE INDEXES
+    // ═══════════════════════════════════════════════════════════════════════
+    // students
+    await safe(`CREATE INDEX IF NOT EXISTS idx_students_batch ON students(batch_id)`, "idx_students_batch");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_students_branch ON students(branch_id)`, "idx_students_branch");
+    
+    // fee_records
+    await safe(`CREATE INDEX IF NOT EXISTS idx_fee_records_student ON fee_records(student_id)`, "idx_fee_records_student");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_fee_records_branch ON fee_records(branch_id)`, "idx_fee_records_branch");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_fee_records_status ON fee_records(status)`, "idx_fee_records_status");
+    
+    // payments
+    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_fee_record ON payments(fee_record_id)`, "idx_payments_fee_record");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_student ON payments(student_id)`, "idx_payments_student");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_branch ON payments(branch_id)`, "idx_payments_branch");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_merchant ON payments(merchant_id)`, "idx_payments_merchant");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_payments_paid_on ON payments(paid_on)`, "idx_payments_paid_on");
+
+    // attendance & scans
+    await safe(`CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id)`, "idx_attendance_student");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_qr_scans_student ON qr_scans(student_id)`, "idx_qr_scans_student");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_qr_scans_date ON qr_scans(scan_date)`, "idx_qr_scans_date");
+
+    // tests
+    await safe(`CREATE INDEX IF NOT EXISTS idx_test_results_student ON test_results(student_id)`, "idx_test_results_student");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_test_results_test ON test_results(test_id)`, "idx_test_results_test");
+
+    // expenses
+    await safe(`CREATE INDEX IF NOT EXISTS idx_expenses_academy ON expenses(academy_id)`, "idx_expenses_academy");
+    await safe(`CREATE INDEX IF NOT EXISTS idx_expenses_branch ON expenses(branch_id)`, "idx_expenses_branch");
+
+    // enquiries
+    await safe(`CREATE INDEX IF NOT EXISTS idx_admission_enquiries_academy ON admission_enquiries(academy_id)`, "idx_admission_academy");
+
     console.log("✅ Migration complete");
   } catch (err) {
     console.error("[migrate] Fatal migration error (server will still start):", err.message);
