@@ -294,11 +294,19 @@ router.put("/:id", auth, async (req, res) => {
     // If admission_fee was changed, sync it to the "Course Fee" record
     if (admission_fee !== undefined && updatedStudent.fee_type === "course") {
       try {
-        await db.query(
+        const { rowCount } = await db.query(
           `UPDATE fee_records SET amount_due = $1 
            WHERE student_id = $2 AND period_label = 'Course Fee'`,
           [updatedStudent.admission_fee, updatedStudent.id]
         );
+        // If no 'Course Fee' record found, update the FIRST record found for this student
+        if (rowCount === 0) {
+          await db.query(
+            `UPDATE fee_records SET amount_due = $1 
+             WHERE id = (SELECT id FROM fee_records WHERE student_id = $2 ORDER BY id ASC LIMIT 1)`,
+            [updatedStudent.admission_fee, updatedStudent.id]
+          );
+        }
       } catch (syncErr) {
         console.error("Sync admission fee error:", syncErr.message);
       }
