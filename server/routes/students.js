@@ -182,6 +182,18 @@ router.post("/", auth, async (req, res) => {
     const serial = (maxRows[0]?.max_serial || 0) + 1;
     const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
 
+    let resolvedAdmissionFee = parseFloat(admission_fee || 0);
+    let resolvedFeeType      = fee_type || 'monthly';
+
+    // Auto-inherit batch course fee if not provided
+    if (batch_id && resolvedAdmissionFee === 0) {
+      const { rows: bRows } = await db.query("SELECT fee_course FROM batches WHERE id=$1", [batch_id]);
+      if (bRows[0] && parseFloat(bRows[0].fee_course) > 0) {
+        resolvedAdmissionFee = parseFloat(bRows[0].fee_course);
+        resolvedFeeType = 'course';
+      }
+    }
+
     const { rows } = await db.query(
       `INSERT INTO students (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
         admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, roll_no, academy_id)
@@ -197,8 +209,8 @@ router.post("/", auth, async (req, res) => {
         dob             || null,
         gender          || null,
         admission_date  || null,
-        fee_type        || 'monthly',
-        admission_fee   || 0,
+        resolvedFeeType,
+        resolvedAdmissionFee,
         discount        || 0,
         discount_reason || null,
         dueDaySafe,
@@ -277,8 +289,23 @@ router.put("/:id", auth, async (req, res) => {
     );
 
     if (!rows[0]) return res.status(404).json({ error: "Student not found in your academy" });
+    const updatedStudent = rows[0];
+
+    // If admission_fee was changed, sync it to the "Course Fee" record
+    if (admission_fee !== undefined && updatedStudent.fee_type === "course") {
+      try {
+        await db.query(
+          `UPDATE fee_records SET amount_due = $1 
+           WHERE student_id = $2 AND period_label = 'Course Fee'`,
+          [updatedStudent.admission_fee, updatedStudent.id]
+        );
+      } catch (syncErr) {
+        console.error("Sync admission fee error:", syncErr.message);
+      }
+    }
+
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
-    res.json(rows[0]);
+    res.json(updatedStudent);
   } catch (e) { 
     console.error("Update student error:", e.message);
     res.status(500).json({ error: "Failed to update student: " + e.message }); 
