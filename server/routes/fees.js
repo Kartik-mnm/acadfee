@@ -42,11 +42,51 @@ router.post("/", auth, async (req, res) => {
     if (!student_id || !amount_due || !due_date || !period_label)
       return res.status(400).json({ error: "student_id, amount_due, due_date and period_label are required" });
     const aid = req.academyId;
-    // Verify student belongs to this academy
-    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    // Verify student belongs to this academy and fetch caps
+    const whereClause = aid ? "WHERE s.id=$1 AND s.academy_id=$2" : "WHERE s.id=$1";
     const sParams = aid ? [student_id, aid] : [student_id];
-    const { rows: sRows } = await db.query(`SELECT branch_id FROM students ${whereClause}`, sParams);
+    const { rows: sRows } = await db.query(
+      `SELECT s.branch_id, s.fee_type, s.admission_fee, s.discount, 
+              b.fee_monthly, b.fee_quarterly, b.fee_yearly, b.fee_course
+       FROM students s 
+       LEFT JOIN batches b ON b.id = s.batch_id
+       ${whereClause}`, 
+      sParams
+    );
     if (!sRows[0]) return res.status(404).json({ error: "Student not found in your academy" });
+    
+    const s = sRows[0];
+    const fType = (s.fee_type || "monthly").toLowerCase();
+    const inputAmt = parseFloat(amount_due);
+
+    // 1. Check for Course fee cap
+    if (fType === "course") {
+      const { rows: totals } = await db.query("SELECT SUM(amount_due) as total FROM fee_records WHERE student_id=$1", [student_id]);
+      const currentTotal = parseFloat(totals[0].total || 0);
+      const cap = parseFloat(s.admission_fee || 0);
+      if (currentTotal + inputAmt > cap) {
+        return res.status(400).json({ 
+          error: `Total fees for this student cannot exceed the Admission/Course fee of ₹${cap.toLocaleString("en-IN")}. Current total is already ₹${currentTotal.toLocaleString("en-IN")}.` 
+        });
+      }
+    } else {
+      // 2. Check for Batch fee cap (per record)
+      let maxRate = 0;
+      if (fType === "monthly")        maxRate = s.fee_monthly;
+      else if (fType === "quarterly") maxRate = s.fee_quarterly;
+      else if (fType === "yearly")    maxRate = s.fee_yearly;
+
+      let allowed = parseFloat(maxRate || 0);
+      const disc = parseFloat(s.discount || 0);
+      allowed = allowed - (allowed * (disc / 100));
+
+      if (inputAmt > allowed && allowed > 0) {
+        return res.status(400).json({ 
+          error: `Amount ₹${inputAmt.toLocaleString("en-IN")} exceeds the allowed ${fType} fee of ₹${allowed.toLocaleString("en-IN")} for this batch.` 
+        });
+      }
+    }
+
     const { rows } = await db.query(
       `INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [student_id, sRows[0].branch_id, amount_due, due_date, period_label]
@@ -126,6 +166,17 @@ router.post("/generate", auth, async (req, res) => {
       if (amt <= 0) {
         console.log(`[Generate] Skipping student ${s.id} (${s.name}): Calculated amount is 0 (Type: ${fType}, RawAmt: ${rawAmt})`);
         continue;
+      }
+
+      // Extra Safeguard: Verify we don't exceed the total cap if it's a course student 
+      // (Though the 'continue' above should already prevent this, we add it here for robustness)
+      if (fType === "course") {
+        const { rows: totals } = await client.query("SELECT SUM(amount_due) as total FROM fee_records WHERE student_id=$1", [s.id]);
+        const currentTotal = parseFloat(totals[0].total || 0);
+        if (currentTotal + amt > parseFloat(s.admission_fee || 0)) {
+          console.log(`[Generate] Skipping student ${s.id} (${s.name}): Adding ₹${amt} would exceed course cap.`);
+          continue;
+        }
       }
 
       await client.query(
