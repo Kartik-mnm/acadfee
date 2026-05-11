@@ -72,14 +72,34 @@ router.get("/", auth, branchFilter, async (req, res) => {
     if (bid)   { conditions.push(`e.branch_id=$${idx++}`);   params.push(bid); }
     if (month) { conditions.push(`EXTRACT(MONTH FROM e.expense_date) = $${idx++}`); params.push(month); }
     if (year)  { conditions.push(`EXTRACT(YEAR  FROM e.expense_date) = $${idx++}`); params.push(year); }
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-    // BUG FIX: was using COALESCE(e.title, e.description) and COALESCE(e.notes, e.paid_to)
-    // but description and paid_to columns don't exist in the DB — caused 500 on every GET.
+    
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*) FROM expenses e JOIN branches br ON br.id=e.branch_id ${where}`,
+        params
+      );
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+
+      const { rows } = await db.query(
+        `SELECT e.*, br.name AS branch_name
+         FROM expenses e JOIN branches br ON br.id=e.branch_id
+         ${where} ORDER BY e.expense_date DESC LIMIT $${idx++} OFFSET $${idx++}`,
+        [...params, limit, offset]
+      );
+      return res.json({ data: rows, page, limit, total, totalPages });
+    }
+
     const { rows } = await db.query(
       `SELECT e.*, br.name AS branch_name
        FROM expenses e JOIN branches br ON br.id=e.branch_id
-       ${where} ORDER BY e.expense_date DESC`,
-      params
+       ${where} ORDER BY e.expense_date DESC LIMIT $${idx}`,
+      [...params, limit]
     );
     res.json(rows);
   } catch (e) {

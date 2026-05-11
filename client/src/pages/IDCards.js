@@ -41,6 +41,10 @@ export default function IDCards() {
   const [backfillMsg,  setBackfillMsg]  = useState("");
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   const [showAllMobile, setShowAllMobile] = useState(false);
+  const [page,         setPage]         = useState(1);
+  const [totalPages,   setTotalPages]   = useState(1);
+  const [total,        setTotal]        = useState(0);
+  const LIMIT = 50;
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -48,13 +52,30 @@ export default function IDCards() {
     return () => window.removeEventListener("resize", handler);
   }, []);
 
-  const loadStudents = () => fetchAllStudents().then(setStudents);
+  const loadStudents = (p = 1) => {
+    const q = new URLSearchParams({ page: p, limit: LIMIT });
+    if (filterBranch) q.set("branch_id", filterBranch);
+    if (filterBatch) q.set("batch_id", filterBatch);
+    if (search) q.set("search", search);
+    
+    API.get(`/students?${q}`).then((r) => {
+      if (r.data.data) {
+        setStudents(r.data.data);
+        setPage(r.data.page);
+        setTotalPages(r.data.totalPages);
+        setTotal(r.data.total);
+      } else {
+        setStudents(r.data);
+        setTotal(r.data.length);
+      }
+    });
+  };
 
   useEffect(() => {
-    loadStudents();
+    loadStudents(1);
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, []);
+  }, [filterBranch, filterBatch, search]);
 
   const backfillRollNumbers = async () => {
     if (!window.confirm("Assign sequential roll numbers to all students that don't have one yet?")) return;
@@ -70,13 +91,7 @@ export default function IDCards() {
     }
   };
 
-  const filtered = students.filter((s) => {
-    if (filterBranch && s.branch_id != filterBranch) return false;
-    if (filterBatch  && s.batch_id  != filterBatch)  return false;
-    if (search && !s.name.toLowerCase().includes(search.toLowerCase()) &&
-        !(s.roll_no || "").toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const filtered = students;
 
   const isBatchEnded = (s) => {
     const b = batches.find((bt) => bt.id === s.batch_id);
@@ -564,6 +579,20 @@ export default function IDCards() {
               </table>
             )}
           </div>
+
+          {totalPages > 1 && (
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+              <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,total)} of <strong>{total}</strong></div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => loadStudents(page-1)} disabled={page===1}>← Prev</button>
+                <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                  <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+                  <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+                </div>
+                <button className="btn btn-secondary btn-sm" onClick={() => loadStudents(page+1)} disabled={page===totalPages}>Next →</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Print Configuration settings */}

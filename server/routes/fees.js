@@ -17,15 +17,40 @@ router.get("/", auth, branchFilter, async (req, res) => {
       if (student_id) { conditions.push(`fr.student_id=$${idx++}`); params.push(student_id); }
       if (status)     { conditions.push(`fr.status=$${idx++}`);     params.push(status); }
     }
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(parseInt(req.query.limit) || 50, 1000);
+    const offset = (page - 1) * limit;
+
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*) FROM fee_records fr JOIN students s ON s.id=fr.student_id ${where}`,
+        params
+      );
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+
+      const { rows } = await db.query(
+        `SELECT fr.*, s.name AS student_name, s.phone, b.name AS batch_name, br.name AS branch_name
+         FROM fee_records fr
+         JOIN students s ON s.id=fr.student_id
+         LEFT JOIN batches b ON b.id=s.batch_id
+         JOIN branches br ON br.id=fr.branch_id
+         ${where} ORDER BY fr.due_date DESC LIMIT $${idx++} OFFSET $${idx++}`,
+        [...params, limit, offset]
+      );
+      return res.json({ data: rows, page, limit, total, totalPages });
+    }
+
     const { rows } = await db.query(
       `SELECT fr.*, s.name AS student_name, s.phone, b.name AS batch_name, br.name AS branch_name
        FROM fee_records fr
        JOIN students s ON s.id=fr.student_id
        LEFT JOIN batches b ON b.id=s.batch_id
        JOIN branches br ON br.id=fr.branch_id
-       ${where} ORDER BY fr.due_date DESC`,
-      params
+       ${where} ORDER BY fr.due_date DESC LIMIT $${idx}`,
+      [...params, limit]
     );
     res.json(rows);
   } catch (e) {

@@ -143,6 +143,10 @@ export default function Fees() {
   const [msg,      setMsg]      = useState("");
   const [nudging,  setNudging]  = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const [page,      setPage]      = useState(1);
+  const [totalPages,setTotalPages] = useState(1);
+  const [total,     setTotal]     = useState(0);
+  const LIMIT = 50;
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768);
@@ -150,16 +154,28 @@ export default function Fees() {
     return () => window.removeEventListener("resize", h);
   }, []);
 
-  const load = () => {
+  const load = (p = 1) => {
     const q = new URLSearchParams();
     if (filterBranch) q.set("branch_id", filterBranch);
     if (filterStatus) q.set("status", filterStatus);
-    API.get(`/fees?${q}`).then((r) => setRecords(r.data));
+    q.set("page", p);
+    q.set("limit", LIMIT);
+    API.get(`/fees?${q}`).then((r) => {
+      if (r.data.data) {
+        setRecords(r.data.data);
+        setPage(r.data.page);
+        setTotalPages(r.data.totalPages);
+        setTotal(r.data.total);
+      } else {
+        setRecords(r.data);
+        setTotal(r.data.length);
+      }
+    });
   };
 
   useEffect(() => {
-    load();
-    API.get("/students?limit=1000").then((r) => {
+    load(1);
+    API.get("/students?limit=200").then((r) => {
       const res = r.data;
       setStudents(Array.isArray(res) ? res : (res.data || []));
     });
@@ -410,6 +426,20 @@ export default function Fees() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+          <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,total)} of <strong>{total}</strong></div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page-1)} disabled={page===1}>← Prev</button>
+            <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+              <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page+1)} disabled={page===totalPages}>Next →</button>
           </div>
         </div>
       )}

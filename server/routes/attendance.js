@@ -5,7 +5,11 @@ const { auth, branchFilter } = require("../middleware");
 // Get attendance list
 router.get("/", auth, branchFilter, async (req, res) => {
   try {
-    const { month, year, student_id } = req.query;
+    const { month, year, student_id, batch_id } = req.query;
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(parseInt(req.query.limit) || 50, 1000);
+    const offset = (page - 1) * limit;
+
     let cond = []; let params = []; let i = 1;
 
     if (req.user.role === "student") {
@@ -20,10 +24,34 @@ router.get("/", auth, branchFilter, async (req, res) => {
         params.push(aid);
       }
     }
-    if (month) { cond.push(`a.month=$${i++}`); params.push(month); }
-    if (year)  { cond.push(`a.year=$${i++}`);  params.push(year); }
+    if (month)    { cond.push(`a.month=$${i++}`);    params.push(month); }
+    if (year)     { cond.push(`a.year=$${i++}`);     params.push(year); }
+    if (batch_id) { cond.push(`s.batch_id=$${i++}`); params.push(batch_id); }
 
     const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
+
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*) FROM attendance a JOIN students s ON s.id = a.student_id ${where}`,
+        params
+      );
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+
+      const { rows } = await db.query(
+        `SELECT a.*, s.name AS student_name, s.phone, s.photo_url,
+                b.name AS batch_name, br.name AS branch_name,
+                COALESCE(LEAST(ROUND((a.present::numeric / NULLIF(a.total_days,0)) * 100, 1), 100), 0) AS percentage
+         FROM attendance a
+         JOIN students s ON s.id = a.student_id
+         LEFT JOIN batches b ON b.id = s.batch_id
+         JOIN branches br ON br.id = a.branch_id
+         ${where} ORDER BY a.year DESC, a.month DESC, s.name LIMIT $${i++} OFFSET $${i++}`,
+        [...params, limit, offset]
+      );
+      return res.json({ data: rows, page, limit, total, totalPages });
+    }
+
     const { rows } = await db.query(
       `SELECT a.*, s.name AS student_name, s.phone, s.photo_url,
               b.name AS batch_name, br.name AS branch_name,
@@ -32,8 +60,8 @@ router.get("/", auth, branchFilter, async (req, res) => {
        JOIN students s ON s.id = a.student_id
        LEFT JOIN batches b ON b.id = s.batch_id
        JOIN branches br ON br.id = a.branch_id
-       ${where} ORDER BY a.year DESC, a.month DESC, s.name`,
-      params
+       ${where} ORDER BY a.year DESC, a.month DESC, s.name LIMIT $${i}`,
+      [...params, limit]
     );
     res.json(rows);
   } catch (e) {

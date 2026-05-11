@@ -89,25 +89,49 @@ router.get("/", auth, branchFilter, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+
     let cond, params;
     if (req.branchId) {
       cond = "WHERE t.branch_id=$1"; params = [req.branchId];
     } else if (aid) {
       cond = "WHERE br.academy_id=$1"; params = [aid];
     } else {
-      cond = ""; params = [];
+      cond = "WHERE 1=1"; params = [];
     }
+
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(DISTINCT t.id) FROM tests t JOIN branches br ON br.id = t.branch_id ${cond}`,
+        params
+      );
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+
+      const { rows } = await db.query(
+        `SELECT t.*, b.name AS batch_name, br.name AS branch_name,
+                (SELECT COUNT(*) FROM test_results WHERE test_id = t.id) AS result_count
+         FROM tests t
+         LEFT JOIN batches  b  ON b.id  = t.batch_id
+         JOIN  branches br ON br.id = t.branch_id
+         ${cond}
+         ORDER BY t.test_date DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
+      );
+      return res.json({ data: rows, page, limit, total, totalPages });
+    }
+
     const { rows } = await db.query(
       `SELECT t.*, b.name AS batch_name, br.name AS branch_name,
-              COUNT(tr.id) AS result_count
+              (SELECT COUNT(*) FROM test_results WHERE test_id = t.id) AS result_count
        FROM tests t
        LEFT JOIN batches  b  ON b.id  = t.batch_id
        JOIN  branches br ON br.id = t.branch_id
-       LEFT JOIN test_results tr ON tr.test_id = t.id
        ${cond}
-       GROUP BY t.id, b.name, br.name
-       ORDER BY t.test_date DESC`,
-      params
+       ORDER BY t.test_date DESC LIMIT $${params.length + 1}`,
+      [...params, limit]
     );
     res.json(rows);
   } catch (e) {

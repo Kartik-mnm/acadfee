@@ -152,26 +152,59 @@ router.post("/enquiry", enquiryLimiter, async (req, res) => {
 router.get("/enquiries", auth, async (req, res) => {
   try {
     const academyId = req.academyId;
-    let query, params;
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = (page - 1) * limit;
+    const statusFilter = req.query.status && req.query.status !== "all" ? req.query.status : null;
+
+    let baseCond = [];
+    let params = [];
+    let i = 1;
+
     if (req.user.role === "branch_manager") {
-      query = `SELECT ae.*, b.name AS batch_name, br.name AS branch_name
-               FROM admission_enquiries ae
-               LEFT JOIN batches b ON b.id = ae.batch_id
-               LEFT JOIN branches br ON br.id = ae.branch_id
-               WHERE ae.branch_id = $1
-               ${academyId ? "AND ae.academy_id = $2" : ""}
-               ORDER BY ae.created_at DESC`;
-      params = academyId ? [req.user.branch_id, academyId] : [req.user.branch_id];
-    } else {
-      query = `SELECT ae.*, b.name AS batch_name, br.name AS branch_name
-               FROM admission_enquiries ae
-               LEFT JOIN batches b ON b.id = ae.batch_id
-               LEFT JOIN branches br ON br.id = ae.branch_id
-               ${academyId ? "WHERE ae.academy_id = $1" : ""}
-               ORDER BY ae.created_at DESC`;
-      params = academyId ? [academyId] : [];
+      baseCond.push(`ae.branch_id = $${i++}`);
+      params.push(req.user.branch_id);
     }
-    const { rows } = await db.query(query, params);
+    if (academyId) {
+      baseCond.push(`ae.academy_id = $${i++}`);
+      params.push(academyId);
+    }
+    if (statusFilter) {
+      baseCond.push(`ae.status = $${i++}`);
+      params.push(statusFilter);
+    }
+
+    const where = baseCond.length ? "WHERE " + baseCond.join(" AND ") : "";
+
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*) FROM admission_enquiries ae ${where}`,
+        params
+      );
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+
+      const { rows } = await db.query(
+        `SELECT ae.*, b.name AS batch_name, br.name AS branch_name
+         FROM admission_enquiries ae
+         LEFT JOIN batches b ON b.id = ae.batch_id
+         LEFT JOIN branches br ON br.id = ae.branch_id
+         ${where}
+         ORDER BY ae.created_at DESC LIMIT $${i++} OFFSET $${i++}`,
+        [...params, limit, offset]
+      );
+      return res.json({ data: rows, page, limit, total, totalPages });
+    }
+
+    const { rows } = await db.query(
+      `SELECT ae.*, b.name AS batch_name, br.name AS branch_name
+       FROM admission_enquiries ae
+       LEFT JOIN batches b ON b.id = ae.batch_id
+       LEFT JOIN branches br ON br.id = ae.branch_id
+       ${where}
+       ORDER BY ae.created_at DESC LIMIT $${i}`,
+      [...params, limit]
+    );
     res.json(rows);
   } catch (e) {
     console.error("Enquiries fetch error:", e.message);

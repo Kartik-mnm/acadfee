@@ -19,6 +19,10 @@ export default function Expenses() {
   const [form,   setForm]   = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [page,      setPage]      = useState(1);
+  const [totalPages,setTotalPages]   = useState(1);
+  const [totalRecs, setTotalRecs]    = useState(0);
+  const LIMIT = 20;
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
 
   useEffect(() => {
@@ -27,15 +31,25 @@ export default function Expenses() {
     return () => window.removeEventListener("resize", handler);
   }, []);
 
-  const load = () => {
-    const q = new URLSearchParams({ month, year });
+  const load = (p = 1) => {
+    const q = new URLSearchParams({ month, year, page: p, limit: LIMIT });
     if (filterBranch) q.set("branch_id", filterBranch);
-    API.get(`/expenses?${q}`).then((r) => setExpenses(r.data)).catch(() => {});
-    API.get(`/expenses/summary?${q}`).then((r) => setSummary(r.data)).catch(() => {});
+    API.get(`/expenses?${q}`).then((r) => {
+      if (r.data.data) {
+        setExpenses(r.data.data);
+        setPage(r.data.page);
+        setTotalPages(r.data.totalPages);
+        setTotalRecs(r.data.total);
+      } else {
+        setExpenses(r.data);
+        setTotalRecs(r.data.length);
+      }
+    }).catch(() => {});
+    API.get(`/expenses/summary?month=${month}&year=${year}${filterBranch ? `&branch_id=${filterBranch}` : ""}`).then((r) => setSummary(r.data)).catch(() => {});
   };
 
   useEffect(() => {
-    load();
+    load(1);
     API.get("/expenses/categories").then((r) => setCategories(r.data)).catch(() => {});
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
   }, [month, year, filterBranch]);
@@ -321,6 +335,20 @@ export default function Expenses() {
                 </tr>
               </tbody>
             </table>
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+            <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,totalRecs)} of <strong>{totalRecs}</strong></div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => load(page-1)} disabled={page===1}>← Prev</button>
+              <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+                <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => load(page+1)} disabled={page===totalPages}>Next →</button>
+            </div>
           </div>
         )}
       </div>

@@ -260,6 +260,10 @@ export default function Attendance() {
   const [workingInfo,  setWorkingInfo]  = useState(null);
   const [marking,      setMarking]      = useState(null); // student_id being marked
   const [isMobile,     setIsMobile]     = useState(() => window.innerWidth <= 768);
+  const [page,         setPage]         = useState(1);
+  const [totalPages,   setTotalPages]   = useState(1);
+  const [total,        setTotal]        = useState(0);
+  const LIMIT = 50;
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768);
@@ -269,11 +273,22 @@ export default function Attendance() {
 
   const activeBranchId = filterBranch || (user.role !== "super_admin" ? user.branch_id : null);
 
-  const load = useCallback(() => {
-    const q = new URLSearchParams({ month, year });
+  const load = useCallback((p = 1) => {
+    const q = new URLSearchParams({ month, year, page: p, limit: LIMIT });
     if (filterBranch) q.set("branch_id", filterBranch);
-    API.get(`/attendance?${q}`).then((r) => setRecords(r.data));
-  }, [month, year, filterBranch]);
+    if (filterBatch) q.set("batch_id", filterBatch);
+    API.get(`/attendance?${q}`).then((r) => {
+      if (r.data.data) {
+        setRecords(r.data.data);
+        setPage(r.data.page);
+        setTotalPages(r.data.totalPages);
+        setTotal(r.data.total);
+      } else {
+        setRecords(r.data);
+        setTotal(r.data.length);
+      }
+    });
+  }, [month, year, filterBranch, filterBatch]);
 
   const loadWorkingDaysCount = useCallback(() => {
     if (!activeBranchId) { setWorkingInfo(null); return; }
@@ -285,10 +300,10 @@ export default function Attendance() {
   useEffect(() => { loadWorkingDaysCount(); }, [loadWorkingDaysCount]);
 
   useEffect(() => {
-    load();
+    load(1);
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [month, year, filterBranch]);
+  }, [month, year, filterBranch, filterBatch]);
 
   const generateMonth = async () => {
     if (!activeBranchId) { setMsg("Please select a branch first"); setTimeout(() => setMsg(""), 3000); return; }
@@ -366,14 +381,10 @@ export default function Attendance() {
 
   const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 
-  const totalStudents  = records.length;
-  const avgPct         = totalStudents > 0 ? Math.round(records.reduce((s, r) => s + parseFloat(r.percentage || 0), 0) / totalStudents) : 0;
+  const totalStudents  = total || records.length;
+  const avgPct         = totalStudents > 0 ? Math.round(records.reduce((s, r) => s + parseFloat(r.percentage || 0), 0) / records.length) : 0;
   const belowThreshold = records.filter((r) => parseFloat(r.percentage || 0) < 75).length;
   const fullPresent    = records.filter((r) => parseInt(r.present) > 0 && parseInt(r.present) === parseInt(r.total_days)).length;
-
-  const filtered = filterBatch
-    ? records.filter((r) => { const batch = batches.find((b) => String(b.id) === String(filterBatch)); return batch && r.batch_name === batch.name; })
-    : records;
 
   return (
     <div>
@@ -459,7 +470,7 @@ export default function Attendance() {
       )}
 
       {/* ── Student list ─────────────────────────────── */}
-      {filtered.length === 0 ? (
+      {records.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <div className="empty-icon">&#128197;</div>
@@ -470,7 +481,7 @@ export default function Attendance() {
       ) : isMobile ? (
         /* ── Mobile card layout ─────────────────────── */
         <div>
-          {filtered.map((r) => (
+          {records.map((r) => (
             <AttendanceCard
               key={r.id}
               r={r}
@@ -522,6 +533,20 @@ export default function Attendance() {
               })}
             </tbody>
           </table></div>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+          <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,total)} of <strong>{total}</strong></div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page-1)} disabled={page===1}>← Prev</button>
+            <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+              <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page+1)} disabled={page===totalPages}>Next →</button>
+          </div>
         </div>
       )}
 

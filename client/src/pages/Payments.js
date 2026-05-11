@@ -282,10 +282,27 @@ export default function Payments() {
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const [page,      setPage]      = useState(1);
+  const [totalPages,setTotalPages] = useState(1);
+  const [total,     setTotal]     = useState(0);
+  const LIMIT = 50;
 
-  const load = () => {
-    const q = filterBranch ? `?branch_id=${filterBranch}` : "";
-    API.get(`/payments${q}`).then((r) => setPayments(r.data));
+  const load = (p = 1) => {
+    const q = new URLSearchParams();
+    if (filterBranch) q.set("branch_id", filterBranch);
+    q.set("page", p);
+    q.set("limit", LIMIT);
+    API.get(`/payments?${q}`).then((r) => {
+      if (r.data.data) {
+        setPayments(r.data.data);
+        setPage(r.data.page);
+        setTotalPages(r.data.totalPages);
+        setTotal(r.data.total);
+      } else {
+        setPayments(r.data);
+        setTotal(r.data.length);
+      }
+    });
   };
 
   useEffect(() => {
@@ -295,11 +312,12 @@ export default function Payments() {
   }, []);
 
   useEffect(() => {
-    load();
+    load(1);
+    // Limit these to 200 each for now to prevent massive data dumps in the dropdown
     Promise.all([
-      API.get("/fees?status=pending"),
-      API.get("/fees?status=partial"),
-      API.get("/fees?status=overdue"),
+      API.get("/fees?status=pending&limit=200"),
+      API.get("/fees?status=partial&limit=200"),
+      API.get("/fees?status=overdue&limit=200"),
     ]).then(([p, pa, o]) => {
       setFeeRecords([...p.data, ...pa.data, ...o.data]);
     });
@@ -487,10 +505,22 @@ export default function Payments() {
             })}
           </div>
           
-          {filtered.length > 0 && (
-            <button style={{ width: '100%', marginTop: 24, padding: '14px', backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, color: '#e2e8f0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              Load More Transactions
-            </button>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 24, padding: '0 10px' }}>
+              <button 
+                onClick={() => load(page - 1)} disabled={page === 1}
+                style={{ background: '#1b2234', border: 'none', color: page === 1 ? '#4a5568' : '#fff', padding: '10px 16px', borderRadius: 12, fontWeight: 700, fontSize: 13 }}
+              >
+                Prev
+              </button>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{page} / {totalPages}</div>
+              <button 
+                onClick={() => load(page + 1)} disabled={page === totalPages}
+                style={{ background: '#1b2234', border: 'none', color: page === totalPages ? '#4a5568' : '#fff', padding: '10px 16px', borderRadius: 12, fontWeight: 700, fontSize: 13 }}
+              >
+                Next
+              </button>
+            </div>
           )}
         </div>
 
@@ -645,6 +675,20 @@ export default function Payments() {
           </div>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+          <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,total)} of <strong>{total}</strong></div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page-1)} disabled={page===1}>← Prev</button>
+            <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+              <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page+1)} disabled={page===totalPages}>Next →</button>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>

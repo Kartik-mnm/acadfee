@@ -211,6 +211,10 @@ export default function Admissions() {
   const [loading,   setLoading]   = useState(false);
   const [msg,       setMsg]       = useState("");
   const [filter,    setFilter]    = useState("pending");
+  const [page,      setPage]      = useState(1);
+  const [totalPages,setTotalPages]   = useState(1);
+  const [total,     setTotal]        = useState(0);
+  const LIMIT = 20;
 
   const slug         = academy?.slug || "";
   const admissionUrl = slug
@@ -227,13 +231,23 @@ export default function Admissions() {
     }).then(setQrDataUrl).catch(console.error);
   }, [admissionUrl]);
 
-  const load = () => {
+  const load = (p = 1, st = filter) => {
     setLoading(true);
-    API.get("/admission/enquiries")
-      .then((r) => setEnquiries(r.data))
+    API.get(`/admission/enquiries?page=${p}&limit=${LIMIT}&status=${st}`)
+      .then((r) => {
+        if (r.data.data) {
+          setEnquiries(r.data.data);
+          setPage(r.data.page);
+          setTotalPages(r.data.totalPages);
+          setTotal(r.data.total);
+        } else {
+          setEnquiries(r.data);
+          setTotal(r.data.length);
+        }
+      })
       .finally(() => setLoading(false));
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(1); }, [filter]);
 
   const approve = async (id) => {
     try {
@@ -326,7 +340,6 @@ ${printBtnHtml}</body></html>`;
   const previewForm = (enq) => { const w = window.open("", "_blank"); w.document.write(buildFormHtml(enq, { showPrintButton: false })); w.document.close(); };
   const printForm   = (enq) => { const w = window.open("", "_blank"); w.document.write(buildFormHtml(enq, { showPrintButton: true  })); w.document.close(); };
 
-  const filtered    = enquiries.filter((e) => filter === "all" ? true : e.status === filter);
   const statusColor = (s) => s === "approved" ? "badge-green" : s === "rejected" ? "badge-red" : "badge-yellow";
 
   return (
@@ -396,9 +409,9 @@ ${printBtnHtml}</body></html>`;
         // ── MOBILE: Luminescent cards ──────────────────────────────────────
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#a5abbb", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-            Enquiries ({filtered.length})
+            Enquiries ({total})
           </div>
-          {filtered.map((e) => (
+          {enquiries.map((e) => (
             <MobileEnquiryCard
               key={e.id}
               e={e}
@@ -412,7 +425,7 @@ ${printBtnHtml}</body></html>`;
       ) : (
         // ── DESKTOP: table ────────────────────────────────────────────────
         <div className="card">
-          <div className="card-title">Enquiries ({filtered.length})</div>
+          <div className="card-title">Enquiries ({total})</div>
           <div className="table-wrap">
             <table>
               <thead>
@@ -422,7 +435,7 @@ ${printBtnHtml}</body></html>`;
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((e) => {
+                {enquiries.map((e) => {
                   let thumbUrl = e.photo_url || "";
                   if (!thumbUrl && e.extra) { try { const ex = typeof e.extra === "string" ? JSON.parse(e.extra) : e.extra; thumbUrl = ex.photo_url || ""; } catch {} }
                   return (
@@ -455,6 +468,20 @@ ${printBtnHtml}</body></html>`;
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+          <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,total)} of <strong>{total}</strong></div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page-1)} disabled={page===1}>← Prev</button>
+            <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+              <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page+1)} disabled={page===totalPages}>Next →</button>
           </div>
         </div>
       )}

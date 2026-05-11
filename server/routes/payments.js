@@ -22,8 +22,11 @@ router.get("/", auth, async (req, res) => {
       return res.json(rows);
     }
     const aid = req.academyId;
-    const { student_id } = req.query;
-    let query, params;
+    const page   = Math.max(1, parseInt(req.query.page) || 1);
+    const limit  = Math.min(parseInt(req.query.limit) || 50, 1000);
+    const offset = (page - 1) * limit;
+
+    let query, params, countQuery, countParams;
     if (student_id) {
       query = `SELECT p.*, s.name AS student_name, s.phone, s.roll_no,
                b.name AS batch_name, br.name AS branch_name, fr.period_label
@@ -35,6 +38,8 @@ router.get("/", auth, async (req, res) => {
                WHERE p.student_id = $1
                ORDER BY p.paid_on DESC`;
       params = [student_id];
+      countQuery = `SELECT COUNT(*) FROM payments WHERE student_id = $1`;
+      countParams = [student_id];
     } else {
       query = `SELECT p.*, s.name AS student_name, s.phone, s.roll_no,
                b.name AS batch_name, br.name AS branch_name, fr.period_label
@@ -44,10 +49,21 @@ router.get("/", auth, async (req, res) => {
                LEFT JOIN branches br ON br.id = s.branch_id
                LEFT JOIN fee_records fr ON fr.id = p.fee_record_id
                WHERE s.academy_id = $1
-               ORDER BY p.paid_on DESC LIMIT 200`;
+               ORDER BY p.paid_on DESC`;
       params = [aid];
+      countQuery = `SELECT COUNT(*) FROM payments p JOIN students s ON s.id=p.student_id WHERE s.academy_id = $1`;
+      countParams = [aid];
     }
-    const { rows } = await db.query(query, params);
+
+    if (req.query.page) {
+      const { rows: countRows } = await db.query(countQuery, countParams);
+      const total = parseInt(countRows[0].count);
+      const totalPages = Math.ceil(total / limit);
+      const { rows } = await db.query(`${query} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, limit, offset]);
+      return res.json({ data: rows, page, limit, total, totalPages });
+    }
+
+    const { rows } = await db.query(`${query} LIMIT $${params.length + 1}`, [...params, limit]);
     res.json(rows);
   } catch (e) {
     console.error("List payments error:", e.message);

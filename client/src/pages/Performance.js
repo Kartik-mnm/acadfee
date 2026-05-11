@@ -150,8 +150,22 @@ export default function Performance() {
     name:"", subject:"", total_marks:"", test_date:todayISO(), batch_id:"", branch_id:"",
   });
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 20;
 
-  const load = () => API.get("/tests").then((r) => setTests(r.data)).catch(() => {});
+  const load = (p = 1) => API.get(`/tests?page=${p}&limit=${LIMIT}`).then((r) => {
+    if (r.data.data) {
+      setTests(r.data.data);
+      setPage(r.data.page);
+      setTotalPages(r.data.totalPages);
+      setTotal(r.data.total);
+    } else {
+      setTests(r.data);
+      setTotal(r.data.length);
+    }
+  }).catch(() => {});
 
   useEffect(() => {
     load();
@@ -180,10 +194,11 @@ export default function Performance() {
     setShowResultModal(true);
     setResults([]);
     try {
+      const batchQuery = test.batch_id ? `&batch_id=${test.batch_id}` : "";
       const branchQuery = test.branch_id ? `&branch_id=${test.branch_id}` : "";
       const [resData, allStudents] = await Promise.all([
         API.get(`/tests/${test.id}/results`),
-        fetchAllStudents(branchQuery),
+        fetchAllStudents(`${branchQuery}${batchQuery}`),
       ]);
       const existingRows = Array.isArray(resData.data?.data) ? resData.data.data
         : Array.isArray(resData.data) ? resData.data : [];
@@ -275,6 +290,20 @@ export default function Performance() {
             <div style={{ width:40, height:40, borderRadius:"50%", background:"rgba(155,168,255,0.1)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:"#9ba8ff" }}>+</div>
             <div style={{ fontSize:14, fontWeight:700, color:"var(--text)" }}>Schedule New Test</div>
             <div style={{ fontSize:12, color:"var(--text3)" }}>Add a new assessment to the batch timeline</div>
+          </div>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:20, flexWrap:"wrap", gap:10, padding:"0 10px" }}>
+          <div style={{ fontSize:13, color:"var(--text3)" }}>Showing {((page-1)*LIMIT)+1}–{Math.min(page*LIMIT,total)} of <strong>{total}</strong></div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page-1)} disabled={page===1}>← Prev</button>
+            <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>{page}</span>
+              <span style={{ fontSize:13, color:"var(--text3)" }}>/ {totalPages}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(page+1)} disabled={page===totalPages}>Next →</button>
           </div>
         </div>
       )}
