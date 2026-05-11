@@ -235,10 +235,21 @@ export default function Dashboard({ onNavigate }) {
     if (timeRange) params.append("time_range", timeRange);
     const q = `?${params.toString()}`;
 
-    API.get(`/reports/dashboard${q}`).then(r => setData(r.data));
-    API.get(`/reports/monthly-trend${branchFilter ? `?branch_id=${branchFilter}` : ""}`).then(r => setTrend(r.data));
-    if (user.role === "super_admin" && !branchFilter)
-      API.get(`/reports/by-branch${q}`).then(r => setBranchStats(r.data));
+    // Single combined call — replaces 3 separate round trips
+    API.get(`/reports/dashboard-full${q}`).then(r => {
+      const d = r.data;
+      setData({
+        active_students: d.active_students,
+        total_collected: d.total_collected,
+        total_due:       d.total_due,
+        overdue_count:   d.overdue_count,
+        recent_payments: d.recent_payments,
+        branch_performance: d.branch_performance,
+      });
+      setTrend(d.monthly_trend || []);
+      if (user.role === "super_admin" && !branchFilter)
+        setBranchStats(d.branch_performance || []);
+    }).catch(() => {});
   }, [branchFilter, timeRange, user]);
 
   if (!data) {

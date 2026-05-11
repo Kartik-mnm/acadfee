@@ -266,4 +266,104 @@ router.get("/overdue", auth, branchFilter, async (req, res) => {
   }
 });
 
+// ── Combined dashboard-full — ONE call replaces 4 ────────────────────────────
+// Returns: { stats, recent_payments, monthly_trend, branch_performance }
+router.get("/dashboard-full", auth, branchFilter, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const bid = req.branchId;
+    const aid = req.academyId;
+    const isMonth = req.query.time_range === "this_month";
+
+    // ── student count ──────────────────────────────────────────────────────────
+    const scParts = ["s.status='active'"]; const scParams = []; let scIdx = 1;
+    if (aid) { scParts.push(`s.academy_id=$${scIdx++}`); scParams.push(aid); }
+    if (bid) { scParts.push(`s.branch_id=$${scIdx++}`); scParams.push(bid); }
+
+    // ── payments (uses merchant_id) ───────────────────────────────────────────
+    const pcParts = []; const pcParams = []; let pcIdx = 1;
+    if (aid) { pcParts.push(`p.merchant_id=$${pcIdx++}`); pcParams.push(aid); }
+    if (bid) { pcParts.push(`p.branch_id=$${pcIdx++}`);  pcParams.push(bid); }
+    if (isMonth) pcParts.push(`p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)`);
+    const pcWhere = pcParts.length ? "WHERE " + pcParts.join(" AND ") : "";
+
+    // ── fee_records (via students JOIN) ───────────────────────────────────────
+    const frParts = ["fr.status IN ('pending','partial','overdue')"]; const frParams = []; let frIdx = 1;
+    if (aid) { frParts.push(`s.academy_id=$${frIdx++}`); frParams.push(aid); }
+    if (bid) { frParts.push(`fr.branch_id=$${frIdx++}`); frParams.push(bid); }
+    if (isMonth) frParts.push(`fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')`);
+
+    const ovParts = ["fr.status='overdue'"]; const ovParams = []; let ovIdx = 1;
+    if (aid) { ovParts.push(`s.academy_id=$${ovIdx++}`); ovParams.push(aid); }
+    if (bid) { ovParts.push(`fr.branch_id=$${ovIdx++}`); ovParams.push(bid); }
+
+    // ── recent payments ───────────────────────────────────────────────────────
+    const rpParts = []; const rpParams = []; let ri = 1;
+    if (aid) { rpParts.push(`p.merchant_id=$${ri++}`); rpParams.push(aid); }
+    if (bid) { rpParts.push(`p.branch_id=$${ri++}`);  rpParams.push(bid); }
+    if (isMonth) rpParts.push(`p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)`);
+    const rpWhere = rpParts.length ? "AND " + rpParts.join(" AND ") : "";
+
+    // ── trend ─────────────────────────────────────────────────────────────────
+    const tParts = []; const tParams = []; let ti = 1;
+    if (aid) { tParts.push(`p.merchant_id=$${ti++}`); tParams.push(aid); }
+    if (bid) { tParts.push(`p.branch_id=$${ti++}`);   tParams.push(bid); }
+    const tWhere = tParts.length ? "AND " + tParts.join(" AND ") : "";
+
+    // Run all 6 queries in parallel
+    const [students, collected, due, overdue, recentPayments, trend] = await Promise.all([
+      db.query(`SELECT COUNT(*) FROM students s WHERE ${scParts.join(" AND ")}`, scParams),
+      db.query(`SELECT COALESCE(SUM(amount),0) AS total FROM payments p ${pcWhere}`, pcParams),
+      db.query(
+        `SELECT COALESCE(SUM(fr.amount_due - fr.amount_paid),0) AS total
+         FROM fee_records fr JOIN students s ON s.id=fr.student_id
+         WHERE ${frParts.join(" AND ")}`, frParams),
+      db.query(
+        `SELECT COUNT(*) FROM fee_records fr JOIN students s ON s.id=fr.student_id
+         WHERE ${ovParts.join(" AND ")}`, ovParams),
+      db.query(
+        `SELECT p.receipt_no, p.amount, p.paid_on, p.payment_mode,
+                s.name AS student_name, br.name AS branch_name
+         FROM payments p
+         JOIN students s  ON s.id  = p.student_id
+         JOIN branches br ON br.id = p.branch_id
+         WHERE 1=1 ${rpWhere} ORDER BY p.paid_on DESC, p.created_at DESC LIMIT 8`, rpParams),
+      db.query(
+        `SELECT TO_CHAR(p.paid_on,'Mon YYYY') AS month,
+                DATE_TRUNC('month', p.paid_on) AS month_sort,
+                COALESCE(SUM(p.amount),0) AS collected
+         FROM payments p JOIN students s ON s.id=p.student_id
+         WHERE 1=1 ${tWhere}
+         GROUP BY month, month_sort ORDER BY month_sort DESC LIMIT 12`, tParams),
+    ]);
+
+    // Branch perf (only for super_admin with no branch filter)
+    let branchPerf = [];
+    if (aid && !bid) {
+      const { rows } = await db.query(
+        `WITH bl AS (SELECT id, name FROM branches WHERE academy_id=$1),
+              sc AS (SELECT branch_id, COUNT(*) active FROM students WHERE academy_id=$1 AND status='active' GROUP BY branch_id),
+              ps AS (SELECT branch_id, SUM(amount) col FROM payments WHERE merchant_id=$1 ${isMonth ? "AND paid_on >= DATE_TRUNC('month',CURRENT_DATE)" : ""} GROUP BY branch_id),
+              pn AS (SELECT branch_id, SUM(amount_due-amount_paid) pend FROM fee_records WHERE status!='paid' ${isMonth ? "AND due_date >= DATE_TRUNC('month',CURRENT_DATE) AND due_date < (DATE_TRUNC('month',CURRENT_DATE)+INTERVAL '1 month')" : ""} GROUP BY branch_id)
+         SELECT bl.name AS branch, COALESCE(sc.active,0) students, COALESCE(ps.col,0) collected, COALESCE(pn.pend,0) pending
+         FROM bl LEFT JOIN sc ON sc.branch_id=bl.id LEFT JOIN ps ON ps.branch_id=bl.id LEFT JOIN pn ON pn.branch_id=bl.id
+         ORDER BY bl.id`, [aid]);
+      branchPerf = rows;
+    }
+
+    res.json({
+      active_students:    parseInt(students.rows[0]?.count || 0),
+      total_collected:    parseFloat(collected.rows[0]?.total || 0),
+      total_due:          parseFloat(due.rows[0]?.total || 0),
+      overdue_count:      parseInt(overdue.rows[0]?.count || 0),
+      recent_payments:    recentPayments.rows,
+      monthly_trend:      trend.rows.reverse(),
+      branch_performance: branchPerf,
+    });
+  } catch (e) {
+    console.error("Dashboard-full error:", e.message);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+});
+
 module.exports = router;
