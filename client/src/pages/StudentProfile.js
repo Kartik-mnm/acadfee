@@ -92,7 +92,7 @@ export default function StudentProfile({ studentId, onBack }) {
 
   if (!student) return <div>Student not found</div>;
 
-  const totalDue  = student?.fee_type === "course" 
+  const totalDue  = student?.fee_type?.toLowerCase() === "course" 
     ? parseFloat(student.admission_fee || 0)
     : fees.reduce((s, f) => s + parseFloat(f.amount_due || 0), 0);
   const totalPaid = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
@@ -200,8 +200,8 @@ export default function StudentProfile({ studentId, onBack }) {
             <div className="card"><div className="card-title">💳 Recent Payments</div>
               {payments.length===0?<div className="text-muted" style={{fontSize:13}}>No payments yet</div>:payments.slice(0,4).map((p)=>(
                 <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid var(--border)",fontSize:13}}>
-                  <div><div style={{fontWeight:600}}>{fmt(p.amount_paid)}</div><div className="text-muted text-sm">{p.period_label} · {p.mode}</div></div>
-                  <div className="text-muted text-sm">{new Date(p.payment_date).toLocaleDateString("en-IN")}</div>
+                  <div><div style={{fontWeight:600}}>{fmt(p.amount)}</div><div className="text-muted text-sm">{p.period_label} · {p.payment_mode}</div></div>
+                  <div className="text-muted text-sm">{new Date(p.paid_on).toLocaleDateString("en-IN")}</div>
                 </div>
               ))}
             </div>
