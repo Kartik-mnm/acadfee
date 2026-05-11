@@ -220,7 +220,7 @@ export default function StudentProfile({ studentId, onBack }) {
                     <th>Balance</th>
                     <th>Due Date</th>
                     <th>Status</th>
-                    {user?.role !== "student" && <th>Actions</th>}
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -236,19 +236,17 @@ export default function StudentProfile({ studentId, onBack }) {
                           {f.status}
                         </span>
                       </td>
-                      {user?.role !== "student" && (
-                        <td>
-                          <button 
-                            className="btn btn-red btn-sm"
-                            style={{ padding: "4px 8px", fontSize: 11 }}
-                            onClick={() => handleDeleteFee(f.id)}
-                            disabled={parseFloat(f.amount_paid) > 0}
-                            title={parseFloat(f.amount_paid) > 0 ? "Cannot delete record with payments" : "Delete record"}
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                      )}
+                      <td>
+                        <button 
+                          className="btn btn-red btn-sm"
+                          style={{ padding: "4px 8px", fontSize: 11, background: "var(--red-dim)", color: "var(--red)", border: "1px solid var(--red)" }}
+                          onClick={() => handleDeleteFee(f.id)}
+                          disabled={parseFloat(f.amount_paid) > 0}
+                          title={parseFloat(f.amount_paid) > 0 ? "Cannot delete record with payments" : "Delete record"}
+                        >
+                          🗑️
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
