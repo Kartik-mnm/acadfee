@@ -208,6 +208,23 @@ router.post("/", auth, async (req, res) => {
       ]
     );
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
+
+    // Initial Fee Record Creation
+    try {
+      const student = rows[0];
+      if (student.fee_type === "course" && parseFloat(student.admission_fee) > 0) {
+        const today = new Date();
+        const dueDate = today.toISOString().split("T")[0];
+        await db.query(
+          `INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [student.id, student.branch_id, student.admission_fee, dueDate, "Course Fee"]
+        );
+      }
+    } catch (feeErr) {
+      console.error("Initial fee creation error:", feeErr.message);
+    }
+
     res.json(rows[0]);
   } catch (e) {
     console.error("Create student error:", e.message);

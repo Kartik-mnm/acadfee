@@ -305,6 +305,28 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
       [stuRows[0].id, resolvedAcademyId, req.params.id]
     );
 
+    // Initial Fee Record Creation
+    try {
+      const student = stuRows[0];
+      const today = new Date();
+      const label = today.toLocaleString("en-IN", { month: "long", year: "numeric" });
+      const dueDate = today.toISOString().split("T")[0]; // Due today by default for initial fee
+
+      // If course type, create the full course fee record
+      if (student.fee_type === "course" && parseFloat(student.admission_fee) > 0) {
+        await db.query(
+          `INSERT INTO fee_records (student_id, branch_id, amount_due, due_date, period_label) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [student.id, student.branch_id, student.admission_fee, dueDate, "Course Fee"]
+        );
+      } 
+      // For monthly/etc, we could optionally create the first record here, 
+      // but let's stick to 'course' for now to solve the user's specific duplicate issue.
+    } catch (feeErr) {
+      console.error("Initial fee record creation failed:", feeErr.message);
+      // We don't fail the whole approval if fee record creation fails, but we log it.
+    }
+
     res.json({ success: true, student: stuRows[0] });
   } catch (e) {
     console.error("Approve error:", e.message, e.stack);
