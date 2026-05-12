@@ -400,7 +400,7 @@ ${printBtnHtml}</body></html>`;
       {/* Enquiries list */}
       {loading ? (
         <div className="loading">Loading…</div>
-      ) : filtered.length === 0 ? (
+      ) : enquiries.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📋</div>
           <div className="empty-text">No {filter} enquiries</div>

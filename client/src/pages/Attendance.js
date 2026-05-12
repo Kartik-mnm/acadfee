@@ -502,7 +502,7 @@ export default function Attendance() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => {
+              {records.map((r) => {
                 const absent = Math.max(0, parseInt(r.total_days) - parseInt(r.present));
                 const pctVal = parseFloat(r.percentage || 0);
                 const initials = (r.student_name||"").split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
