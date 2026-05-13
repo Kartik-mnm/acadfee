@@ -109,18 +109,34 @@ function FeeCard({ r, user, waLink }) {
       {/* Footer: status badge + WA button */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         {statusBadge(r.status)}
-        {waLink && (r.status === "pending" || r.status === "partial" || r.status === "overdue") && (
-          <a href={waLink} target="_blank" rel="noreferrer"
-            style={{
-              width:36, height:36, borderRadius:"50%",
-              background:"rgba(37,211,102,0.12)", border:"1px solid rgba(37,211,102,0.25)",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              fontSize:18, textDecoration:"none",
-            }}
-            title="Send WhatsApp reminder">
-            &#128172;
-          </a>
-        )}
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {Number(r.amount_paid) === 0 && (
+            <button
+              onClick={() => user.deleteFee(r.id)}
+              style={{
+                width:36, height:36, borderRadius:"50%",
+                background:"rgba(255,110,132,0.12)", border:"1px solid rgba(255,110,132,0.25)",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:16, cursor:"pointer", color:"var(--mob-error,#ff6e84)"
+              }}
+              title="Delete fee record"
+            >
+              &#128465;
+            </button>
+          )}
+          {waLink && (r.status === "pending" || r.status === "partial" || r.status === "overdue") && (
+            <a href={waLink} target="_blank" rel="noreferrer"
+              style={{
+                width:36, height:36, borderRadius:"50%",
+                background:"rgba(37,211,102,0.12)", border:"1px solid rgba(37,211,102,0.25)",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:18, textDecoration:"none",
+              }}
+              title="Send WhatsApp reminder">
+              &#128172;
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -246,9 +262,20 @@ export default function Fees({ pageState }) {
       load();
       setMsg("Fee record added successfully");
       setTimeout(() => setMsg(""), 3000);
-    } catch (e) {
-      setManError(e.response?.data?.error || "Failed to add record");
     } finally { setSaving(false); }
+  };
+  
+  const deleteFee = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this fee record? This cannot be undone.")) return;
+    try {
+      await API.delete(`/fees/${id}`);
+      setMsg("Fee record deleted successfully");
+      load(page);
+      setTimeout(() => setMsg(""), 3000);
+    } catch (e) {
+      setMsg(e.response?.data?.error || "Failed to delete record");
+      setTimeout(() => setMsg(""), 3000);
+    }
   };
 
 
@@ -394,7 +421,7 @@ export default function Fees({ pageState }) {
         /* ── Mobile card layout ─────────────────────── */
         <div>
           {filtered.map((r) => (
-            <FeeCard key={r.id} r={r} user={user} waLink={whatsappOverdue(r)} />
+            <FeeCard key={r.id} r={r} user={{ ...user, deleteFee }} waLink={whatsappOverdue(r)} />
           ))}
           {/* End of list indicator */}
           <div style={{ textAlign:"center", padding:"24px 0 8px", color:"var(--mob-on-var,#a5abbb)" }}>
@@ -435,12 +462,20 @@ export default function Fees({ pageState }) {
                       <td className="mono" style={{ color: balance > 0 ? "var(--red)" : "var(--green)" }}>{fmt(balance)}</td>
                       <td>{statusBadge(r.status)}</td>
                       <td>
-                        {(r.status === "overdue" || r.status === "pending" || r.status === "partial") && waLink && (
-                          <a href={waLink} target="_blank" rel="noreferrer" className="btn btn-sm"
-                            style={{ background:"rgba(37,211,102,0.12)", color:"#25d366", border:"1px solid rgba(37,211,102,0.3)", textDecoration:"none", display:"inline-flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:600 }}>
-                            &#128172; WA
-                          </a>
-                        )}
+                        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                          {(r.status === "overdue" || r.status === "pending" || r.status === "partial") && waLink && (
+                            <a href={waLink} target="_blank" rel="noreferrer" className="btn btn-sm"
+                              style={{ background:"rgba(37,211,102,0.12)", color:"#25d366", border:"1px solid rgba(37,211,102,0.3)", textDecoration:"none", display:"inline-flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:600 }}>
+                              &#128172; WA
+                            </a>
+                          )}
+                          {Number(r.amount_paid) === 0 && (
+                            <button onClick={() => deleteFee(r.id)} className="btn btn-sm"
+                              style={{ background:"rgba(255,110,132,0.12)", color:"var(--red)", border:"1px solid rgba(255,110,132,0.3)", padding:"4px 8px", borderRadius:6 }}>
+                              &#128465;
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
