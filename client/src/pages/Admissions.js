@@ -211,9 +211,13 @@ export default function Admissions() {
   const [loading,   setLoading]   = useState(false);
   const [msg,       setMsg]       = useState("");
   const [filter,    setFilter]    = useState("pending");
+  const [filterBranch, setFilterBranch] = useState("");
+  const [branches,     setBranches]     = useState([]);
   const [page,      setPage]      = useState(1);
   const [totalPages,setTotalPages]   = useState(1);
   const [total,     setTotal]        = useState(0);
+  // Track counts per status from server for accurate tab labels
+  const [statusCounts, setStatusCounts] = useState({ all:0, pending:0, approved:0, rejected:0 });
   const LIMIT = 20;
 
   const slug         = academy?.slug || "";
@@ -231,9 +235,11 @@ export default function Admissions() {
     }).then(setQrDataUrl).catch(console.error);
   }, [admissionUrl]);
 
-  const load = (p = 1, st = filter) => {
+  const load = (p = 1, st = filter, br = filterBranch) => {
     setLoading(true);
-    API.get(`/admission/enquiries?page=${p}&limit=${LIMIT}&status=${st}`)
+    const q = new URLSearchParams({ page: p, limit: LIMIT, status: st });
+    if (br) q.set("branch_id", br);
+    API.get(`/admission/enquiries?${q}`)
       .then((r) => {
         if (r.data.data) {
           setEnquiries(r.data.data);
@@ -244,10 +250,27 @@ export default function Admissions() {
           setEnquiries(r.data);
           setTotal(r.data.length);
         }
+        // Fetch counts for all statuses for accurate tab labels
+        Promise.all([
+          API.get(`/admission/enquiries?page=1&limit=1&status=all${br ? `&branch_id=${br}` : ""}`),
+          API.get(`/admission/enquiries?page=1&limit=1&status=pending${br ? `&branch_id=${br}` : ""}`),
+          API.get(`/admission/enquiries?page=1&limit=1&status=approved${br ? `&branch_id=${br}` : ""}`),
+          API.get(`/admission/enquiries?page=1&limit=1&status=rejected${br ? `&branch_id=${br}` : ""}`),
+        ]).then(([all, pend, appr, rej]) => {
+          setStatusCounts({
+            all:      all.data.total      ?? all.data.length      ?? 0,
+            pending:  pend.data.total     ?? pend.data.length     ?? 0,
+            approved: appr.data.total     ?? appr.data.length     ?? 0,
+            rejected: rej.data.total      ?? rej.data.length      ?? 0,
+          });
+        }).catch(() => {});
       })
       .finally(() => setLoading(false));
   };
-  useEffect(() => { load(1); }, [filter]);
+  useEffect(() => {
+    load(1, filter, filterBranch);
+    if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
+  }, [filter, filterBranch]);
 
   const approve = async (id) => {
     try {
@@ -337,8 +360,19 @@ export default function Admissions() {
 ${printBtnHtml}</body></html>`;
   };
 
-  const previewForm = (enq) => { const w = window.open("", "_blank"); w.document.write(buildFormHtml(enq, { showPrintButton: false })); w.document.close(); };
-  const printForm   = (enq) => { const w = window.open("", "_blank"); w.document.write(buildFormHtml(enq, { showPrintButton: true  })); w.document.close(); };
+  // FIX: null-check window.open() — popup blockers return null, crashing .document.write()
+  const previewForm = (enq) => {
+    const w = window.open("", "_blank");
+    if (!w) { alert("Popup blocked! Please allow popups for this site."); return; }
+    w.document.write(buildFormHtml(enq, { showPrintButton: false }));
+    w.document.close();
+  };
+  const printForm = (enq) => {
+    const w = window.open("", "_blank");
+    if (!w) { alert("Popup blocked! Please allow popups for this site."); return; }
+    w.document.write(buildFormHtml(enq, { showPrintButton: true }));
+    w.document.close();
+  };
 
   const statusColor = (s) => s === "approved" ? "badge-green" : s === "rejected" ? "badge-red" : "badge-yellow";
 
@@ -388,13 +422,23 @@ ${printBtnHtml}</body></html>`;
 
       {msg && <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, fontSize: 13 }}>{msg}</div>}
 
-      {/* Filter tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      {/* Filter tabs + Branch filter */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         {["all", "pending", "approved", "rejected"].map((s) => (
           <button key={s} className={`btn btn-sm ${filter === s ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilter(s)}>
-            {s.charAt(0).toUpperCase() + s.slice(1)} ({enquiries.filter((e) => s === "all" ? true : e.status === s).length})
+            {s.charAt(0).toUpperCase() + s.slice(1)} ({statusCounts[s] ?? 0})
           </button>
         ))}
+        {user.role === "super_admin" && branches.length > 0 && (
+          <select
+            value={filterBranch}
+            onChange={(e) => setFilterBranch(e.target.value)}
+            style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--text1)", fontSize: 13 }}
+          >
+            <option value="">All Branches</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Enquiries list */}

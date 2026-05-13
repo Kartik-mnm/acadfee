@@ -192,6 +192,10 @@ body { font-family:Arial,sans-serif; background:#fff; color:#000; }
 
   const print = () => {
     const w = window.open("", "_blank");
+    if (!w) {
+      alert("Popup blocked! Please allow popups for this site to print receipts.");
+      return;
+    }
     w.document.write(receiptHTML);
     w.document.close();
   };
@@ -275,6 +279,9 @@ export default function Payments({ pageState }) {
   const [feeRecords,   setFeeRecords]   = useState([]);
   const [branches,     setBranches]     = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
+  const [filterMode,   setFilterMode]   = useState("");
+  const [filterFrom,   setFilterFrom]   = useState("");
+  const [filterTo,     setFilterTo]     = useState("");
   const [search,       setSearch]       = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [receipt,      setReceipt]      = useState(null);
@@ -290,6 +297,10 @@ export default function Payments({ pageState }) {
   const load = (p = 1) => {
     const q = new URLSearchParams();
     if (filterBranch) q.set("branch_id", filterBranch);
+    if (filterMode)   q.set("payment_mode", filterMode);
+    if (filterFrom)   q.set("from", filterFrom);
+    if (filterTo)     q.set("to", filterTo);
+    if (search)       q.set("search", search);
     q.set("page", p);
     q.set("limit", LIMIT);
     API.get(`/payments?${q}`).then((r) => {
@@ -313,16 +324,16 @@ export default function Payments({ pageState }) {
 
   useEffect(() => {
     load(1);
-    // Limit these to 200 each for now to prevent massive data dumps in the dropdown
     Promise.all([
       API.get("/fees?status=pending&limit=200"),
       API.get("/fees?status=partial&limit=200"),
       API.get("/fees?status=overdue&limit=200"),
     ]).then(([p, pa, o]) => {
-      setFeeRecords([...p.data, ...pa.data, ...o.data]);
+      const all = [...p.data, ...pa.data, ...o.data];
+      setFeeRecords(Array.isArray(all[0]?.data) ? [] : all);
     });
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [filterBranch]);
+  }, [filterBranch, filterMode, filterFrom, filterTo, search]);
 
   const openPay = () => {
     setForm({ fee_record_id: "", amount: "", payment_mode: "cash", transaction_ref: "", paid_on: new Date().toISOString().split("T")[0], notes: "" });
@@ -414,7 +425,7 @@ export default function Payments({ pageState }) {
           </div>
 
           {user.role === 'super_admin' && (
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>Branch Location</label>
               <div style={{ position: 'relative' }}>
                 <select 
@@ -430,6 +441,42 @@ export default function Payments({ pageState }) {
               </div>
             </div>
           )}
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>Payment Mode</label>
+            <div style={{ position: 'relative' }}>
+              <select 
+                value={filterMode} onChange={(e) => setFilterMode(e.target.value)}
+                style={{ width: '100%', backgroundColor: '#1b2234', color: '#e2e8f0', border: 'none', borderRadius: 12, padding: '14px 16px', fontSize: 14, appearance: 'none', outline: 'none', cursor: 'pointer' }}
+              >
+                <option value="">All Modes</option>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cheque">Cheque</option>
+              </select>
+              <svg style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>From</label>
+              <input 
+                type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
+                style={{ width: '100%', backgroundColor: '#1b2234', color: '#e2e8f0', border: 'none', borderRadius: 12, padding: '12px 16px', fontSize: 13, outline: 'none' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.1em', marginBottom: 8, textTransform: 'uppercase' }}>To</label>
+              <input 
+                type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
+                style={{ width: '100%', backgroundColor: '#1b2234', color: '#e2e8f0', border: 'none', borderRadius: 12, padding: '12px 16px', fontSize: 13, outline: 'none' }}
+              />
+            </div>
+          </div>
 
           {/* TOTAL REVENUE */}
           <div style={{ backgroundColor: '#1b2234', borderRadius: 16, padding: '24px 20px', marginBottom: 32 }}>
@@ -625,14 +672,30 @@ export default function Payments({ pageState }) {
         ]}
       />
 
-      <div className="filters-bar">
-        <input className="search-input" placeholder="Search student / receipt no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="filters-bar" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <input className="search-input" placeholder="Search student / receipt no…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 200 }} />
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="">All Branches</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         )}
+        <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)}>
+          <option value="">All Modes</option>
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cheque">Cheque</option>
+        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>From:</span>
+          <input type="date" className="search-input" style={{ width: 'auto', padding: '6px 10px' }} value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>To:</span>
+          <input type="date" className="search-input" style={{ width: 'auto', padding: '6px 10px' }} value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+        </div>
+      </div>
       </div>
 
       <div className="card">

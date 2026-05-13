@@ -238,6 +238,21 @@ function AttendanceCard({ r, onMark, marking }) {
         </div>
         <div style={{ fontFamily:"'Manrope',sans-serif", fontWeight:800, fontSize:13, color:pctColor, minWidth:36, textAlign:"right" }}>{pctVal}%</div>
       </div>
+
+      {pctVal < 75 && (
+        <button
+          onClick={() => onMark(r, "nudge")}
+          style={{
+            width:"100%", marginTop:12, padding:"10px 0", borderRadius:12,
+            background:"rgba(37,211,102,0.1)", border:"1px solid rgba(37,211,102,0.3)",
+            color:"#25D366", fontWeight:700, fontSize:12, cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:8
+          }}
+        >
+          <span style={{ fontSize:16 }}>&#128172;</span>
+          Nudge via WhatsApp
+        </button>
+      )}
     </div>
   );
 }
@@ -258,6 +273,7 @@ export default function Attendance() {
   const [generating,   setGenerating]   = useState(false);
   const [msg,          setMsg]          = useState("");
   const [workingInfo,  setWorkingInfo]  = useState(null);
+  const [search,       setSearch]       = useState("");
   const [marking,      setMarking]      = useState(null); // student_id being marked
   const [isMobile,     setIsMobile]     = useState(() => window.innerWidth <= 768);
   const [page,         setPage]         = useState(1);
@@ -277,6 +293,7 @@ export default function Attendance() {
     const q = new URLSearchParams({ month, year, page: p, limit: LIMIT });
     if (filterBranch) q.set("branch_id", filterBranch);
     if (filterBatch) q.set("batch_id", filterBatch);
+    if (search) q.set("search", search);
     API.get(`/attendance?${q}`).then((r) => {
       if (r.data.data) {
         setRecords(r.data.data);
@@ -303,7 +320,7 @@ export default function Attendance() {
     load(1);
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [month, year, filterBranch, filterBatch]);
+  }, [month, year, filterBranch, filterBatch, search]);
 
   const generateMonth = async () => {
     if (!activeBranchId) { setMsg("Please select a branch first"); setTimeout(() => setMsg(""), 3000); return; }
@@ -321,6 +338,10 @@ export default function Attendance() {
   // Clicking "Present" increments present by 1 (up to total_days)
   // Clicking "Absent"  decrements present by 1 (down to 0)
   const handleMark = async (record, action) => {
+    if (action === "nudge") {
+      nudgeLowAttendance(record);
+      return;
+    }
     if (marking) return;
     setMarking(record.student_id);
     try {
@@ -379,6 +400,39 @@ export default function Attendance() {
   const updateBulk = (idx, key, val) =>
     setBulkData((prev) => prev.map((r, i) => i === idx ? { ...r, [key]: val } : r));
 
+  const exportToCSV = () => {
+    if (records.length === 0) return;
+    const headers = ["Student", "Branch", "Batch", "Working Days", "Present", "Absent", "Attendance %"];
+    const rows = records.map(r => [
+      r.student_name,
+      r.branch_name || "",
+      r.batch_name || "",
+      r.total_days,
+      r.present,
+      Math.max(0, parseInt(r.total_days) - parseInt(r.present)),
+      `${r.percentage}%`
+    ]);
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Attendance_${MONTHS[month-1]}_${year}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const nudgeLowAttendance = (r) => {
+    const wa = r.phone?.replace(/\D/g, "");
+    if (!wa) { alert("Phone number missing!"); return; }
+    const msg = encodeURIComponent(
+      `Dear ${r.student_name || "Student"},\n\nYour attendance for *${MONTHS[month-1]} ${year}* is currently *${r.percentage}%*, which is below the required 75%.\n\nPlease ensure you attend regularly to stay on track with your course.\n\nThank you,\n${user?.branch_name || "Academy"}`
+    );
+    window.open(`https://wa.me/${wa}?text=${msg}`, "_blank");
+  };
+
   const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 
   const totalStudents  = total || records.length;
@@ -395,6 +449,11 @@ export default function Attendance() {
           <div className="page-sub">Monthly attendance &#8212; auto-synced at 10 PM daily</div>
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          {records.some(r => parseFloat(r.percentage || 0) < 75) && (
+            <button className="btn btn-secondary" onClick={() => records.filter(r => parseFloat(r.percentage || 0) < 75).forEach(nudgeLowAttendance)} style={{ border:"1px solid #25D366", color:"#25D366" }}>
+              &#128172; Nudge All Low
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={generateMonth} disabled={generating}>
             {generating ? "Syncing..." : "Sync from QR"}
           </button>
@@ -419,6 +478,7 @@ export default function Attendance() {
 
       {/* ── Filters ──────────────────────────────────── */}
       <div className="filters-bar">
+        <input className="search-input" placeholder="Search student name..." value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
           {MONTHS.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
         </select>
@@ -435,6 +495,7 @@ export default function Attendance() {
           <option value="">All Batches</option>
           {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
+        <button className="btn btn-secondary btn-sm" onClick={exportToCSV} disabled={records.length === 0}>Export CSV</button>
       </div>
 
       {/* ── Working Day Calendar ─────────────────────── */}
@@ -498,7 +559,7 @@ export default function Attendance() {
               <tr>
                 <th>Photo</th><th>Student</th>
                 {user.role === "super_admin" && <th>Branch</th>}
-                <th>Batch</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Attendance %</th>
+                <th>Batch</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Attendance %</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -527,6 +588,13 @@ export default function Attendance() {
                         </div>
                         <span style={{ color:pctColor(pctVal),fontWeight:700,minWidth:44,textAlign:"right" }}>{pctVal}%</span>
                       </div>
+                    </td>
+                    <td>
+                      {pctVal < 75 && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => nudgeLowAttendance(r)} title="Nudge via WhatsApp" style={{ color:"#25D366" }}>
+                          &#128172; Nudge
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

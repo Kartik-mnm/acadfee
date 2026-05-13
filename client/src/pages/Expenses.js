@@ -13,6 +13,7 @@ export default function Expenses() {
   const [branches,   setBranches]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year,  setYear]  = useState(new Date().getFullYear());
   const [showModal, setShowModal] = useState(false);
@@ -34,6 +35,7 @@ export default function Expenses() {
   const load = (p = 1) => {
     const q = new URLSearchParams({ month, year, page: p, limit: LIMIT });
     if (filterBranch) q.set("branch_id", filterBranch);
+    if (filterCategory) q.set("category", filterCategory);
     API.get(`/expenses?${q}`).then((r) => {
       if (r.data.data) {
         setExpenses(r.data.data);
@@ -45,14 +47,14 @@ export default function Expenses() {
         setTotalRecs(r.data.length);
       }
     }).catch(() => {});
-    API.get(`/expenses/summary?month=${month}&year=${year}${filterBranch ? `&branch_id=${filterBranch}` : ""}`).then((r) => setSummary(r.data)).catch(() => {});
+    API.get(`/expenses/summary?month=${month}&year=${year}${filterBranch ? `&branch_id=${filterBranch}` : ""}${filterCategory ? `&category=${filterCategory}` : ""}`).then((r) => setSummary(r.data)).catch(() => {});
   };
 
   useEffect(() => {
     load(1);
     API.get("/expenses/categories").then((r) => setCategories(r.data)).catch(() => {});
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
-  }, [month, year, filterBranch]);
+  }, [month, year, filterBranch, filterCategory]);
 
   const save = async () => {
     setSaveError("");
@@ -63,11 +65,19 @@ export default function Expenses() {
 
     setSaving(true);
     try {
-      await API.post("/expenses", {
-        ...form,
-        branch_id: form.branch_id ? parseInt(form.branch_id) : undefined,
-        amount: parseFloat(form.amount),
-      });
+      if (form.id) {
+        await API.put(`/expenses/${form.id}`, {
+          ...form,
+          branch_id: form.branch_id ? parseInt(form.branch_id) : undefined,
+          amount: parseFloat(form.amount),
+        });
+      } else {
+        await API.post("/expenses", {
+          ...form,
+          branch_id: form.branch_id ? parseInt(form.branch_id) : undefined,
+          amount: parseFloat(form.amount),
+        });
+      }
       setShowModal(false);
       setForm(EMPTY);
       load();
@@ -78,28 +88,31 @@ export default function Expenses() {
     }
   };
 
-  const del = async (id) => {
-    if (!window.confirm("Delete this expense?")) return;
-    try {
-      await API.delete(`/expenses/${id}`);
-      load();
-    } catch (e) {
-      alert(e.response?.data?.error || "Failed to delete expense");
-    }
-  };
-
   const total = expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
   const f = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const edit = (e) => {
+    setForm({
+      id: e.id,
+      title: e.title || "",
+      amount: e.amount,
+      category: e.category,
+      expense_date: new Date(e.expense_date).toISOString().split("T")[0],
+      notes: e.notes || "",
+      branch_id: e.branch_id || ""
+    });
+    setSaveError("");
+    setShowModal(true);
+  };
 
   const catColors = { Rent: "badge-red", Salary: "badge-blue", Utilities: "badge-yellow", Stationery: "badge-green", Marketing: "badge-blue", Maintenance: "badge-yellow", Other: "badge-gray" };
 
   if (isMobile) {
     return (
-      <div style={{ backgroundColor: '#0f1423', minHeight: '100vh', color: '#fff', paddingBottom: 100, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      <div style={{ backgroundColor: 'var(--bg1)', minHeight: '100vh', color: 'var(--text1)', paddingBottom: 100, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
         {/* HEADER */}
         <div style={{ padding: '24px 20px 10px 20px' }}>
-          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: '#fff' }}>Expenses</h1>
-          <p style={{ fontSize: 14, color: '#7c8b9d', marginTop: 4 }}>Track branch-wise expenses</p>
+          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: 'var(--text1)' }}>Expenses</h1>
+          <p style={{ fontSize: 14, color: 'var(--text2)', marginTop: 4 }}>Track branch-wise expenses</p>
         </div>
 
         <div style={{ padding: '0 20px' }}>
@@ -121,33 +134,47 @@ export default function Expenses() {
           {/* FILTERS */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Month</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text2)', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Month</label>
               <div style={{ position: 'relative' }}>
-                <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
+                <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: '100%', backgroundColor: 'var(--bg2)', color: 'var(--text1)', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
                   {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                 </select>
-                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </div>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Year</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text2)', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Year</label>
               <div style={{ position: 'relative' }}>
-                <select value={year} onChange={(e) => setYear(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
+                <select value={year} onChange={(e) => setYear(e.target.value)} style={{ width: '100%', backgroundColor: 'var(--bg2)', color: 'var(--text1)', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
                   {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
-                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </div>
             </div>
           </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Branch</label>
-            <div style={{ position: 'relative' }}>
-              <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
-                <option value="">All Branches</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text2)', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Branch</label>
+              <div style={{ position: 'relative' }}>
+                <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ width: '100%', backgroundColor: 'var(--bg2)', color: 'var(--text1)', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
+                  <option value="">All Branches</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text2)', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Category</label>
+              <div style={{ position: 'relative' }}>
+                <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ width: '100%', backgroundColor: 'var(--bg2)', color: 'var(--text1)', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 14, outline: 'none' }}>
+                  <option value="">All Categories</option>
+                  {(categories.length ? categories : ["Rent","Salary","Utilities","Stationery","Marketing","Maintenance","Other"]).map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <svg style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
             </div>
           </div>
 
@@ -207,7 +234,7 @@ export default function Expenses() {
           <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)} style={{ zIndex: 2000 }}>
             <div className="modal" style={{ marginBottom: 90 }}>
               <div className="modal-header">
-                <div className="modal-title">Add Expense</div>
+                <div className="modal-title">{form.id ? 'Edit' : 'Add'} Expense</div>
                 <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
               </div>
               <div className="modal-body">
@@ -282,6 +309,12 @@ export default function Expenses() {
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         )}
+        <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+          <option value="">All Categories</option>
+          {(categories.length ? categories : ["Rent","Salary","Utilities","Stationery","Marketing","Maintenance","Other"]).map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
       </div>
 
       {/* Summary cards */}
@@ -323,7 +356,8 @@ export default function Expenses() {
                     <td className="mono" style={{ color: "var(--red)", fontWeight: 700 }}>{fmt(e.amount)}</td>
                     <td className="text-muted">{new Date(e.expense_date).toLocaleDateString("en-IN")}</td>
                     <td className="text-muted">{e.notes || e.paid_to || "—"}</td>
-                    <td>
+                    <td style={{ display: "flex", gap: 8 }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => edit(e)}>Edit</button>
                       <button className="btn btn-danger btn-sm" onClick={() => del(e.id)}>Del</button>
                     </td>
                   </tr>
@@ -357,7 +391,7 @@ export default function Expenses() {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-title">Add Expense</div>
+              <div className="modal-title">{form.id ? 'Edit' : 'Add'} Expense</div>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <div className="modal-body">

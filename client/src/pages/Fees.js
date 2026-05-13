@@ -134,6 +134,8 @@ export default function Fees({ pageState }) {
   const [filterBranch, setFilterBranch] = useState("");
   // BUG FIX: initialize directly from pageState to avoid race condition on mount
   const [filterStatus, setFilterStatus] = useState(() => pageState?.filterStatus || "");
+  const [filterBatch,  setFilterBatch]  = useState("");
+  const [batches,      setBatches]      = useState([]);
   const [search,       setSearch]       = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [showManual,   setShowManual]   = useState(false);
@@ -166,6 +168,7 @@ export default function Fees({ pageState }) {
     const q = new URLSearchParams();
     if (filterBranch) q.set("branch_id", filterBranch);
     if (filterStatus) q.set("status", filterStatus);
+    if (filterBatch)  q.set("batch_id", filterBatch);
     q.set("page", p);
     q.set("limit", LIMIT);
     API.get(`/fees?${q}`).then((r) => {
@@ -189,8 +192,9 @@ export default function Fees({ pageState }) {
       const res = r.data;
       setStudents(Array.isArray(res) ? res : (res.data || []));
     });
+    API.get("/batches").then((r) => setBatches(r.data)).catch(() => {});
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [filterBranch, filterStatus]);
+  }, [filterBranch, filterStatus, filterBatch]);
 
   // ── filtered must be declared BEFORE it is used in nudgeDefaulters ──────────
   const filtered = records.filter((r) =>
@@ -370,6 +374,10 @@ export default function Fees({ pageState }) {
           <option value="partial">Partial</option>
           <option value="paid">Paid</option>
           <option value="overdue">Overdue</option>
+        </select>
+        <select value={filterBatch} onChange={(e) => setFilterBatch(e.target.value)}>
+          <option value="">All Batches</option>
+          {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       </div>
 
