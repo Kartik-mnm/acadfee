@@ -117,11 +117,14 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
            GROUP BY branch_id
          ),
          pending_sums AS (
-           SELECT branch_id, SUM(amount_due - amount_paid) as pending_sum
-           FROM fee_records
-           WHERE status != 'paid'
-           ${req.query.time_range === 'this_month' ? "AND due_date >= DATE_TRUNC('month', CURRENT_DATE) AND due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')" : ""}
-           GROUP BY branch_id
+           -- BUG FIX: fee_records has no academy_id column — must JOIN through
+           -- students to scope by academy, otherwise this returns ALL tenants' data
+           SELECT fr.branch_id, SUM(fr.amount_due - fr.amount_paid) as pending_sum
+           FROM fee_records fr
+           JOIN students s ON s.id = fr.student_id
+           WHERE fr.status != 'paid' AND s.academy_id = $1
+           ${req.query.time_range === 'this_month' ? "AND fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')" : ""}
+           GROUP BY fr.branch_id
          )
          SELECT 
            bl.name as branch,
@@ -180,11 +183,13 @@ router.get("/by-branch", auth, async (req, res) => {
          GROUP BY branch_id
        ),
        pending_sums AS (
-         SELECT branch_id, SUM(amount_due - amount_paid) as pending_sum
-         FROM fee_records
-         WHERE status != 'paid'
-         ${req.query.time_range === 'this_month' ? "AND due_date >= DATE_TRUNC('month', CURRENT_DATE) AND due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')" : ""}
-         GROUP BY branch_id
+         -- BUG FIX: JOIN through students to scope by academy (fee_records has no academy_id)
+         SELECT fr.branch_id, SUM(fr.amount_due - fr.amount_paid) as pending_sum
+         FROM fee_records fr
+         JOIN students s ON s.id = fr.student_id
+         WHERE fr.status != 'paid' AND s.academy_id = $1
+         ${req.query.time_range === 'this_month' ? "AND fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')" : ""}
+         GROUP BY fr.branch_id
        )
        SELECT 
          bl.name as branch,
@@ -344,7 +349,8 @@ router.get("/dashboard-full", auth, branchFilter, async (req, res) => {
         `WITH bl AS (SELECT id, name FROM branches WHERE academy_id=$1),
               sc AS (SELECT branch_id, COUNT(*) active FROM students WHERE academy_id=$1 AND status='active' GROUP BY branch_id),
               ps AS (SELECT branch_id, SUM(amount) col FROM payments WHERE merchant_id=$1 ${isMonth ? "AND paid_on >= DATE_TRUNC('month',CURRENT_DATE)" : ""} GROUP BY branch_id),
-              pn AS (SELECT branch_id, SUM(amount_due-amount_paid) pend FROM fee_records WHERE status!='paid' ${isMonth ? "AND due_date >= DATE_TRUNC('month',CURRENT_DATE) AND due_date < (DATE_TRUNC('month',CURRENT_DATE)+INTERVAL '1 month')" : ""} GROUP BY branch_id)
+              -- BUG FIX: JOIN fee_records through students to scope by academy
+              pn AS (SELECT fr.branch_id, SUM(fr.amount_due-fr.amount_paid) pend FROM fee_records fr JOIN students s ON s.id=fr.student_id WHERE fr.status!='paid' AND s.academy_id=$1 ${isMonth ? "AND fr.due_date >= DATE_TRUNC('month',CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month',CURRENT_DATE)+INTERVAL '1 month')" : ""} GROUP BY fr.branch_id)
          SELECT bl.name AS branch, COALESCE(sc.active,0) students, COALESCE(ps.col,0) collected, COALESCE(pn.pend,0) pending
          FROM bl LEFT JOIN sc ON sc.branch_id=bl.id LEFT JOIN ps ON ps.branch_id=bl.id LEFT JOIN pn ON pn.branch_id=bl.id
          ORDER BY bl.id`, [aid]);

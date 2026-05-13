@@ -103,6 +103,8 @@ export default function IDCards() {
   const missingCount = students.filter((s) => !s.roll_no).length;
 
   const toggleSelectAll = () => {
+    // BUG FIX: this only selects the current page of students, not ALL students.
+    // Renamed button to "Select Page" to avoid misleading users.
     if (selectedIds.size === filtered.length) setSelectedIds(new Set());
     else setSelectedIds(new Set(filtered.map(s => s.id)));
   };
@@ -251,7 +253,13 @@ export default function IDCards() {
     setLoadingPrint(true);
     try {
       const htmlDoc = await generateDocument(targetStudents);
+      // BUG FIX: window.open() returns null when blocked by a popup blocker.
+      // Previously this caused: "Cannot read properties of null (reading 'document')"
       const w = window.open("", "_blank");
+      if (!w) {
+        alert("Popup blocked! Please allow popups for this site in your browser settings, then try again.");
+        return;
+      }
       w.document.write(htmlDoc);
       w.document.close();
       setTimeout(() => w.print(), 1000);
@@ -277,18 +285,18 @@ export default function IDCards() {
 
   if (isMobile) {
     return (
-      <div style={{ backgroundColor: '#0f1423', minHeight: '100vh', color: '#fff', paddingBottom: 100, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      <div style={{ backgroundColor: 'var(--bg1)', minHeight: '100vh', color: 'var(--text1)', paddingBottom: 100, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
         {/* HEADER */}
         <div style={{ padding: '24px 20px 10px 20px' }}>
-          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: '#fff' }}>Bulk ID Cards</h1>
-          <p style={{ fontSize: 14, color: '#7c8b9d', marginTop: 4 }}>Generate and batch print cards</p>
+          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: 'var(--text1)' }}>Bulk ID Cards</h1>
+          <p style={{ fontSize: 14, color: 'var(--text3)', marginTop: 4 }}>Generate and batch print cards</p>
         </div>
 
         <div style={{ padding: '0 20px' }}>
           {/* SEARCH & FILTERS */}
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 8, textTransform: 'uppercase' }}>Search Students</label>
-            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1b2234', borderRadius: 12, padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--bg2)', borderRadius: 12, padding: '12px 16px' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c8b9d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginRight: 12 }}>
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -296,7 +304,7 @@ export default function IDCards() {
               <input 
                 placeholder="Name or roll no..."
                 value={search} onChange={(e) => setSearch(e.target.value)}
-                style={{ background: 'none', border: 'none', color: '#fff', fontSize: 14, width: '100%', outline: 'none' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text1)', fontSize: 14, width: '100%', outline: 'none' }}
               />
             </div>
           </div>
@@ -306,7 +314,7 @@ export default function IDCards() {
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Branch</label>
                 <div style={{ position: 'relative' }}>
-                  <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 13, outline: 'none' }}>
+                  <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ width: '100%', backgroundColor: 'var(--bg2)', color: 'var(--text1)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 13, outline: 'none' }}>
                     <option value="">All Branches</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
@@ -317,7 +325,7 @@ export default function IDCards() {
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#7c8b9d', letterSpacing: '0.05em', marginBottom: 6, textTransform: 'uppercase' }}>Batch</label>
               <div style={{ position: 'relative' }}>
-                <select value={filterBatch} onChange={(e) => setFilterBatch(e.target.value)} style={{ width: '100%', backgroundColor: '#1b2234', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 13, outline: 'none' }}>
+                <select value={filterBatch} onChange={(e) => setFilterBatch(e.target.value)} style={{ width: '100%', backgroundColor: 'var(--bg2)', color: 'var(--text1)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', appearance: 'none', fontSize: 13, outline: 'none' }}>
                   <option value="">All Batches</option>
                   {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
@@ -333,7 +341,7 @@ export default function IDCards() {
                onClick={toggleSelectAll}
                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '6px 14px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
              >
-               {selectedIds.size === filtered.length ? "Deselect All" : "Select All"}
+               {selectedIds.size === filtered.length ? "Deselect Page" : "Select Page"}
              </button>
           </div>
 
@@ -347,7 +355,7 @@ export default function IDCards() {
                   key={s.id} 
                   onClick={() => toggleSelect(s.id)}
                   style={{ 
-                    backgroundColor: '#1b2234', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14,
+                    backgroundColor: 'var(--bg2)', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14,
                     border: isSelected ? '1px solid rgb(141, 156, 255)' : '1px solid transparent', cursor: 'pointer', position: 'relative'
                   }}
                 >
@@ -359,7 +367,7 @@ export default function IDCards() {
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
                     <div style={{ fontSize: 12, color: '#7c8b9d', marginTop: 2 }}>{s.batch_name || "No batch"}</div>
                   </div>
 
@@ -396,7 +404,7 @@ export default function IDCards() {
           </div>
 
           {/* PRINTER CONFIG SECTION */}
-          <div style={{ backgroundColor: '#1b2234', borderRadius: 24, padding: '24px', marginBottom: 24 }}>
+          <div style={{ backgroundColor: 'var(--bg2)', borderRadius: 24, padding: '24px', marginBottom: 24 }}>
              <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Printer Setup</h2>
              
              <div style={{ marginBottom: 24 }}>
@@ -539,7 +547,7 @@ export default function IDCards() {
           <div className="card-title" style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Select Students ({selectedIds.size}/{filtered.length})</span>
             <button className="btn btn-secondary btn-sm" onClick={toggleSelectAll}>
-              {selectedIds.size === filtered.length ? "Deselect All" : "Select All"}
+              {selectedIds.size === filtered.length ? "Deselect Page" : "Select Page"}
             </button>
           </div>
           

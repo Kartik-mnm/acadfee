@@ -126,7 +126,8 @@ function PaymentCard({ p, showBranch }) {
             <span style={{ fontSize:10, color:"var(--text3)", marginLeft:6, fontWeight:500, textTransform:"uppercase" }}>• {p.branch_name}</span>
           )}
         </div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#3fff8b", fontFamily: "monospace" }}>
+        {/* BUG FIX: was #3fff8b (hardcoded neon green, invisible in light mode) */}
+        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--green)", fontFamily: "monospace" }}>
           {fmt(p.amount)}
         </div>
       </div>
@@ -177,11 +178,13 @@ function BranchCard({ b }) {
         </div>
         <div>
           <div style={{ fontSize:11, color:"var(--text3)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:2 }}>COLLECTED</div>
-          <div style={{ fontSize:20, fontWeight:800, color:"#3fff8b" }}>{fmt(b.collected)}</div>
+          {/* BUG FIX: was #3fff8b hardcoded, now uses CSS var for theme support */}
+          <div style={{ fontSize:20, fontWeight:800, color:"var(--green)" }}>{fmt(b.collected)}</div>
         </div>
         <div>
           <div style={{ fontSize:11, color:"var(--text3)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:2 }}>PENDING</div>
-          <div style={{ fontSize:20, fontWeight:800, color:"#fbbf24" }}>{fmt(b.pending)}</div>
+          {/* BUG FIX: was #fbbf24 hardcoded, now uses CSS var for theme support */}
+          <div style={{ fontSize:20, fontWeight:800, color:"var(--yellow)" }}>{fmt(b.pending)}</div>
         </div>
         <div>
           <div style={{ fontSize:11, color:"var(--text3)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:2 }}>COLLECTION %</div>

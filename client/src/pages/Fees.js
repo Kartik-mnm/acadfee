@@ -132,7 +132,8 @@ export default function Fees({ pageState }) {
   const [branches,     setBranches]     = useState([]);
   const [students,     setStudents]     = useState([]);
   const [filterBranch, setFilterBranch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  // BUG FIX: initialize directly from pageState to avoid race condition on mount
+  const [filterStatus, setFilterStatus] = useState(() => pageState?.filterStatus || "");
   const [search,       setSearch]       = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [showManual,   setShowManual]   = useState(false);
@@ -155,7 +156,8 @@ export default function Fees({ pageState }) {
   }, []);
   
   useEffect(() => {
-    if (pageState?.filterStatus) {
+    // Sync if pageState changes after mount (e.g. re-navigation)
+    if (pageState?.filterStatus && pageState.filterStatus !== filterStatus) {
       setFilterStatus(pageState.filterStatus);
     }
   }, [pageState]);
@@ -180,6 +182,8 @@ export default function Fees({ pageState }) {
   };
 
   useEffect(() => {
+    // BUG FIX: reset to page 1 whenever filters change, then load
+    setPage(1);
     load(1);
     API.get("/students?limit=200").then((r) => {
       const res = r.data;
@@ -187,6 +191,11 @@ export default function Fees({ pageState }) {
     });
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch, filterStatus]);
+
+  // ── filtered must be declared BEFORE it is used in nudgeDefaulters ──────────
+  const filtered = records.filter((r) =>
+    !search || r.student_name?.toLowerCase().includes(search.toLowerCase())
+  );
 
   const markOverdue = async () => {
     const { data } = await API.patch("/fees/mark-overdue");
@@ -238,9 +247,7 @@ export default function Fees({ pageState }) {
     } finally { setSaving(false); }
   };
 
-  const filtered = records.filter((r) =>
-    !search || r.student_name?.toLowerCase().includes(search.toLowerCase())
-  );
+
 
   const whatsappOverdue = (r) => {
     const phone = r.phone?.replace(/[^0-9]/g, "");
@@ -385,7 +392,7 @@ export default function Fees({ pageState }) {
           <div style={{ textAlign:"center", padding:"24px 0 8px", color:"var(--mob-on-var,#a5abbb)" }}>
             <div style={{ fontSize:28, marginBottom:8, opacity:0.4 }}>&#128202;</div>
             <div style={{ fontSize:12, fontWeight:600 }}>End of current record list</div>
-            <div style={{ fontSize:11, opacity:0.6 }}>Nex Ledger systems synchronized.</div>
+            <div style={{ fontSize:11, opacity:0.6 }}>AcadFee Ledger systems synchronized.</div>
           </div>
         </div>
       ) : (

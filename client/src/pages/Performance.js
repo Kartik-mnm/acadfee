@@ -194,22 +194,23 @@ export default function Performance() {
     setShowResultModal(true);
     setResults([]);
     try {
-      const batchQuery = test.batch_id ? `&batch_id=${test.batch_id}` : "";
+      const batchQuery  = test.batch_id  ? `&batch_id=${test.batch_id}`   : "";
       const branchQuery = test.branch_id ? `&branch_id=${test.branch_id}` : "";
       const [resData, allStudents] = await Promise.all([
         API.get(`/tests/${test.id}/results`),
+        // BUG FIX: pass batch_id to server so filtering is done server-side.
+        // Previously fetched limit=1000 then filtered client-side, silently missing
+        // students in large academies. Now the server returns only relevant students.
         fetchAllStudents(`${branchQuery}${batchQuery}`),
       ]);
       const existingRows = Array.isArray(resData.data?.data) ? resData.data.data
         : Array.isArray(resData.data) ? resData.data : [];
       const existingMap = {};
       existingRows.forEach((r) => { existingMap[r.student_id] = r.marks; });
-      const filtered = allStudents.filter(
-        (s) => !test.batch_id || String(s.batch_id) === String(test.batch_id)
-      );
-      setResults(filtered.map((s) => ({
-        student_id:s.id, student_name:s.name, photo_url:s.photo_url||"",
-        roll_no:s.roll_no||"", marks:existingMap[s.id] ?? "",
+      // No client-side batch filter needed — server already scoped by batch_id
+      setResults(allStudents.map((s) => ({
+        student_id: s.id, student_name: s.name, photo_url: s.photo_url || "",
+        roll_no: s.roll_no || "", marks: existingMap[s.id] ?? "",
       })));
     } catch (e) {
       console.error("openResults error:", e.message);
@@ -220,7 +221,19 @@ export default function Performance() {
     setSaving(true);
     try {
       const valid = results.filter((r) => r.marks !== "" && r.marks !== null && r.marks !== undefined);
-      if (valid.length === 0) { alert("Enter at least one mark before saving."); return; }
+      if (valid.length === 0) {
+        setSaving(false);
+        alert("Enter at least one mark before saving.");
+        return;
+      }
+      // BUG FIX #16: confirm before overwriting existing results to prevent accidental data loss
+      const hasExisting = rankedResults.length > 0;
+      if (hasExisting) {
+        const ok = window.confirm(
+          `This will overwrite marks for ${valid.length} student(s) in "${selectedTest.name}". Are you sure?`
+        );
+        if (!ok) { setSaving(false); return; }
+      }
       await API.post(`/tests/${selectedTest.id}/results`, { results: valid });
       setShowResultModal(false);
       load();

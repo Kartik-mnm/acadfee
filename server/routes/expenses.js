@@ -160,7 +160,8 @@ router.put("/:id", auth, async (req, res) => {
       [req.params.id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Expense not found" });
-    if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
+    // BUG FIX: use parseInt on both sides — DB returns int, req.academyId may be string
+    if (aid && existing[0].academy_id && parseInt(existing[0].academy_id) !== parseInt(aid))
       return res.status(403).json({ error: "Access denied" });
 
     const { category, title, amount, expense_date, notes } = req.body;
@@ -190,7 +191,8 @@ router.delete("/:id", auth, async (req, res) => {
       [req.params.id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Expense not found" });
-    if (aid && existing[0].academy_id && existing[0].academy_id !== aid)
+    // BUG FIX: use parseInt on both sides — DB returns int, req.academyId may be string
+    if (aid && existing[0].academy_id && parseInt(existing[0].academy_id) !== parseInt(aid))
       return res.status(403).json({ error: "Access denied" });
     await db.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
     res.json({ success: true });
