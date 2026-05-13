@@ -267,7 +267,7 @@ function DeviceSessionsModal({ student, onClose }) {
   );
 }
 
-export default function Students() {
+export default function Students({ pageState }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const [students,       setStudents]       = useState([]);
@@ -314,6 +314,12 @@ export default function Students() {
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role==="super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch, filterStatus]);
+
+  useEffect(() => {
+    if (pageState?.filterStatus) {
+      setFilterStatus(pageState.filterStatus);
+    }
+  }, [pageState]);
 
   const handleSearch = (val) => {
     setSearch(val);

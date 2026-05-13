@@ -271,10 +271,10 @@ export default function Dashboard({ onNavigate }) {
   }
 
   const statCards = [
-    { key:"students",  color:"blue",   label:"Active Students", value:data.active_students,      suffix:"",         icon:"&#9673;", hint:"Total enrolled" },
-    { key:"collected", color:"green",  label:"Total Collected", value:fmt(data.total_collected), suffix:"",         icon:"&#11041;", hint: timeRange === "this_month" ? "This month" : "All time" },
-    { key:"due",       color:"yellow", label:"Pending Dues",    value:fmt(data.total_due),       suffix:"",         icon:"&#9678;", hint: timeRange === "this_month" ? "This month" : "Outstanding" },
-    { key:"overdue",   color:"red",    label:"Overdue",         value:data.overdue_count,        suffix:" records", icon:"&#9650;", hint: timeRange === "this_month" ? "This month" : "Needs attention" },
+    { key:"students",  color:"blue",   label:"Active Students", value:data.active_students,      suffix:"",         icon:"&#9673;", hint:"Total enrolled", target: "students", state: { filterStatus: "active" } },
+    { key:"collected", color:"green",  label:"Total Collected", value:fmt(data.total_collected), suffix:"",         icon:"&#11041;", hint: timeRange === "this_month" ? "This month" : "All time", target: "payments" },
+    { key:"due",       color:"yellow", label:"Pending Dues",    value:fmt(data.total_due),       suffix:"",         icon:"&#9678;", hint: timeRange === "this_month" ? "This month" : "Outstanding", target: "fees", state: { filterStatus: "pending" } },
+    { key:"overdue",   color:"red",    label:"Overdue",         value:data.overdue_count,        suffix:" records", icon:"&#9650;", hint: timeRange === "this_month" ? "This month" : "Needs attention", target: "fees", state: { filterStatus: "overdue" } },
   ];
 
   const showChecklist = isNewAcademy && user.role === "super_admin" && !checklistDismissed;
@@ -313,10 +313,11 @@ export default function Dashboard({ onNavigate }) {
         </div>
       )}
 
-      {/* Stat cards */}
       <div className="stat-grid">
         {statCards.map(s => (
-          <div key={s.key} className={`stat-card ${s.color}`}>
+          <div key={s.key} className={`stat-card ${s.color}`}
+            onClick={() => s.target && onNavigate?.(s.target, s.state)}
+            style={{ cursor: s.target ? 'pointer' : 'default' }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
               <div className="stat-label">{s.label}</div>
               <div style={{

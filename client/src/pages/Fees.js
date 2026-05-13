@@ -126,7 +126,7 @@ function FeeCard({ r, user, waLink }) {
   );
 }
 
-export default function Fees() {
+export default function Fees({ pageState }) {
   const { user } = useAuth();
   const [records,      setRecords]      = useState([]);
   const [branches,     setBranches]     = useState([]);
@@ -153,6 +153,12 @@ export default function Fees() {
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
+  
+  useEffect(() => {
+    if (pageState?.filterStatus) {
+      setFilterStatus(pageState.filterStatus);
+    }
+  }, [pageState]);
 
   const load = (p = 1) => {
     const q = new URLSearchParams();

@@ -197,6 +197,7 @@ function Layout() {
   const { user, logout }     = useAuth();
   const { academy, loading } = useAcademy();
   const [page, setPage]               = useState("dashboard");
+  const [pageState, setPageState]     = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme]             = useState(() => localStorage.getItem("theme") || "dark");
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -265,7 +266,11 @@ function Layout() {
     settings:    AcademySettings,
   };
   const Page = pages[page] || Dashboard;
-  const goTo = (id) => { setPage(id); setSidebarOpen(false); };
+  const goTo = (id, state = null) => {
+    setPage(id);
+    setPageState(state);
+    setSidebarOpen(false);
+  };
 
   const groups = [
     { key: "overview", label: "Overview" },
@@ -385,7 +390,7 @@ function Layout() {
           </div>
         ) : (
           <ErrorBoundary page={page} onNavigate={goTo}>
-            <Page onNavigate={goTo} />
+            <Page onNavigate={goTo} pageState={pageState} />
           </ErrorBoundary>
         )}
       </main>

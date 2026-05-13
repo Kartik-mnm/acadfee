@@ -268,7 +268,7 @@ body { font-family:Arial,sans-serif; background:#fff; color:#000; }
   );
 }
 
-export default function Payments() {
+export default function Payments({ pageState }) {
   const { user }    = useAuth();
   const { academy } = useAcademy();
   const [payments,     setPayments]     = useState([]);
