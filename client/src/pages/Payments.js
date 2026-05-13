@@ -696,7 +696,6 @@ export default function Payments({ pageState }) {
           <input type="date" className="search-input" style={{ width: 'auto', padding: '6px 10px' }} value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
         </div>
       </div>
-      </div>
 
       <div className="card">
         {filtered.length === 0 ? (
