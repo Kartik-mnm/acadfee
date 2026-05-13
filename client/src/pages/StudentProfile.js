@@ -92,9 +92,7 @@ export default function StudentProfile({ studentId, onBack }) {
 
   if (!student) return <div>Student not found</div>;
 
-  const totalDue  = student?.fee_type?.toLowerCase() === "course" 
-    ? parseFloat(student.admission_fee || 0)
-    : fees.reduce((s, f) => s + parseFloat(f.amount_due || 0), 0);
+  const totalDue  = fees.reduce((s, f) => s + parseFloat(f.amount_due || 0), 0);
   const totalPaid = fees.reduce((s, f) => s + parseFloat(f.amount_paid || 0), 0);
   const balance   = totalDue - totalPaid;
   const avgAttendance = attendance.length
