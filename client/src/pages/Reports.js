@@ -38,6 +38,8 @@ export default function Reports() {
   const academyName = academy?.name || "Academy";
 
   const [overdue,       setOverdue]       = useState([]);
+  const [branches,      setBranches]      = useState([]);
+  const [filterBranch,  setFilterBranch]  = useState("");
   const [branchStats,   setBranchStats]   = useState([]);
   const [tab,           setTab]           = useState("daily");
 
@@ -50,26 +52,34 @@ export default function Reports() {
   const [emailMsg,      setEmailMsg]      = useState("");
 
   useEffect(() => {
-    API.get("/reports/overdue").then((r) => setOverdue(r.data)).catch(() => {});
-    if (user.role === "super_admin") API.get("/reports/by-branch").then((r) => setBranchStats(r.data)).catch(() => {});
-  }, []);
+    const q = filterBranch ? `?branch_id=${filterBranch}` : "";
+    API.get(`/reports/overdue${q}`).then((r) => setOverdue(r.data)).catch(() => {});
+    if (user.role === "super_admin") {
+      API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
+      API.get("/reports/by-branch").then((r) => setBranchStats(r.data)).catch(() => {});
+    }
+  }, [filterBranch]);
 
   useEffect(() => {
     if (tab !== "daily") return;
     setReportLoading(true);
     setReportData(null);
     setReportError("");
-    API.get(`/daily-report/data?date=${reportDate}`)
+    const q = new URLSearchParams({ date: reportDate });
+    if (filterBranch) q.set("branch_id", filterBranch);
+    API.get(`/daily-report/data?${q}`)
       .then((r) => setReportData(r.data))
       .catch((e) => setReportError(e.response?.data?.error || "Failed to load report"))
       .finally(() => setReportLoading(false));
-  }, [tab, reportDate]);
+  }, [tab, reportDate, filterBranch]);
 
   // ── Download Excel ─────────────────────────────────────────────────────────
   const downloadExcel = async () => {
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API_BASE}/api/daily-report/excel?date=${reportDate}`, {
+      const q = new URLSearchParams({ date: reportDate });
+      if (filterBranch) q.set("branch_id", filterBranch);
+      const res = await fetch(`${API_BASE}/api/daily-report/excel?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { alert("Failed to generate Excel. Try again."); return; }
@@ -86,7 +96,9 @@ export default function Reports() {
   const openPrintView = async () => {
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API_BASE}/api/daily-report/print?date=${reportDate}`, {
+      const q = new URLSearchParams({ date: reportDate });
+      if (filterBranch) q.set("branch_id", filterBranch);
+      const res = await fetch(`${API_BASE}/api/daily-report/print?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { alert("Failed to generate print view. Try again."); return; }
@@ -101,7 +113,9 @@ export default function Reports() {
   const sendEmail = async () => {
     setEmailSending(true); setEmailMsg("");
     try {
-      const r = await API.post(`/daily-report/email?date=${reportDate}`);
+      const q = new URLSearchParams({ date: reportDate });
+      if (filterBranch) q.set("branch_id", filterBranch);
+      const r = await API.post(`/daily-report/email?${q}`);
       setEmailMsg("✅ " + r.data.message);
     } catch (e) {
       setEmailMsg("❌ " + (e.response?.data?.error || "Failed to send email"));
@@ -173,6 +187,17 @@ export default function Reports() {
                   style={{ fontSize: 14, padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--text1)" }}
                 />
               </div>
+              {user.role === "super_admin" && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Filter Branch
+                  </label>
+                  <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--text1)" }}>
+                    <option value="">All Branches</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="btn btn-primary btn-sm"   onClick={downloadExcel}  disabled={reportLoading}>📊 Download Excel (.xlsx)</button>
                 <button className="btn btn-secondary btn-sm" onClick={openPrintView}  disabled={reportLoading}>🖨 Print / Save as PDF</button>

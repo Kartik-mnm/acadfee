@@ -493,7 +493,11 @@ export default function Fees({ pageState }) {
                 </div>
                 <div className="form-group">
                   <label>Year</label>
-                  <input type="number" value={genForm.year} onChange={(e) => setGenForm({...genForm,year:e.target.value})} />
+                  <select value={genForm.year} onChange={(e) => setGenForm({...genForm,year:e.target.value})}>
+                    {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

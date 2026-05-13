@@ -7,9 +7,15 @@ const { auth }   = require("../middleware");
 const { Resend } = require("resend");
 
 // ── Fetch all activity for an academy on a given date ──────────────────────────
-async function fetchDayData(academyId, date) {
+async function fetchDayData(academyId, date, branchId = null) {
   const d = date || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-
+  const bid = branchId;
+  const bPart = bid ? `AND br.id = $3` : "";
+  const bPartDirect = bid ? `AND branch_id = $3` : "";
+  const bPartP = bid ? `AND p.branch_id = $3` : "";
+  const bPartS = bid ? `AND s.branch_id = $3` : "";
+  const params = [academyId, d];
+  if (bid) params.push(bid);
   const [academy, payments, newStudents, qrAttendance, expenses, feeDue] = await Promise.all([
     db.query(`SELECT name, email, phone FROM academies WHERE id=$1`, [academyId]),
 
@@ -29,8 +35,9 @@ async function fetchDayData(academyId, date) {
           p.paid_on::date = $2::date
           OR DATE(p.created_at AT TIME ZONE 'Asia/Kolkata') = $2::date
         )
+        ${bPartP}
       ORDER BY p.created_at DESC
-    `, [academyId, d]),
+    `, params),
 
     // New students added that day
     db.query(`
@@ -42,8 +49,9 @@ async function fetchDayData(academyId, date) {
       LEFT JOIN batches b ON b.id = s.batch_id
       WHERE s.academy_id = $1
         AND DATE(s.created_at AT TIME ZONE 'Asia/Kolkata') = $2::date
+        ${bPartS}
       ORDER BY s.created_at DESC
-    `, [academyId, d]),
+    `, params),
 
     // QR scans that day
     db.query(`
@@ -56,7 +64,8 @@ async function fetchDayData(academyId, date) {
       JOIN branches br ON br.id = qs.branch_id
       WHERE s.academy_id = $1
         AND qs.scan_date = $2::date
-    `, [academyId, d]),
+        ${bid ? "AND br.id = $3" : ""}
+    `, params),
 
     // BUG FIX: was using COALESCE(e.title, e.description) AS description
     // but the 'description' column does not exist in the expenses table.
@@ -71,8 +80,9 @@ async function fetchDayData(academyId, date) {
       JOIN branches br ON br.id = e.branch_id
       WHERE br.academy_id = $1
         AND DATE(e.created_at AT TIME ZONE 'Asia/Kolkata') = $2::date
+        ${bid ? "AND br.id = $3" : ""}
       ORDER BY e.created_at DESC
-    `, [academyId, d]),
+    `, params),
 
     // Fee records created that day
     db.query(`
@@ -83,8 +93,9 @@ async function fetchDayData(academyId, date) {
       JOIN branches br ON br.id = fr.branch_id
       WHERE s.academy_id = $1
         AND DATE(fr.created_at AT TIME ZONE 'Asia/Kolkata') = $2::date
+        ${bid ? "AND br.id = $3" : ""}
       ORDER BY fr.created_at DESC
-    `, [academyId, d]),
+    `, params),
   ]);
 
   const totalCollected = payments.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
@@ -115,7 +126,7 @@ async function fetchDayData(academyId, date) {
 // ── GET /api/daily-report/data ────────────────────────────────────────────────
 router.get("/data", auth, async (req, res) => {
   try {
-    const data = await fetchDayData(req.academyId, req.query.date);
+    const data = await fetchDayData(req.academyId, req.query.date, req.query.branch_id);
     res.json(data);
   } catch (e) {
     console.error("Daily report data error:", e.message, e.stack);

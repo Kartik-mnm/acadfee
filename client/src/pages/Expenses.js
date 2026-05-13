@@ -300,8 +300,10 @@ export default function Expenses() {
         <select value={month} onChange={(e) => setMonth(e.target.value)}>
           {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
         </select>
-        <select value={year} onChange={(e) => setYear(e.target.value)}>
-          {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
         </select>
         {user.role === "super_admin" && (
           <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
