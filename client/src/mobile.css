@@ -161,10 +161,13 @@
     background: var(--mob-surface) !important;
     border: none !important;
     border-radius: var(--mob-radius-pill) !important;
-    padding: 18px 16px !important;
+    padding: 20px 18px !important;
     box-shadow: var(--mob-shadow) !important;
     backdrop-filter: none !important;
     overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
   }
   .stat-card::before { height: 2px !important; border-radius: 0 !important; }
   .stat-card::after { opacity: 0.08 !important; }
@@ -174,23 +177,33 @@
     font-family: 'Inter', sans-serif !important;
     font-size: 11px !important;
     color: var(--mob-on-var) !important;
-    text-transform: none !important;
-    letter-spacing: 0 !important;
-    font-weight: 500 !important;
-    margin-bottom: 4px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+    font-weight: 700 !important;
+    margin-bottom: 0 !important;
   }
   .stat-value {
     font-family: 'Manrope', sans-serif !important;
-    font-size: 32px !important;
+    font-size: 24px !important;
     font-weight: 800 !important;
-    letter-spacing: -1px !important;
-    margin-top: 4px !important;
+    letter-spacing: -0.03em !important;
+    margin-top: 12px !important;
     color: var(--mob-on-surface) !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
   }
   .stat-value.blue   { color: var(--mob-primary) !important; }
   .stat-value.green  { color: var(--mob-secondary) !important; }
   .stat-value.yellow { color: #fbbf24 !important; }
   .stat-value.red    { color: var(--mob-error) !important; }
+
+  .stat-hint {
+    font-size: 11px !important;
+    color: var(--mob-on-var) !important;
+    margin-top: 8px !important;
+    font-weight: 500 !important;
+    opacity: 0.8 !important;
+  }
 
   /* ── Attendance / score progress bars ───────────────────────────────── */
   /* Used in Attendance page, Dashboard, Performance */

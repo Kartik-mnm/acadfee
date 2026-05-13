@@ -263,6 +263,7 @@ body.light .card::after  { display: none; }
 
 .stat-label { font-size:11px; color:var(--text3); font-weight:600; text-transform:uppercase; letter-spacing:0.08em; }
 .stat-value { font-size:28px; font-weight:800; margin:8px 0 0; font-family:'JetBrains Mono',monospace; letter-spacing:-0.5px; line-height:1; }
+.stat-hint { font-size:11px; color:var(--text3); margin-top:6px; font-weight:500; }
 .stat-value.blue   { color:var(--blue-400); }
 .stat-value.green  { color:var(--green); }
 .stat-value.yellow { color:var(--yellow); }

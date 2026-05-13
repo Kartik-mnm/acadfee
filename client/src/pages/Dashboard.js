@@ -326,8 +326,8 @@ export default function Dashboard({ onNavigate }) {
                 color: s.color==="blue" ? "var(--blue-400)" : s.color==="green" ? "var(--green)" : s.color==="yellow" ? "var(--yellow)" : "var(--red)",
               }} dangerouslySetInnerHTML={{ __html: s.icon }} />
             </div>
-            <div className={`stat-value ${s.color}`} style={{ marginTop:12 }}>{s.value}{s.suffix}</div>
-            <div style={{ fontSize:11, color:"var(--text3)", marginTop:6 }}>{s.hint}</div>
+            <div className={`stat-value ${s.color}`}>{s.value}{s.suffix}</div>
+            <div className="stat-hint">{s.hint}</div>
           </div>
         ))}
       </div>
