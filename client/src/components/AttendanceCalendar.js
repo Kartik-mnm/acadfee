@@ -58,6 +58,20 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
     }
   };
 
+  const markAllPresent = async () => {
+    if (!interactive || !window.confirm("Mark all past working days this month as present?")) return;
+    setLoading(true);
+    try {
+      await API.post("/attendance/mark-all", { student_id: studentId, month, year });
+      await load();
+      if (onUpdate) onUpdate();
+    } catch (e) {
+      alert("Failed to mark all present");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading && days.length === 0) return <div style={{ padding: 20, textAlign: "center", color: "var(--text2)" }}>Loading calendar...</div>;
 
   // Calculate padding for the first day of the month
@@ -80,7 +94,17 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
         <div style={{ fontWeight: 800, fontSize: 16, color: "var(--text1)" }}>
           {MONTHS[month - 1]} {year}
         </div>
-        {interactive && <div style={{ fontSize: 11, color: "var(--text3)" }}>Tap a day to mark present/absent</div>}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {interactive && (
+            <button 
+              onClick={markAllPresent}
+              style={{ padding: "4px 8px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "var(--green)18", color: "var(--green)", border: "1px solid var(--green)40", cursor: "pointer" }}
+            >
+              ✅ Mark 100%
+            </button>
+          )}
+          {interactive && <div style={{ fontSize: 11, color: "var(--text3)" }}>Tap a day to mark</div>}
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, marginBottom: 20 }}>

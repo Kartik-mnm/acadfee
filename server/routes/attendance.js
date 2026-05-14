@@ -416,5 +416,57 @@ router.post("/mark-day", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Mark all working days as present for a student in a month
+router.post("/mark-all", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { student_id, month, year } = req.body;
+    if (!student_id || !month || !year) return res.status(400).json({ error: "missing params" });
+
+    const sId = parseInt(student_id);
+    const m = parseInt(month);
+    const y = parseInt(year);
+
+    const { rows: students } = await db.query(`SELECT branch_id, admission_date FROM students WHERE id=$1`, [sId]);
+    if (!students[0]) return res.status(404).json({ error: "student not found" });
+    const { branch_id, admission_date } = students[0];
+
+    // 1. Get all non-working days (holidays)
+    const { rows: holidays } = await db.query(
+      `SELECT date FROM working_days WHERE branch_id=$1 AND EXTRACT(MONTH FROM date)=$2 AND EXTRACT(YEAR FROM date)=$3 AND is_working=false`,
+      [branch_id, m, y]
+    );
+    const holidaySet = new Set(holidays.map(h => new Date(h.date).toISOString().split('T')[0]));
+
+    // 2. Iterate days of month and insert scans if not holiday and not before admission
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const admStr = admission_date ? new Date(admission_date).toISOString().split('T')[0] : null;
+
+    const nowUtcMs = Date.now();
+    const istNow = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
+    const todayStr = istNow.getUTCFullYear() + "-" + String(istNow.getUTCMonth() + 1).padStart(2, '0') + "-" + String(istNow.getUTCDate()).padStart(2, '0');
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      if (dateStr > todayStr) continue;
+      if (admStr && dateStr < admStr) continue;
+      if (holidaySet.has(dateStr)) continue;
+
+      // Check if already exists
+      const { rows: existing } = await db.query(`SELECT id FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, dateStr]);
+      if (existing.length === 0) {
+        await db.query(
+          `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, exit_time, scanned_by)
+           VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
+          [sId, branch_id, dateStr, req.user.id]
+        );
+      }
+    }
+
+    await generateMonthForBranch(branch_id, m, y);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
 module.exports.generateMonthForBranch = generateMonthForBranch;
