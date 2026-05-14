@@ -31,19 +31,27 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
   }, [studentId, month, year, initialDays]);
 
   const toggleDay = async (day) => {
-    if (!interactive || day.status === "not_enrolled" || day.status === "holiday") return;
+    if (!interactive || day.status === "not_enrolled" || day.status === "holiday" || day.status === "future") return;
     
-    setUpdating(day.day);
+    const oldDays = [...days];
     const newStatus = day.status === "present" ? "absent" : "present";
+    
+    // Optimistic update
+    setDays(prev => prev.map(d => d.day === day.day ? { ...d, status: newStatus } : d));
+    setUpdating(day.day);
+
     try {
       await API.post("/attendance/mark-day", {
         student_id: studentId,
         date: day.date,
         status: newStatus
       });
-      await load();
+      // Silently refresh in background to ensure sync
+      load(true);
       if (onUpdate) onUpdate();
     } catch (e) {
+      // Revert on error
+      setDays(oldDays);
       alert("Failed to update attendance");
     } finally {
       setUpdating(null);
