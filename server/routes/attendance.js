@@ -363,10 +363,19 @@ router.get("/daily", auth, async (req, res) => {
     const adm = s.admission_date ? new Date(s.admission_date) : null;
     const admStr = adm ? adm.toISOString().split('T')[0] : null;
 
+    const nowUtcMs  = Date.now();
+    const istNow    = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
+    const istYear   = istNow.getUTCFullYear();
+    const istMonth  = istNow.getUTCMonth() + 1;
+    const istDay    = istNow.getUTCDate();
+
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const isFuture = (y > istYear) || (y === istYear && m > istMonth) || (y === istYear && m === istMonth && i > istDay);
+      
       let status = "absent";
       if (admStr && dateStr < admStr) status = "not_enrolled";
+      else if (isFuture) status = "future";
       else if (holidayMap[dateStr] && !holidayMap[dateStr].is_working) status = "holiday";
       else if (scanDates.has(dateStr)) status = "present";
       
