@@ -203,7 +203,7 @@ async function generateMonthForBranch(bid, month, year) {
 
   // QR scan counts per student for this month (exit_time required = completed attendance)
   const { rows: scanCounts } = await db.query(
-    `SELECT student_id, COUNT(*) AS present_days FROM qr_scans
+    `SELECT student_id, COUNT(DISTINCT scan_date) AS present_days FROM qr_scans
      WHERE branch_id=$1
        AND EXTRACT(YEAR  FROM scan_date)=$2
        AND EXTRACT(MONTH FROM scan_date)=$3
@@ -256,7 +256,7 @@ async function generateMonthForBranch(bid, month, year) {
           created++;
         } else {
           await client.query(
-            `UPDATE attendance SET total_days=$1, present=$2 WHERE student_id=$3 AND month=$4 AND year=$5`,
+            `UPDATE attendance SET total_days=$1, present=LEAST($1, GREATEST(present, $2)) WHERE student_id=$3 AND month=$4 AND year=$5`,
             [totalWorkingDays, present, s.id, month, year]
           );
           updated++;
@@ -282,7 +282,7 @@ async function generateMonthForBranch(bid, month, year) {
         created++;
       } else {
         await client.query(
-          `UPDATE attendance SET total_days=$1, present=$2 WHERE student_id=$3 AND month=$4 AND year=$5`,
+          `UPDATE attendance SET total_days=$1, present=LEAST($1, GREATEST(present, $2)) WHERE student_id=$3 AND month=$4 AND year=$5`,
           [totalWorkingDays, present, s.id, month, year]
         );
         updated++;
