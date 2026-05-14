@@ -173,6 +173,7 @@ export default function StudentDashboard() {
   const [attendance,      setAttendance]      = useState([]);
   const [tests,           setTests]           = useState([]);
   const [loading,         setLoading]         = useState(true);
+  const [dailyAtt,        setDailyAtt]        = useState([]);
   const [qrDataUrl,       setQrDataUrl]       = useState("");
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
 
@@ -180,16 +181,22 @@ export default function StudentDashboard() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        const [feesRes, paymentsRes, attRes, testsRes] = await Promise.allSettled([
+        const now = new Date();
+        const m = now.getMonth() + 1;
+        const y = now.getFullYear();
+
+        const [feesRes, paymentsRes, attRes, testsRes, dailyRes] = await Promise.allSettled([
           API.get("/fees"),
           API.get(`/payments?student_id=${user.id}`),
           API.get(`/attendance?student_id=${user.id}`),
           API.get(`/tests/student/${user.id}`),
+          API.get(`/attendance/daily?student_id=${user.id}&month=${m}&year=${y}`),
         ]);
         if (feesRes.status     === "fulfilled") setFees(feesRes.value.data);
         if (paymentsRes.status === "fulfilled") setPayments(paymentsRes.value.data);
         if (attRes.status      === "fulfilled") setAttendance(attRes.value.data);
         if (testsRes.status    === "fulfilled") setTests(testsRes.value.data);
+        if (dailyRes.status    === "fulfilled") setDailyAtt(dailyRes.value.data);
       } finally {
         setLoading(false);
       }
@@ -461,6 +468,7 @@ export default function StudentDashboard() {
                 month={new Date().getMonth() + 1} 
                 year={new Date().getFullYear()} 
                 interactive={false}
+                initialDays={dailyAtt}
               />
             </div>
             

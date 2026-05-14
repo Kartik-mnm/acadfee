@@ -4,26 +4,31 @@ import API from "../api";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export default function AttendanceCalendar({ studentId, month, year, interactive = false, onUpdate }) {
-  const [days, setDays] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function AttendanceCalendar({ studentId, month, year, interactive = false, initialDays = [], onUpdate }) {
+  const [days, setDays] = useState(initialDays);
+  const [loading, setLoading] = useState(initialDays.length === 0);
   const [updating, setUpdating] = useState(null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data } = await API.get(`/attendance/daily?student_id=${studentId}&month=${month}&year=${year}`);
       setDays(data);
     } catch (e) {
       console.error("Failed to load daily attendance", e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (studentId && month && year) load();
-  }, [studentId, month, year]);
+    if (initialDays.length > 0) {
+      setDays(initialDays);
+      setLoading(false);
+    } else if (studentId && month && year) {
+      load();
+    }
+  }, [studentId, month, year, initialDays]);
 
   const toggleDay = async (day) => {
     if (!interactive || day.status === "not_enrolled" || day.status === "holiday") return;

@@ -39,22 +39,29 @@ export default function StudentProfile({ studentId, onBack }) {
   const [tests, setTests] = useState([]);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
+  const [dailyAtt, setDailyAtt] = useState([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [stuRes, feeRes, payRes, attRes, testRes] = await Promise.all([
+      const now = new Date();
+      const m = now.getMonth() + 1;
+      const y = now.getFullYear();
+
+      const [stuRes, feeRes, payRes, attRes, testRes, dailyRes] = await Promise.all([
         API.get(`/students/${studentId}`),
         API.get(`/fees?student_id=${studentId}`),
         API.get(`/payments?student_id=${studentId}`),
         API.get(`/attendance?student_id=${studentId}`),
         API.get(`/tests/student/${studentId}`),
+        API.get(`/attendance/daily?student_id=${studentId}&month=${m}&year=${y}`),
       ]);
       setStudent(stuRes.data);
       setFees(feeRes.data);
       setPayments(payRes.data);
       setAttendance(attRes.data);
       setTests(testRes.data);
+      setDailyAtt(dailyRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -323,6 +330,7 @@ export default function StudentProfile({ studentId, onBack }) {
               month={new Date().getMonth() + 1} 
               year={new Date().getFullYear()} 
               interactive={user?.role !== "student"}
+              initialDays={dailyAtt}
               onUpdate={load}
             />
           </div>
