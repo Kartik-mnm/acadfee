@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 import QRCode from "qrcode";
+import AttendanceCalendar from "../components/AttendanceCalendar";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -443,38 +444,39 @@ export default function StudentDashboard() {
 
         {tab === "attendance" && (
           <div>
-            <div style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:12, padding:14, marginBottom:14 }}>
-              <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+            <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "space-between", marginBottom: 16 }}>
                 {[
-                  { l:"Total Present", v:totalPresentDays, c:"var(--green)" },
-                  { l:"Working Days",  v:totalWorkingDays, c:"var(--text1)" },
-                  { l:"Absent Days",   v:Math.max(0, totalWorkingDays - totalPresentDays), c:"var(--red)" },
-                  { l:"Overall %",     v:attendancePct!=null?`${attendancePct}%`:"—", c:attendancePct!=null?pctColor(attendancePct):"var(--text3)" },
+                  { l: "Total Present", v: totalPresentDays, c: "var(--green)" },
+                  { l: "Overall %", v: attendancePct != null ? `${attendancePct}%` : "—", c: attendancePct != null ? pctColor(attendancePct) : "var(--text3)" },
                 ].map(x => (
-                  <div key={x.l} style={{ textAlign:"center" }}>
-                    <div style={{ fontSize:22, fontWeight:900, color:x.c }}>{x.v}</div>
-                    <div style={{ fontSize:10, color:"var(--text3)" }}>{x.l}</div>
+                  <div key={x.l} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: x.c }}>{x.v}</div>
+                    <div style={{ fontSize: 10, color: "var(--text3)" }}>{x.l}</div>
                   </div>
                 ))}
               </div>
+              <AttendanceCalendar 
+                studentId={user.id} 
+                month={new Date().getMonth() + 1} 
+                year={new Date().getFullYear()} 
+                interactive={false}
+              />
             </div>
+            
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text2)", marginBottom: 10, marginTop: 20 }}>Monthly History</div>
             {attendance.length === 0
-              ? <div style={{ textAlign:"center", color:"var(--text3)", padding:32 }}>No attendance records yet</div>
+              ? <div style={{ textAlign: "center", color: "var(--text3)", padding: 32 }}>No attendance records yet</div>
               : attendance.map((a) => {
                   const pct = parseFloat(a.percentage || 0);
                   return (
-                    <div key={`${a.month}-${a.year}`} style={{ background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", marginBottom:8 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                        <div style={{ fontWeight:700, fontSize:14 }}>{MONTHS[(a.month||1)-1]} {a.year}</div>
-                        <span style={{ fontSize:13, fontWeight:800, color:pctColor(pct) }}>{Math.round(pct)}%</span>
-                      </div>
-                      <div style={{ display:"flex", gap:16, fontSize:12, color:"var(--text3)", marginBottom:8 }}>
-                        <span>✅ Present: <strong style={{ color:"var(--green)" }}>{a.present}</strong></span>
-                        <span>📅 Total: <strong>{a.total_days}</strong></span>
-                        <span>❌ Absent: <strong style={{ color:"var(--red)" }}>{Math.max(0,(a.total_days||0)-(a.present||0))}</strong></span>
-                      </div>
-                      <div style={{ background:"var(--bg3)", borderRadius:4, height:6 }}>
-                        <div style={{ width:`${Math.min(100,pct)}%`, height:"100%", borderRadius:4, background:pctColor(pct), transition:"width 0.5s" }} />
+                    <div key={`${a.month}-${a.year}`} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{MONTHS[(a.month || 1) - 1]} {a.year}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 12, color: "var(--text3)" }}>{a.present}/{a.total_days} days</span>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: pctColor(pct) }}>{Math.round(pct)}%</span>
+                        </div>
                       </div>
                     </div>
                   );

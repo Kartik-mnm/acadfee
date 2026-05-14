@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
+import AttendanceCalendar from "../components/AttendanceCalendar";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -313,7 +314,46 @@ export default function StudentProfile({ studentId, onBack }) {
           )}
         </div>
       )}
-      {tab==="attendance" && (<div className="card"><div className="card-title">📅 Attendance History</div>{attendance.length===0?<div className="empty-state"><div className="empty-text">No attendance records</div></div>:<div className="table-wrap"><table><thead><tr><th>Month</th><th>Year</th><th>Total Days</th><th>Present</th><th>Absent</th><th>Percentage</th></tr></thead><tbody>{attendance.map((a)=>(<tr key={a.id}><td style={{fontWeight:600}}>{MONTHS[a.month-1]}</td><td>{a.year}</td><td>{a.total_days}</td><td style={{color:"var(--green)",fontWeight:600}}>{a.present}</td><td style={{color:"var(--red)",fontWeight:600}}>{a.total_days-a.present}</td><td><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,background:"var(--bg3)",borderRadius:4,height:6}}><div style={{width:`${a.percentage}%`,background:pctColor(a.percentage),height:"100%",borderRadius:4}}/></div><span style={{color:pctColor(a.percentage),fontWeight:700,minWidth:40}}>{a.percentage}%</span></div></td></tr>))}</tbody></table></div>}</div>)}
+      {tab==="attendance" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+          <div className="card">
+            <div className="card-title">📅 Daily Attendance</div>
+            <AttendanceCalendar 
+              studentId={studentId} 
+              month={new Date().getMonth() + 1} 
+              year={new Date().getFullYear()} 
+              interactive={user?.role !== "student"}
+              onUpdate={load}
+            />
+          </div>
+          <div className="card">
+            <div className="card-title">📊 Monthly History</div>
+            {attendance.length===0 ? (
+              <div className="empty-state"><div className="empty-text">No attendance records</div></div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Month</th><th>Year</th><th>Present</th><th>%</th></tr>
+                  </thead>
+                  <tbody>
+                    {attendance.map((a)=>(
+                      <tr key={a.id}>
+                        <td style={{fontWeight:600}}>{MONTHS[a.month-1]}</td>
+                        <td>{a.year}</td>
+                        <td style={{color:"var(--green)",fontWeight:600}}>{a.present}/{a.total_days}</td>
+                        <td>
+                          <span style={{color:pctColor(a.percentage),fontWeight:700}}>{a.percentage}%</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {tab==="performance" && (<div className="card"><div className="card-title">📊 Test Performance</div>{tests.length===0?<div className="empty-state"><div className="empty-text">No test records</div></div>:<div className="table-wrap"><table><thead><tr><th>Test Name</th><th>Subject</th><th>Marks</th><th>Out of</th><th>Percentage</th><th>Grade</th><th>Date</th></tr></thead><tbody>{tests.map((t,i)=>(<tr key={i}><td style={{fontWeight:600}}>{t.test_name}</td><td className="text-muted">{t.subject||"—"}</td><td className="mono" style={{fontWeight:700}}>{t.marks}</td><td className="mono text-muted">{t.total_marks}</td><td style={{color:gradeColor(t.percentage),fontWeight:700}}>{t.percentage}%</td><td><span style={{background:gradeColor(t.percentage),color:"#fff",padding:"2px 10px",borderRadius:6,fontSize:12,fontWeight:800}}>{grade(t.percentage)}</span></td><td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td></tr>))}</tbody></table></div>}</div>)}
     </div>
   );

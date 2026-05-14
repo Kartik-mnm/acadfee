@@ -321,5 +321,91 @@ router.get("/working-days-count", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Get daily attendance for a student/month
+router.get("/daily", auth, async (req, res) => {
+  try {
+    let { student_id, month, year } = req.query;
+    if (req.user.role === "student") student_id = req.user.id;
+    if (!student_id || !month || !year) return res.status(400).json({ error: "missing params" });
+
+    const sId = parseInt(student_id);
+    const m = parseInt(month);
+    const y = parseInt(year);
+
+    const { rows: students } = await db.query(`SELECT id, branch_id, admission_date FROM students WHERE id=$1`, [sId]);
+    if (!students[0]) return res.status(404).json({ error: "student not found" });
+    const s = students[0];
+
+    const { rows: scans } = await db.query(
+      `SELECT DISTINCT scan_date FROM qr_scans 
+       WHERE student_id=$1 AND EXTRACT(YEAR FROM scan_date)=$2 AND EXTRACT(MONTH FROM scan_date)=$3 AND exit_time IS NOT NULL`,
+      [sId, y, m]
+    );
+    const scanDates = new Set(scans.map(r => {
+      const d = new Date(r.scan_date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }));
+
+    const { rows: holidays } = await db.query(
+      `SELECT date, is_working, note FROM working_days 
+       WHERE branch_id=$1 AND EXTRACT(YEAR FROM date)=$2 AND EXTRACT(MONTH FROM date)=$3`,
+      [s.branch_id, y, m]
+    );
+    const holidayMap = {};
+    holidays.forEach(h => {
+      const d = new Date(h.date);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      holidayMap[dateStr] = h;
+    });
+
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const result = [];
+    const adm = s.admission_date ? new Date(s.admission_date) : null;
+    const admStr = adm ? adm.toISOString().split('T')[0] : null;
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      let status = "absent";
+      if (admStr && dateStr < admStr) status = "not_enrolled";
+      else if (holidayMap[dateStr] && !holidayMap[dateStr].is_working) status = "holiday";
+      else if (scanDates.has(dateStr)) status = "present";
+      
+      result.push({ day: i, date: dateStr, status, note: holidayMap[dateStr]?.note || "" });
+    }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Mark / Unmark attendance for a specific day
+router.post("/mark-day", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const { student_id, date, status } = req.body;
+    if (!student_id || !date || !status) return res.status(400).json({ error: "missing params" });
+
+    const sId = parseInt(student_id);
+    const { rows: students } = await db.query(`SELECT id, branch_id FROM students WHERE id=$1`, [sId]);
+    if (!students[0]) return res.status(404).json({ error: "student not found" });
+    const bId = students[0].branch_id;
+
+    if (status === "present") {
+      const { rows: existing } = await db.query(`SELECT id FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
+      if (existing.length === 0) {
+        await db.query(
+          `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, exit_time, scanned_by)
+           VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
+          [sId, bId, date, req.user.id]
+        );
+      }
+    } else {
+      await db.query(`DELETE FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
+    }
+    
+    const d = new Date(date);
+    await generateMonthForBranch(bId, d.getMonth() + 1, d.getFullYear());
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
 module.exports.generateMonthForBranch = generateMonthForBranch;
