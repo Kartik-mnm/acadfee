@@ -319,13 +319,23 @@ export default function Attendance() {
 
   useEffect(() => { loadWorkingDaysCount(); }, [loadWorkingDaysCount]);
 
-  // Bug fix: consolidated into one effect with correct deps (load already encapsulates search/filters)
+  // Fetch batches once on mount
   useEffect(() => {
-    setPage(1); // Bug fix: reset page to 1 whenever any filter changes
+    API.get("/batches").then((r) => setBatches(r.data)).catch(() => {});
+  }, []);
+
+  // Fetch branches once on mount (super_admin only)
+  useEffect(() => {
+    if (user.role === "super_admin") {
+      API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
+    }
+  }, [user.role]);
+
+  // Re-fetch attendance whenever filters / search / month / year change
+  // (load callback already encapsulates all of those as its own deps)
+  useEffect(() => {
+    setPage(1);
     load(1);
-    API.get("/batches").then((r) => setBatches(r.data));
-    if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
   const generateMonth = async () => {

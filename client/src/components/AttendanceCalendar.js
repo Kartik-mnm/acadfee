@@ -1,18 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import API from "../api";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function AttendanceCalendar({ studentId, month, year, interactive = false, initialDays = [], onUpdate }) {
-  // Track whether we've already seeded from initialDays for the current student/month/year.
-  // This prevents stale prop updates from overwriting fresher data fetched by load().
   const seededRef = useRef(false);
   const [days, setDays] = useState(() => initialDays);
   const [loading, setLoading] = useState(initialDays.length === 0);
   const [updating, setUpdating] = useState(null);
 
-  const load = async (silent = false) => {
+  const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const { data } = await API.get(`/attendance/daily?student_id=${studentId}&month=${month}&year=${year}`);
@@ -22,10 +20,10 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [studentId, month, year]);
 
+  // Reset seed flag whenever key props change so a new month/student gets a fresh seed.
   useEffect(() => {
-    // Reset seed flag whenever key props change so a new month/student gets a fresh seed.
     seededRef.current = false;
   }, [studentId, month, year]);
 
@@ -35,15 +33,12 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
       seededRef.current = true;
       setDays(initialDays);
       setLoading(false);
-    } else if (!seededRef.current && studentId && month && year) {
-      // No pre-fetched data available — fetch ourselves.
+    } else if (!seededRef.current) {
+      // No pre-fetched data — fetch ourselves.
       seededRef.current = true;
       load();
     }
-    // Note: we deliberately do NOT re-run when initialDays changes after the first seed
-    // to avoid overwriting fresher data from load().
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studentId, month, year, initialDays]);
+  }, [load, initialDays]);
 
   const toggleDay = async (day) => {
     if (!interactive || day.status === "not_enrolled" || day.status === "holiday" || day.status === "future") return;
