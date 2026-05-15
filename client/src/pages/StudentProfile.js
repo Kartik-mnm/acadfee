@@ -48,7 +48,9 @@ export default function StudentProfile({ studentId, onBack }) {
       const m = now.getMonth() + 1;
       const y = now.getFullYear();
 
-      const [stuRes, feeRes, payRes, attRes, testRes, dailyRes] = await Promise.all([
+      // Bug fix: use Promise.allSettled instead of Promise.all so a single
+      // failing API (e.g. /tests) doesn't crash the entire profile page.
+      const [stuRes, feeRes, payRes, attRes, testRes, dailyRes] = await Promise.allSettled([
         API.get(`/students/${studentId}`),
         API.get(`/fees?student_id=${studentId}`),
         API.get(`/payments?student_id=${studentId}`),
@@ -56,13 +58,17 @@ export default function StudentProfile({ studentId, onBack }) {
         API.get(`/tests/student/${studentId}`),
         API.get(`/attendance/daily?student_id=${studentId}&month=${m}&year=${y}`),
       ]);
-      setStudent(stuRes.data);
-      setFees(feeRes.data);
-      setPayments(payRes.data);
-      setAttendance(attRes.data);
-      setTests(testRes.data);
-      setDailyAtt(dailyRes.data);
-    } catch (e) { console.error(e); }
+      if (stuRes.status   === "fulfilled") setStudent(stuRes.value.data);
+      if (feeRes.status   === "fulfilled") setFees(feeRes.value.data);
+      if (payRes.status   === "fulfilled") setPayments(payRes.value.data);
+      if (attRes.status   === "fulfilled") setAttendance(Array.isArray(attRes.value.data) ? attRes.value.data : (attRes.value.data?.data || []));
+      if (testRes.status  === "fulfilled") setTests(testRes.value.data);
+      if (dailyRes.status === "fulfilled") setDailyAtt(dailyRes.value.data);
+      // Log any errors for debugging but don't crash the page
+      [stuRes, feeRes, payRes, attRes, testRes, dailyRes].forEach((r, i) => {
+        if (r.status === "rejected") console.warn(`StudentProfile load[${i}] failed:`, r.reason);
+      });
+    } catch (e) { console.error("StudentProfile load failed:", e); }
     finally { setLoading(false); }
   };
 

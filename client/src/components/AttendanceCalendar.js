@@ -1,11 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import API from "../api";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function AttendanceCalendar({ studentId, month, year, interactive = false, initialDays = [], onUpdate }) {
-  const [days, setDays] = useState(initialDays);
+  // Track whether we've already seeded from initialDays for the current student/month/year.
+  // This prevents stale prop updates from overwriting fresher data fetched by load().
+  const seededRef = useRef(false);
+  const [days, setDays] = useState(() => initialDays);
   const [loading, setLoading] = useState(initialDays.length === 0);
   const [updating, setUpdating] = useState(null);
 
@@ -22,12 +25,24 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
   };
 
   useEffect(() => {
-    if (initialDays.length > 0) {
+    // Reset seed flag whenever key props change so a new month/student gets a fresh seed.
+    seededRef.current = false;
+  }, [studentId, month, year]);
+
+  useEffect(() => {
+    if (!seededRef.current && initialDays.length > 0) {
+      // First time we get pre-fetched data — use it immediately.
+      seededRef.current = true;
       setDays(initialDays);
       setLoading(false);
-    } else if (studentId && month && year) {
+    } else if (!seededRef.current && studentId && month && year) {
+      // No pre-fetched data available — fetch ourselves.
+      seededRef.current = true;
       load();
     }
+    // Note: we deliberately do NOT re-run when initialDays changes after the first seed
+    // to avoid overwriting fresher data from load().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId, month, year, initialDays]);
 
   const toggleDay = async (day) => {
@@ -80,11 +95,12 @@ export default function AttendanceCalendar({ studentId, month, year, interactive
 
   const getDayStyle = (status) => {
     switch (status) {
-      case "present": return { background: "var(--green)", color: "#fff", border: "none" };
-      case "holiday": return { background: "var(--bg3)", color: "var(--text3)", border: "1px dashed var(--border)" };
-      case "not_enrolled": return { background: "transparent", color: "var(--text3)", opacity: 0.3, border: "1px solid var(--border)" };
-      case "absent": return { background: "var(--red)", color: "#fff", border: "none" };
-      default: return { background: "var(--bg2)", color: "var(--text1)", border: "1px solid var(--border)" };
+      case "present":     return { background: "var(--green)",       color: "#fff",          border: "none" };
+      case "holiday":     return { background: "var(--bg3)",         color: "var(--text3)",  border: "1px dashed var(--border)" };
+      case "not_enrolled":return { background: "transparent",        color: "var(--text3)",  opacity: 0.3,  border: "1px solid var(--border)" };
+      case "absent":      return { background: "var(--red)",         color: "#fff",          border: "none" };
+      case "future":      return { background: "rgba(148,163,184,0.06)", color: "var(--text3)", opacity: 0.45, border: "1px solid var(--border)" };
+      default:            return { background: "var(--bg2)",         color: "var(--text1)",  border: "1px solid var(--border)" };
     }
   };
 

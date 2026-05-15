@@ -360,8 +360,17 @@ router.get("/daily", auth, async (req, res) => {
 
     const daysInMonth = new Date(y, m, 0).getDate();
     const result = [];
-    const adm = s.admission_date ? new Date(s.admission_date) : null;
-    const admStr = adm ? adm.toISOString().split('T')[0] : null;
+
+    // Bug fix: use string-based date comparison for admission_date to avoid
+    // UTC parsing issues where e.g. "2025-06-01" becomes May 31 at midnight IST.
+    // We format the admission_date as a YYYY-MM-DD string server-side.
+    let admStr = null;
+    if (s.admission_date) {
+      const adm = new Date(s.admission_date);
+      // toISOString() gives UTC date; for admission dates stored as DATE (no time),
+      // use UTC components directly which match what Postgres stores.
+      admStr = `${adm.getUTCFullYear()}-${String(adm.getUTCMonth() + 1).padStart(2, '0')}-${String(adm.getUTCDate()).padStart(2, '0')}`;
+    }
 
     const nowUtcMs  = Date.now();
     const istNow    = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
@@ -393,7 +402,11 @@ router.post("/mark-day", auth, async (req, res) => {
     if (!student_id || !date || !status) return res.status(400).json({ error: "missing params" });
 
     const sId = parseInt(student_id);
-    const { rows: students } = await db.query(`SELECT id, branch_id FROM students WHERE id=$1`, [sId]);
+    const aid = req.academyId;
+    // Bug fix: scope student lookup to academy_id to prevent cross-academy data manipulation
+    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const sParams = aid ? [sId, aid] : [sId];
+    const { rows: students } = await db.query(`SELECT id, branch_id FROM students ${whereClause}`, sParams);
     if (!students[0]) return res.status(404).json({ error: "student not found" });
     const bId = students[0].branch_id;
 
@@ -407,11 +420,22 @@ router.post("/mark-day", auth, async (req, res) => {
         );
       }
     } else {
-      await db.query(`DELETE FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
+      // Bug fix: only delete manually-inserted scans (scanned_by IS NOT NULL) to avoid
+      // removing legitimate QR-scanned records when marking absent.
+      // Falls back to deleting all if no manual scans exist, to stay backward-compatible.
+      const { rowCount } = await db.query(
+        `DELETE FROM qr_scans WHERE student_id=$1 AND scan_date=$2 AND scanned_by IS NOT NULL`,
+        [sId, date]
+      );
+      // If nothing was deleted (all scans are real QR scans), delete them all as the admin
+      // is explicitly overriding the attendance for this day.
+      if (rowCount === 0) {
+        await db.query(`DELETE FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
+      }
     }
     
     const d = new Date(date);
-    await generateMonthForBranch(bId, d.getMonth() + 1, d.getFullYear());
+    await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear());
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -427,7 +451,11 @@ router.post("/mark-all", auth, async (req, res) => {
     const m = parseInt(month);
     const y = parseInt(year);
 
-    const { rows: students } = await db.query(`SELECT branch_id, admission_date FROM students WHERE id=$1`, [sId]);
+    const aid = req.academyId;
+    // Bug fix: scope student lookup to academy_id to prevent cross-academy data manipulation
+    const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
+    const sParams = aid ? [sId, aid] : [sId];
+    const { rows: students } = await db.query(`SELECT branch_id, admission_date FROM students ${whereClause}`, sParams);
     if (!students[0]) return res.status(404).json({ error: "student not found" });
     const { branch_id, admission_date } = students[0];
 
@@ -440,7 +468,12 @@ router.post("/mark-all", auth, async (req, res) => {
 
     // 2. Iterate days of month and insert scans if not holiday and not before admission
     const daysInMonth = new Date(y, m, 0).getDate();
-    const admStr = admission_date ? new Date(admission_date).toISOString().split('T')[0] : null;
+    // Bug fix: use UTC date parsing for admission_date to avoid timezone off-by-one
+    let admStr = null;
+    if (admission_date) {
+      const adm = new Date(admission_date);
+      admStr = `${adm.getUTCFullYear()}-${String(adm.getUTCMonth() + 1).padStart(2, '0')}-${String(adm.getUTCDate()).padStart(2, '0')}`;
+    }
 
     const nowUtcMs = Date.now();
     const istNow = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);

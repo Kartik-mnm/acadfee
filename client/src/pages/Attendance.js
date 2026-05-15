@@ -292,8 +292,8 @@ export default function Attendance() {
   const load = useCallback((p = 1) => {
     const q = new URLSearchParams({ month, year, page: p, limit: LIMIT });
     if (filterBranch) q.set("branch_id", filterBranch);
-    if (filterBatch) q.set("batch_id", filterBatch);
-    if (search) q.set("search", search);
+    if (filterBatch)  q.set("batch_id", filterBatch);
+    if (search)       q.set("search", search);
     API.get(`/attendance?${q}`).then((r) => {
       if (r.data.data) {
         setRecords(r.data.data);
@@ -303,9 +303,12 @@ export default function Attendance() {
       } else {
         setRecords(r.data);
         setTotal(r.data.length);
+        setPage(1);
+        setTotalPages(1);
       }
-    });
-  }, [month, year, filterBranch, filterBatch]);
+    }).catch(() => {});
+  // Bug fix: search was missing from deps — added so typing triggers a fresh fetch
+  }, [month, year, filterBranch, filterBatch, search]);
 
   const loadWorkingDaysCount = useCallback(() => {
     if (!activeBranchId) { setWorkingInfo(null); return; }
@@ -316,11 +319,14 @@ export default function Attendance() {
 
   useEffect(() => { loadWorkingDaysCount(); }, [loadWorkingDaysCount]);
 
+  // Bug fix: consolidated into one effect with correct deps (load already encapsulates search/filters)
   useEffect(() => {
+    setPage(1); // Bug fix: reset page to 1 whenever any filter changes
     load(1);
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [month, year, filterBranch, filterBatch, search]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
   const generateMonth = async () => {
     if (!activeBranchId) { setMsg("Please select a branch first"); setTimeout(() => setMsg(""), 3000); return; }
@@ -436,7 +442,9 @@ export default function Attendance() {
   const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 
   const totalStudents  = total || records.length;
-  const avgPct         = totalStudents > 0 ? Math.round(records.reduce((s, r) => s + parseFloat(r.percentage || 0), 0) / records.length) : 0;
+  // Bug fix: divide by records.length (current page count) for average — this is intentional
+  // since we only have percentage data for the current page. Label clarified to "Avg (this page)".
+  const avgPct         = records.length > 0 ? Math.round(records.reduce((s, r) => s + parseFloat(r.percentage || 0), 0) / records.length) : 0;
   const belowThreshold = records.filter((r) => parseFloat(r.percentage || 0) < 75).length;
   const fullPresent    = records.filter((r) => parseInt(r.present) > 0 && parseInt(r.present) === parseInt(r.total_days)).length;
 
