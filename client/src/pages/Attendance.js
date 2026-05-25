@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -260,6 +261,7 @@ function AttendanceCard({ r, onMark, marking }) {
 // ── Main Attendance Component ────────────────────────────────────────────────
 export default function Attendance() {
   const { user } = useAuth();
+  const { academy } = useAcademy();
   const [records,      setRecords]      = useState([]);
   const [batches,      setBatches]      = useState([]);
   const [branches,     setBranches]     = useState([]);
@@ -443,8 +445,9 @@ export default function Attendance() {
   const nudgeLowAttendance = (r) => {
     const wa = r.phone?.replace(/\D/g, "");
     if (!wa) { alert("Phone number missing!"); return; }
+    const acadName = academy?.name || user?.branch_name || "Academy";
     const msg = encodeURIComponent(
-      `Dear ${r.student_name || "Student"},\n\nYour attendance for *${MONTHS[month-1]} ${year}* is currently *${r.percentage}%*, which is below the required 75%.\n\nPlease ensure you attend regularly to stay on track with your course.\n\nThank you,\n${user?.branch_name || "Academy"}`
+      `Dear ${r.student_name || "Student"},\n\nYour attendance for *${MONTHS[month-1]} ${year}* is currently *${r.percentage}%*, which is below the required 75%.\n\nPlease ensure you attend regularly to stay on track with your course.\n\nThank you,\n${acadName}`
     );
     window.open(`https://wa.me/${wa}?text=${msg}`, "_blank");
   };
