@@ -25,7 +25,9 @@ function numberToWords(n) {
 
 function Receipt({ payment, onClose, academy, isMobile }) {
   const p = payment;
-  const academyName   = p.academy_name   || academy?.name   || "Academy";
+  const { user } = useAuth();
+  const acadName      = academy?.name || user?.branch_name || "your academy";
+  const academyName   = p.academy_name   || acadName;
   const academyPhone  = p.academy_phone  || academy?.phone  || "";
   const academyPhone2 = p.academy_phone2 || academy?.phone2 || "";
   const contactLine   = [academyPhone, academyPhone2].filter(Boolean).join(" / ");
