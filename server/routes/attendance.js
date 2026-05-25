@@ -76,7 +76,9 @@ router.post("/", auth, async (req, res) => {
   try {
     let { student_id, month, year, total_days, present } = req.body;
     if (!student_id || !month || !year) return res.status(400).json({ error: "student_id, month and year are required" });
-    total_days = parseInt(total_days) || 0;
+    // Fix #5: Cap at 31 — no month has more days. Prevents data corruption
+    // from accidental large values typed in the manual entry modal.
+    total_days = Math.min(parseInt(total_days) || 0, 31);
     present    = Math.min(parseInt(present) || 0, total_days);
 
     const aid = req.academyId;
@@ -113,7 +115,8 @@ router.post("/bulk", auth, async (req, res) => {
     await client.query("BEGIN");
     let saved = 0;
     for (const r of records) {
-      const total_days = parseInt(r.total_days) || 0;
+      // Fix #5: Cap at 31 — same guard as the single-save route.
+      const total_days = Math.min(parseInt(r.total_days) || 0, 31);
       const present    = Math.min(parseInt(r.present) || 0, total_days);
       const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
       const sParams = aid ? [r.student_id, aid] : [r.student_id];

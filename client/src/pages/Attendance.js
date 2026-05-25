@@ -6,6 +6,15 @@ import API from "../api";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
+// Fix #3: Returns today's date as YYYY-MM-DD in IST timezone.
+// Using UTC offset arithmetic matches the backend approach and prevents
+// the off-by-one error that occurs between midnight and 5:30 AM IST
+// when new Date().toISOString() would return yesterday's UTC date.
+const getISTToday = () => {
+  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  return `${istNow.getUTCFullYear()}-${String(istNow.getUTCMonth() + 1).padStart(2, "0")}-${String(istNow.getUTCDate()).padStart(2, "0")}`;
+};
+
 const fetchAllStudents = (query = "") =>
   API.get(`/students?limit=1000${query}`).then((r) => {
     const res = r.data;
@@ -52,7 +61,7 @@ function WorkingDayCalendar({ month, year, branchId, user, branches, onWorkingDa
     finally { setSaving(null); }
   };
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getISTToday(); // Fix #3: IST-aware — avoids UTC off-by-one before 5:30 AM IST
   const daysInMonth = new Date(year, month, 0).getDate();
   const firstDay = new Date(year, month - 1, 1).getDay();
   const days = [];
@@ -341,7 +350,8 @@ export default function Attendance() {
   }, [load]);
 
   const generateMonth = async () => {
-    if (!activeBranchId) { setMsg("Please select a branch first"); setTimeout(() => setMsg(""), 3000); return; }
+    // Fix #6: More descriptive error so super admin knows exactly what to do.
+    if (!activeBranchId) { setMsg("⚠️ Please select a branch from the filter above before syncing. Attendance is synced per branch."); setTimeout(() => setMsg(""), 5000); return; }
     setGenerating(true);
     try {
       const { data } = await API.post("/attendance/generate-month", { month, year, branch_id: activeBranchId });
@@ -352,9 +362,11 @@ export default function Attendance() {
     } finally { setGenerating(false); setTimeout(() => setMsg(""), 5000); }
   };
 
-  // ── Mark present / absent for today ────────────────────────────────────────
-  // Clicking "Present" increments present by 1 (up to total_days)
-  // Clicking "Absent"  decrements present by 1 (down to 0)
+  // ── Mark present / absent for TODAY ─────────────────────────────────────────
+  // Fix #1: Previously this blindly incremented/decremented the monthly count
+  // with no date tracking — a teacher could gift a student fake attendance days.
+  // Now it uses the mark-day API with today's actual IST date, which creates/
+  // removes a real qr_scan record and then re-generates the monthly totals.
   const handleMark = async (record, action) => {
     if (action === "nudge") {
       nudgeLowAttendance(record);
@@ -362,28 +374,15 @@ export default function Attendance() {
     }
     if (marking) return;
     setMarking(record.student_id);
+    const todayIST = getISTToday();
     try {
-      const currentPresent = parseInt(record.present) || 0;
-      const totalDays      = parseInt(record.total_days) || 0;
-      let newPresent;
-      if (action === "present") {
-        newPresent = Math.min(currentPresent + 1, totalDays);
-      } else {
-        newPresent = Math.max(currentPresent - 1, 0);
-      }
-      await API.post("/attendance", {
+      await API.post("/attendance/mark-day", {
         student_id: record.student_id,
-        month,
-        year,
-        total_days: totalDays,
-        present:    newPresent,
+        date:   todayIST,
+        status: action, // "present" or "absent"
       });
-      // Update local state immediately for snappy UX
-      setRecords((prev) => prev.map((r) => {
-        if (r.student_id !== record.student_id) return r;
-        const newPct = totalDays > 0 ? Math.min(Math.round((newPresent / totalDays) * 100), 100) : 0;
-        return { ...r, present: newPresent, percentage: newPct };
-      }));
+      // Reload current page so all counts and percentages are server-accurate
+      load(page);
     } catch (e) {
       setMsg("Failed to update attendance: " + (e.response?.data?.error || e.message));
       setTimeout(() => setMsg(""), 4000);
@@ -452,11 +451,27 @@ export default function Attendance() {
     window.open(`https://wa.me/${wa}?text=${msg}`, "_blank");
   };
 
+  // Fix #4: "Nudge All Low" now asks for confirmation first and opens each
+  // WhatsApp tab with an 800ms delay so browsers do not block the pop-ups.
+  const nudgeAll = async () => {
+    const lowStudents = records.filter((r) => parseFloat(r.percentage || 0) < 75);
+    if (lowStudents.length === 0) return;
+    if (!window.confirm(
+      `Send a WhatsApp nudge to ${lowStudents.length} student(s) with attendance below 75%?\n\nTabs will open one at a time to avoid browser pop-up blocking.`
+    )) return;
+    for (const r of lowStudents) {
+      nudgeLowAttendance(r);
+      await new Promise((res) => setTimeout(res, 800));
+    }
+  };
+
   const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
 
   const totalStudents  = total || records.length;
   // Bug fix: divide by records.length (current page count) for average — this is intentional
   // since we only have percentage data for the current page. Label clarified to "Avg (this page)".
+  // Add helper to determine if pagination is active
+  const isPaginated = typeof totalPages !== 'undefined';
   const avgPct         = records.length > 0 ? Math.round(records.reduce((s, r) => s + parseFloat(r.percentage || 0), 0) / records.length) : 0;
   const belowThreshold = records.filter((r) => parseFloat(r.percentage || 0) < 75).length;
   const fullPresent    = records.filter((r) => parseInt(r.present) > 0 && parseInt(r.present) === parseInt(r.total_days)).length;
@@ -471,7 +486,7 @@ export default function Attendance() {
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {records.some(r => parseFloat(r.percentage || 0) < 75) && (
-            <button className="btn btn-secondary" onClick={() => records.filter(r => parseFloat(r.percentage || 0) < 75).forEach(nudgeLowAttendance)} style={{ border:"1px solid #25D366", color:"#25D366" }}>
+            <button className="btn btn-secondary" onClick={nudgeAll} style={{ border:"1px solid #25D366", color:"#25D366" }}>
               &#128172; Nudge All Low
             </button>
           )}
@@ -539,7 +554,8 @@ export default function Attendance() {
             <div className="stat-value">{totalStudents}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Avg Attendance</div>
+            {/* Fix #2: Show "(this page)" when paginated so the admin knows the avg is not academy-wide */}
+            <div className="stat-label">Avg {totalPages > 1 ? "(this page)" : "Attendance"}</div>
             <div className="stat-value green">{avgPct}%</div>
           </div>
           <div className="stat-card">
