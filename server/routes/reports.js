@@ -34,14 +34,13 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
     // ── fee_records (no academy_id — join through students) ───────────────────
     // Only pending + partial: overdue already has its own card so we exclude it
     // from "Pending Dues" to avoid double-counting.
+    // NOTE: NO time_range filter here — pending dues shows ALL outstanding balance
+    // regardless of month. Only payments (total_collected) changes with time filter.
     const frParts = ["fr.status IN ('pending','partial')"];
     const frParams = [];
     let frIdx = 1;
     if (aid) { frParts.push(`s.academy_id=$${frIdx++}`); frParams.push(aid); }
     if (bid) { frParts.push(`fr.branch_id=$${frIdx++}`); frParams.push(bid); }
-    if (req.query.time_range === "this_month") {
-      frParts.push(`fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')`);
-    }
 
     const ovParts = ["fr.status='overdue'"];
     const ovParams = [];
@@ -296,10 +295,10 @@ router.get("/dashboard-full", auth, branchFilter, async (req, res) => {
 
     // ── fee_records (via students JOIN) ───────────────────────────────────────
     // Only pending + partial: overdue has its own dedicated card, excluded here.
+    // NOTE: NO time_range filter — pending dues = ALL outstanding balance, not just this month.
     const frParts = ["fr.status IN ('pending','partial')"]; const frParams = []; let frIdx = 1;
     if (aid) { frParts.push(`s.academy_id=$${frIdx++}`); frParams.push(aid); }
     if (bid) { frParts.push(`fr.branch_id=$${frIdx++}`); frParams.push(bid); }
-    if (isMonth) frParts.push(`fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')`);
 
     const ovParts = ["fr.status='overdue'"]; const ovParams = []; let ovIdx = 1;
     if (aid) { ovParts.push(`s.academy_id=$${ovIdx++}`); ovParams.push(aid); }

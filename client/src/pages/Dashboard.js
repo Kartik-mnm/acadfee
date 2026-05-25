@@ -276,7 +276,7 @@ export default function Dashboard({ onNavigate }) {
   const statCards = [
     { key:"students",  color:"blue",   label:"Active Students", value:data.active_students,      suffix:"",         icon:"&#9673;", hint:"Total enrolled", target: "students", state: { filterStatus: "active" } },
     { key:"collected", color:"green",  label:"Total Collected", value:fmt(data.total_collected), suffix:"",         icon:"&#11041;", hint: timeRange === "this_month" ? "This month" : "All time", target: "payments" },
-    { key:"due",       color:"yellow", label:"Pending Dues",    value:fmt(data.total_due),       suffix:"",         icon:"&#9678;", hint: "Pending + Partial", target: "fees", state: { filterStatus: "pending" } },
+    { key:"due",       color:"yellow", label:"Pending Dues",    value:fmt(data.total_due),       suffix:"",         icon:"&#9678;", hint: "All outstanding dues", target: "fees", state: { filterStatus: "pending" } },
     { key:"overdue",   color:"red",    label:"Overdue",         value:data.overdue_count,        suffix:" records", icon:"&#9650;", hint: "Overdue payments", target: "fees", state: { filterStatus: "overdue" } },
   ];
 
