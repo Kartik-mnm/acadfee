@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
 const fmt = (n) => `\u20b9${Number(n).toLocaleString("en-IN")}`;
@@ -144,6 +145,7 @@ function FeeCard({ r, user, waLink }) {
 
 export default function Fees({ pageState }) {
   const { user } = useAuth();
+  const { academy } = useAcademy();
   const [records,      setRecords]      = useState([]);
   const [branches,     setBranches]     = useState([]);
   const [students,     setStudents]     = useState([]);
@@ -286,7 +288,7 @@ export default function Fees({ pageState }) {
     const wa = phone.startsWith("91") ? phone : `91${phone}`;
     const balance = Number(r.amount_due - r.amount_paid).toLocaleString("en-IN");
     const msg = encodeURIComponent(
-      `Dear ${r.student_name||"Student"},\n\nThis is a reminder that your fee of \u20b9${balance} for *${r.period_label||"this period"}* is overdue.\n\nPlease clear your dues at the earliest.\n\nThank you,\n${user?.branch_name||"Academy"}`
+      `Dear ${r.student_name||"Student"},\n\nThis is a reminder that your fee of \u20b9${balance} for *${r.period_label||"this period"}* is overdue.\n\nPlease clear your dues at the earliest.\n\nThank you,\n${academy?.name || user?.branch_name || "Academy"}`
     );
     return `https://wa.me/${wa}?text=${msg}`;
   };
