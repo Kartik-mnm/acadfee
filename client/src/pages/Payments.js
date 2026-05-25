@@ -25,9 +25,9 @@ function numberToWords(n) {
 
 function Receipt({ payment, onClose, academy, isMobile }) {
   const p = payment;
-  const academyName   = academy?.name   || "Academy";
-  const academyPhone  = academy?.phone  || "";
-  const academyPhone2 = academy?.phone2 || "";
+  const academyName   = p.academy_name   || academy?.name   || "Academy";
+  const academyPhone  = p.academy_phone  || academy?.phone  || "";
+  const academyPhone2 = p.academy_phone2 || academy?.phone2 || "";
   const contactLine   = [academyPhone, academyPhone2].filter(Boolean).join(" / ");
   const balance       = (p.amount_due || 0) - (p.amount_paid || 0);
   const amountWords   = numberToWords(Math.round(p.amount || 0)) + " Rupees Only";
