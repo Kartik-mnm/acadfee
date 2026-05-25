@@ -397,8 +397,7 @@ export default function Fees({ pageState }) {
         )}
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">All Status</option>
-          <option value="pending">Pending</option>
-          <option value="partial">Partial</option>
+          <option value="pending">Pending + Partial</option>
           <option value="paid">Paid</option>
           <option value="overdue">Overdue</option>
         </select>
@@ -407,6 +406,38 @@ export default function Fees({ pageState }) {
           {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       </div>
+
+      {/* ── Outstanding balance summary bar ──────────────────────── */}
+      {filtered.length > 0 && (() => {
+        const totalDue  = filtered.reduce((s, r) => s + Number(r.amount_due),  0);
+        const totalPaid = filtered.reduce((s, r) => s + Number(r.amount_paid), 0);
+        const totalBal  = totalDue - totalPaid;
+        return (
+          <div style={{
+            display:"flex", gap:12, flexWrap:"wrap", marginBottom:16,
+            padding:"12px 16px", borderRadius:14,
+            background:"var(--mob-surface,#121a28)",
+            border:"1px solid rgba(155,168,255,0.12)",
+          }}>
+            <div style={{ flex:1, minWidth:120 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"var(--mob-on-var,#a5abbb)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:3 }}>TOTAL DUE</div>
+              <div style={{ fontFamily:"'Manrope',sans-serif", fontWeight:800, fontSize:16, color:"var(--mob-on-surface,#e6ebfc)" }}>{fmt(totalDue)}</div>
+            </div>
+            <div style={{ flex:1, minWidth:120 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"var(--mob-on-var,#a5abbb)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:3 }}>COLLECTED</div>
+              <div style={{ fontFamily:"'Manrope',sans-serif", fontWeight:800, fontSize:16, color:"var(--mob-secondary,#3fff8b)" }}>{fmt(totalPaid)}</div>
+            </div>
+            <div style={{ flex:1, minWidth:120 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"var(--mob-on-var,#a5abbb)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:3 }}>OUTSTANDING BALANCE</div>
+              <div style={{ fontFamily:"'Manrope',sans-serif", fontWeight:800, fontSize:16, color: totalBal > 0 ? "var(--mob-error,#ff6e84)" : "var(--mob-secondary,#3fff8b)" }}>{fmt(totalBal)}</div>
+            </div>
+            <div style={{ flex:1, minWidth:120 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"var(--mob-on-var,#a5abbb)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:3 }}>RECORDS</div>
+              <div style={{ fontFamily:"'Manrope',sans-serif", fontWeight:800, fontSize:16, color:"var(--mob-on-surface,#e6ebfc)" }}>{filtered.length}{totalPages > 1 ? ` / ${total}` : ""}</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Records ──────────────────────────────────── */}
       {filtered.length === 0 ? (
