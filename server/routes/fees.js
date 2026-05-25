@@ -15,7 +15,14 @@ router.get("/", auth, branchFilter, async (req, res) => {
       if (aid)        { conditions.push(`s.academy_id=$${idx++}`);  params.push(aid); }
       if (req.branchId) { conditions.push(`fr.branch_id=$${idx++}`); params.push(req.branchId); }
       if (student_id) { conditions.push(`fr.student_id=$${idx++}`); params.push(student_id); }
-      if (status)     { conditions.push(`fr.status=$${idx++}`);     params.push(status); }
+      if (status) {
+        if (status === "pending") {
+          conditions.push(`fr.status IN ('pending', 'partial')`);
+        } else {
+          conditions.push(`fr.status=$${idx++}`);
+          params.push(status);
+        }
+      }
     }
     const page   = Math.max(1, parseInt(req.query.page) || 1);
     const limit  = Math.min(parseInt(req.query.limit) || 50, 1000);

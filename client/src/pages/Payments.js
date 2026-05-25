@@ -330,7 +330,8 @@ export default function Payments({ pageState }) {
       API.get("/fees?status=overdue&limit=200"),
     ]).then(([p, pa, o]) => {
       const all = [...p.data, ...pa.data, ...o.data];
-      setFeeRecords(Array.isArray(all[0]?.data) ? [] : all);
+      const unique = Array.from(new Map(all.map(r => [r.id, r])).values());
+      setFeeRecords(Array.isArray(unique[0]?.data) ? [] : unique);
     });
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, [filterBranch, filterMode, filterFrom, filterTo, search]);
