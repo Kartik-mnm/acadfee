@@ -476,12 +476,15 @@ router.post("/mark-day", auth, async (req, res) => {
     }
     
     const d = new Date(date);
-    // Only regenerate monthly totals if we know which branch this student belongs to.
-    // If branch_id is null the student's data is incomplete — skip the heavy recalc
-    // to avoid crashing; the nightly cron will pick them up once data is fixed.
     if (bId) {
-      // Pass includeToday=true so the manual mark is immediately reflected in totals
-      await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear(), true);
+      // Wrap the recalculation separately so a DB error here never blocks the mark.
+      // The QR scan row was already written/deleted above — that is the source of truth.
+      // If recalc fails, the nightly 10 PM cron will correct the monthly totals.
+      try {
+        await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear(), true);
+      } catch (genErr) {
+        console.error("[mark-day] generateMonthForBranch failed (non-fatal):", genErr.message, genErr.stack);
+      }
     }
     res.json({ ok: true });
   } catch (e) {
