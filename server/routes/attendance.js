@@ -453,10 +453,11 @@ router.post("/mark-day", auth, async (req, res) => {
     if (status === "present") {
       const { rows: existing } = await db.query(`SELECT id FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
       if (existing.length === 0) {
+        // Use bId only if not null; a null branch_id would violate qr_scans NOT NULL constraint
         await db.query(
           `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, exit_time, scanned_by)
            VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
-          [sId, bId, date, req.user.id]
+          [sId, bId || null, date, req.user.id]
         );
       }
     } else {
@@ -475,10 +476,18 @@ router.post("/mark-day", auth, async (req, res) => {
     }
     
     const d = new Date(date);
-    // Pass includeToday=true so the manual mark is immediately reflected in totals
-    await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear(), true);
+    // Only regenerate monthly totals if we know which branch this student belongs to.
+    // If branch_id is null the student's data is incomplete — skip the heavy recalc
+    // to avoid crashing; the nightly cron will pick them up once data is fixed.
+    if (bId) {
+      // Pass includeToday=true so the manual mark is immediately reflected in totals
+      await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear(), true);
+    }
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error("[mark-day] ERROR:", e.message, "\nStudent:", req.body?.student_id, "\nDate:", req.body?.date, "\nStatus:", req.body?.status);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Mark all working days as present for a student in a month
