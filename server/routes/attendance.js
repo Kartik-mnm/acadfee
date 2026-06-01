@@ -200,7 +200,7 @@ router.post("/generate-month", auth, async (req, res) => {
  * total_days for April starts from the 15th, not the 1st.
  * Students admitted in a future month are skipped entirely.
  */
-async function generateMonthForBranch(bid, month, year) {
+async function generateMonthForBranch(bid, month, year, includeToday = false) {
   // Use IST "now" via UTC+5:30 arithmetic so the server timezone never matters
   const nowUtcMs  = Date.now();
   const istNow    = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
@@ -210,8 +210,13 @@ async function generateMonthForBranch(bid, month, year) {
 
   const daysInMonth    = new Date(year, month, 0).getDate();
   const isCurrentMonth = istYear === year && istMonth === month;
-  // How many days of the month have passed (or all days if past month)
-  const globalCountUpTo = isCurrentMonth ? istDay : daysInMonth;
+  // When called from the regular sync (button/cron): exclude today so students
+  // don't appear falsely absent before the day ends.
+  // When called from mark-day (teacher manually marks): include today so the
+  // manual mark is reflected immediately in the totals.
+  const globalCountUpTo = isCurrentMonth
+    ? (includeToday ? istDay : Math.max(0, istDay - 1))
+    : daysInMonth;
 
   // Holidays for this branch/month
   const { rows: holidays } = await db.query(
@@ -314,7 +319,10 @@ async function generateMonthForBranch(bid, month, year) {
         created++;
       } else {
         await client.query(
-          `UPDATE attendance SET total_days=$1, present=LEAST($1, GREATEST(present, $2)) WHERE student_id=$3 AND month=$4 AND year=$5`,
+          // Bug fix: removed GREATEST(present, $2) — it prevented present from ever
+          // decreasing, making "mark absent" a no-op once someone was marked present.
+          // Now we directly write the calculated value so absent marking works correctly.
+          `UPDATE attendance SET total_days=$1, present=LEAST($1, $2) WHERE student_id=$3 AND month=$4 AND year=$5`,
           [totalWorkingDays, present, s.id, month, year]
         );
         updated++;
@@ -467,7 +475,8 @@ router.post("/mark-day", auth, async (req, res) => {
     }
     
     const d = new Date(date);
-    await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear());
+    // Pass includeToday=true so the manual mark is immediately reflected in totals
+    await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear(), true);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
