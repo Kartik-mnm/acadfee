@@ -476,17 +476,34 @@ router.post("/mark-day", auth, async (req, res) => {
     }
     
     const d = new Date(date);
-    if (bId) {
-      // Wrap the recalculation separately so a DB error here never blocks the mark.
-      // The QR scan row was already written/deleted above — that is the source of truth.
-      // If recalc fails, the nightly 10 PM cron will correct the monthly totals.
-      try {
-        await generateMonthForBranch(bId, d.getUTCMonth() + 1, d.getUTCFullYear(), true);
-      } catch (genErr) {
-        console.error("[mark-day] generateMonthForBranch failed (non-fatal):", genErr.message, genErr.stack);
-      }
-    }
-    res.json({ ok: true });
+    const m = d.getUTCMonth() + 1;
+    const y = d.getUTCFullYear();
+
+    // Targeted single-student update — count actual scans for this student this month
+    // and write directly to the attendance row. No branch-wide recalc needed, no complex
+    // logic, guaranteed to work. The heavy generateMonthForBranch is only for bulk sync.
+    const { rows: scanRows } = await db.query(
+      `SELECT COUNT(DISTINCT scan_date)::int AS present_days
+       FROM qr_scans
+       WHERE student_id=$1
+         AND EXTRACT(YEAR  FROM scan_date)=$2
+         AND EXTRACT(MONTH FROM scan_date)=$3
+         AND exit_time IS NOT NULL`,
+      [sId, y, m]
+    );
+    const newPresent = scanRows[0]?.present_days || 0;
+
+    // Update attendance record: keep total_days as-is, just fix the present count.
+    // UPSERT so this works even if no attendance row exists yet for the student+month.
+    await db.query(
+      `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
+       VALUES ($1, $2, $3, $4, 1, $5)
+       ON CONFLICT (student_id, month, year)
+       DO UPDATE SET present = LEAST(attendance.total_days, $5)`,
+      [sId, bId, m, y, newPresent]
+    );
+
+    res.json({ ok: true, present: newPresent });
   } catch (e) {
     console.error("[mark-day] ERROR:", e.message, "\nStudent:", req.body?.student_id, "\nDate:", req.body?.date, "\nStatus:", req.body?.status);
     res.status(500).json({ error: e.message });
