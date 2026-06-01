@@ -5,62 +5,91 @@ const { auth, branchFilter } = require("../middleware");
 // Get attendance list
 router.get("/", auth, branchFilter, async (req, res) => {
   try {
-    const { month, year, student_id, batch_id } = req.query;
+    const { month, year, student_id, batch_id, search } = req.query;
     const page   = Math.max(1, parseInt(req.query.page) || 1);
     const limit  = Math.min(parseInt(req.query.limit) || 50, 1000);
     const offset = (page - 1) * limit;
 
-    let cond = []; let params = []; let i = 1;
+    let cond = ["s.status = 'active'"]; 
+    let params = []; 
+    let i = 1;
+
+    const hasMonthYear = (month && year);
+    let fromClause = "";
+    
+    if (hasMonthYear) {
+      fromClause = `FROM students s LEFT JOIN attendance a ON a.student_id = s.id AND a.month = $${i++} AND a.year = $${i++}`;
+      params.push(month, year);
+    } else {
+      fromClause = `FROM attendance a JOIN students s ON s.id = a.student_id`;
+      if (month) { cond.push(`a.month=$${i++}`); params.push(month); }
+      if (year)  { cond.push(`a.year=$${i++}`); params.push(year); }
+    }
 
     if (req.user.role === "student") {
-      cond.push(`a.student_id=$${i++}`);
+      cond.push(`s.id=$${i++}`);
       params.push(req.user.id);
     } else {
-      if (student_id)        { cond.push(`a.student_id=$${i++}`); params.push(student_id); }
-      else if (req.branchId) { cond.push(`a.branch_id=$${i++}`);  params.push(req.branchId); }
+      if (student_id)        { cond.push(`s.id=$${i++}`); params.push(student_id); }
+      else if (req.branchId) { cond.push(`s.branch_id=$${i++}`);  params.push(req.branchId); }
       const aid = req.academyId;
       if (aid) {
         cond.push(`s.academy_id=$${i++}`);
         params.push(aid);
       }
     }
-    if (month)    { cond.push(`a.month=$${i++}`);    params.push(month); }
-    if (year)     { cond.push(`a.year=$${i++}`);     params.push(year); }
+    
     if (batch_id) { cond.push(`s.batch_id=$${i++}`); params.push(batch_id); }
+    
+    if (search) {
+      cond.push(`s.name ILIKE $${i++}`);
+      params.push(`%${search}%`);
+    }
 
     const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
 
+    const mParam = hasMonthYear ? "$1" : "a.month";
+    const yParam = hasMonthYear ? "$2" : "a.year";
+    const selectCols = `
+      COALESCE(a.id, 0) AS id,
+      s.id AS student_id,
+      s.branch_id,
+      COALESCE(a.month, ${mParam}) AS month,
+      COALESCE(a.year, ${yParam}) AS year,
+      COALESCE(a.total_days, 0) AS total_days,
+      COALESCE(a.present, 0) AS present,
+      s.name AS student_name, s.phone, s.photo_url,
+      b.name AS batch_name, br.name AS branch_name,
+      COALESCE(LEAST(ROUND((COALESCE(a.present,0)::numeric / NULLIF(COALESCE(a.total_days,0),0)) * 100, 1), 100), 0) AS percentage
+    `;
+
+    const orderBy = hasMonthYear ? `ORDER BY s.name` : `ORDER BY a.year DESC, a.month DESC, s.name`;
+
     if (req.query.page) {
       const { rows: countRows } = await db.query(
-        `SELECT COUNT(*) FROM attendance a JOIN students s ON s.id = a.student_id ${where}`,
+        `SELECT COUNT(*) ${fromClause} LEFT JOIN batches b ON b.id = s.batch_id JOIN branches br ON br.id = s.branch_id ${where}`,
         params
       );
       const total = parseInt(countRows[0].count);
       const totalPages = Math.ceil(total / limit);
 
       const { rows } = await db.query(
-        `SELECT a.*, s.name AS student_name, s.phone, s.photo_url,
-                b.name AS batch_name, br.name AS branch_name,
-                COALESCE(LEAST(ROUND((a.present::numeric / NULLIF(a.total_days,0)) * 100, 1), 100), 0) AS percentage
-         FROM attendance a
-         JOIN students s ON s.id = a.student_id
+        `SELECT ${selectCols}
+         ${fromClause}
          LEFT JOIN batches b ON b.id = s.batch_id
-         JOIN branches br ON br.id = a.branch_id
-         ${where} ORDER BY a.year DESC, a.month DESC, s.name LIMIT $${i++} OFFSET $${i++}`,
+         JOIN branches br ON br.id = s.branch_id
+         ${where} ${orderBy} LIMIT $${i++} OFFSET $${i++}`,
         [...params, limit, offset]
       );
       return res.json({ data: rows, page, limit, total, totalPages });
     }
 
     const { rows } = await db.query(
-      `SELECT a.*, s.name AS student_name, s.phone, s.photo_url,
-              b.name AS batch_name, br.name AS branch_name,
-              COALESCE(LEAST(ROUND((a.present::numeric / NULLIF(a.total_days,0)) * 100, 1), 100), 0) AS percentage
-       FROM attendance a
-       JOIN students s ON s.id = a.student_id
+      `SELECT ${selectCols}
+       ${fromClause}
        LEFT JOIN batches b ON b.id = s.batch_id
-       JOIN branches br ON br.id = a.branch_id
-       ${where} ORDER BY a.year DESC, a.month DESC, s.name LIMIT $${i}`,
+       JOIN branches br ON br.id = s.branch_id
+       ${where} ${orderBy} LIMIT $${i}`,
       [...params, limit]
     );
     res.json(rows);
