@@ -301,7 +301,7 @@ export default function Attendance() {
   const activeBranchId = filterBranch || (user.role !== "super_admin" ? user.branch_id : null);
 
   const load = useCallback((p = 1) => {
-    const q = new URLSearchParams({ month, year, page: p, limit: LIMIT });
+    const q = new URLSearchParams({ month, year, page: p, limit: LIMIT, _t: Date.now() });
     if (filterBranch) q.set("branch_id", filterBranch);
     if (filterBatch)  q.set("batch_id", filterBatch);
     if (search)       q.set("search", search);
@@ -583,7 +583,7 @@ export default function Attendance() {
         <div>
           {records.map((r) => (
             <AttendanceCard
-              key={r.id}
+              key={r.student_id}
               r={r}
               onMark={handleMark}
               marking={marking === r.student_id ? marking : null}
@@ -607,7 +607,7 @@ export default function Attendance() {
                 const pctVal = parseFloat(r.percentage || 0);
                 const initials = (r.student_name||"").split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.student_id}>
                     <td>
                       {r.photo_url
                         ? <img src={r.photo_url} alt="" style={{ width:32,height:32,borderRadius:"50%",objectFit:"cover" }}/>
