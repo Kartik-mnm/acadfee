@@ -200,7 +200,7 @@ router.post("/generate-month", auth, async (req, res) => {
  * total_days for April starts from the 15th, not the 1st.
  * Students admitted in a future month are skipped entirely.
  */
-async function generateMonthForBranch(bid, month, year, includeToday = false) {
+async function generateMonthForBranch(bid, month, year) {
   // Use IST "now" via UTC+5:30 arithmetic so the server timezone never matters
   const nowUtcMs  = Date.now();
   const istNow    = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
@@ -210,13 +210,10 @@ async function generateMonthForBranch(bid, month, year, includeToday = false) {
 
   const daysInMonth    = new Date(year, month, 0).getDate();
   const isCurrentMonth = istYear === year && istMonth === month;
-  // When called from the regular sync (button/cron): exclude today so students
-  // don't appear falsely absent before the day ends.
-  // When called from mark-day (teacher manually marks): include today so the
-  // manual mark is reflected immediately in the totals.
-  const globalCountUpTo = isCurrentMonth
-    ? (includeToday ? istDay : Math.max(0, istDay - 1))
-    : daysInMonth;
+  // Count up to and including today for the current month, all days for past months.
+  // The mark-day route uses a direct targeted update so this function is only called
+  // for bulk "Sync from QR" and the nightly cron — both should count today's scans.
+  const globalCountUpTo = isCurrentMonth ? istDay : daysInMonth;
 
   // Holidays for this branch/month
   const { rows: holidays } = await db.query(
