@@ -248,88 +248,51 @@ async function generateMonthForBranch(bid, month, year) {
   const scanMap = {};
   scanCounts.forEach((s) => { scanMap[s.student_id] = parseInt(s.present_days); });
 
-  const client = await db.pool.connect();
   let created = 0; let updated = 0;
-  try {
-    await client.query("BEGIN");
-    for (const s of students) {
-      // --- Admission-date-aware working days calculation ---
-      // Default: count from day 1 of the month
-      let admissionStartDay = 1;
+  // NOTE: We intentionally do NOT use BEGIN/COMMIT here.
+  // The DATABASE_URL points to a Supabase pgBouncer pooler (port 6543) running in
+  // transaction mode. Explicit multi-statement transactions are not supported in that
+  // mode — they cause 500 errors. Each UPSERT below is atomic on its own, which is
+  // sufficient for attendance recalculation.
+  for (const s of students) {
+    // --- Admission-date-aware working days calculation ---
+    let admissionStartDay = 1;
 
-      if (s.admission_date) {
-        const adm = new Date(s.admission_date);
-        const admYear  = adm.getFullYear();
-        const admMonth = adm.getMonth() + 1;
-        const admDay   = adm.getDate();
+    if (s.admission_date) {
+      const adm = new Date(s.admission_date);
+      const admYear  = adm.getFullYear();
+      const admMonth = adm.getMonth() + 1;
+      const admDay   = adm.getDate();
 
-        // Student admitted AFTER this month entirely — skip, they have no attendance yet
-        if (admYear > year || (admYear === year && admMonth > month)) continue;
+      // Student admitted AFTER this month entirely — skip
+      if (admYear > year || (admYear === year && admMonth > month)) continue;
 
-        // Student admitted IN this month — count from their admission day
-        if (admYear === year && admMonth === month) {
-          admissionStartDay = admDay;
-        }
-        // Student admitted BEFORE this month — count from day 1 (admissionStartDay stays 1)
-      }
-
-      // Effective range: from admissionStartDay up to globalCountUpTo
-      const countUpTo = Math.min(globalCountUpTo, daysInMonth);
-      if (admissionStartDay > countUpTo) {
-        // Admitted today or after today in the current month — 0 working days yet
-        const present = 0;
-        const totalWorkingDays = 0;
-        const { rows: existing } = await client.query(
-          `SELECT id FROM attendance WHERE student_id=$1 AND month=$2 AND year=$3`, [s.id, month, year]
-        );
-        if (existing.length === 0) {
-          await client.query(
-            `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present) VALUES ($1,$2,$3,$4,$5,$6)`,
-            [s.id, bid, month, year, totalWorkingDays, present]
-          );
-          created++;
-        } else {
-          await client.query(
-            `UPDATE attendance SET total_days=$1, present=LEAST($1, GREATEST(present, $2)) WHERE student_id=$3 AND month=$4 AND year=$5`,
-            [totalWorkingDays, present, s.id, month, year]
-          );
-          updated++;
-        }
-        continue;
-      }
-
-      // Count holidays only within the student's effective range
-      const holidaysInRange  = buildHolidayCount(admissionStartDay, countUpTo);
-      const totalWorkingDays = (countUpTo - admissionStartDay + 1) - holidaysInRange;
-
-      // Present = actual QR scans, but never more than working days
-      const present = Math.min(scanMap[s.id] || 0, Math.max(0, totalWorkingDays));
-
-      const { rows: existing } = await client.query(
-        `SELECT id FROM attendance WHERE student_id=$1 AND month=$2 AND year=$3`, [s.id, month, year]
-      );
-      if (existing.length === 0) {
-        await client.query(
-          `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [s.id, bid, month, year, totalWorkingDays, present]
-        );
-        created++;
-      } else {
-        await client.query(
-          // Bug fix: removed GREATEST(present, $2) — it prevented present from ever
-          // decreasing, making "mark absent" a no-op once someone was marked present.
-          // Now we directly write the calculated value so absent marking works correctly.
-          `UPDATE attendance SET total_days=$1, present=LEAST($1, $2) WHERE student_id=$3 AND month=$4 AND year=$5`,
-          [totalWorkingDays, present, s.id, month, year]
-        );
-        updated++;
+      // Student admitted IN this month — count from their admission day
+      if (admYear === year && admMonth === month) {
+        admissionStartDay = admDay;
       }
     }
-    await client.query("COMMIT");
-    return { created, updated, students: students.length };
-  } catch (e) {
-    await client.query("ROLLBACK"); throw e;
-  } finally { client.release(); }
+
+    const countUpTo = Math.min(globalCountUpTo, daysInMonth);
+    const totalWorkingDays = admissionStartDay > countUpTo
+      ? 0
+      : Math.max(0, (countUpTo - admissionStartDay + 1) - buildHolidayCount(admissionStartDay, countUpTo));
+
+    // Present = actual QR scans, capped at working days
+    const present = Math.min(scanMap[s.id] || 0, totalWorkingDays);
+
+    // Single UPSERT — no SELECT needed, no transaction needed
+    const { rowCount } = await db.query(
+      `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (student_id, month, year)
+       DO UPDATE SET total_days = $5, present = LEAST($5, $6)`,
+      [s.id, bid, month, year, totalWorkingDays, present]
+    );
+    // pg returns rowCount=1 for INSERT, rowCount=1 for UPDATE via ON CONFLICT
+    if (rowCount === 1) updated++;
+  }
+  return { created, updated: updated, students: students.length };
 }
 
 // Get working days count
