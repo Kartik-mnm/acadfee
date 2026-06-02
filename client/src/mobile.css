@@ -441,15 +441,17 @@
     padding: 0 !important;
     background: rgba(8,14,26,0.8) !important;
     backdrop-filter: blur(12px) !important;
+    z-index: 2100 !important; /* must be above bottom nav (z-index: 1900) */
   }
   .modal {
     background: var(--mob-surface) !important;
     border: none !important;
     border-top: 1px solid rgba(0,0,0,0.08) !important;
     border-radius: 24px 24px 0 0 !important;
-    max-height: 92dvh !important;
+    max-height: 85dvh !important;
     max-width: 100% !important;
     width: 100% !important;
+    overflow-y: auto !important;
     box-shadow: 0 -8px 40px rgba(0,0,0,0.4) !important;
     animation: slideUpMob 0.3s cubic-bezier(0.34,1.2,0.64,1) !important;
     scrollbar-width: none !important;
