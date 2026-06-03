@@ -411,13 +411,20 @@ router.post("/mark-day", auth, async (req, res) => {
     const bId = students[0].branch_id;
 
     if (status === "present") {
-      const { rows: existing } = await db.query(`SELECT id FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
+      const { rows: existing } = await db.query(`SELECT id, exit_time FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, date]);
       if (existing.length === 0) {
         // Use bId only if not null; a null branch_id would violate qr_scans NOT NULL constraint
         await db.query(
           `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, exit_time, scanned_by)
            VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
           [sId, bId || null, date, req.user.id]
+        );
+      } else {
+        // If there is an existing scan but exit_time is NULL, update it to make them present
+        await db.query(
+          `UPDATE qr_scans SET exit_time = COALESCE(exit_time, NOW()), scanned_by = $3
+           WHERE student_id=$1 AND scan_date=$2`,
+          [sId, date, req.user.id]
         );
       }
     } else {
@@ -435,9 +442,9 @@ router.post("/mark-day", auth, async (req, res) => {
       }
     }
     
-    const d = new Date(date);
-    const m = d.getUTCMonth() + 1;
-    const y = d.getUTCFullYear();
+    const [yStr, mStr, dStr] = date.split("-");
+    const y = parseInt(yStr);
+    const m = parseInt(mStr);
 
     // Recalculate total working days for this student for the month up to today (or end of month if past month)
     const nowUtcMs = Date.now();
@@ -562,12 +569,18 @@ router.post("/mark-all", auth, async (req, res) => {
       if (holidaySet.has(dateStr)) continue;
 
       // Check if already exists
-      const { rows: existing } = await db.query(`SELECT id FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, dateStr]);
+      const { rows: existing } = await db.query(`SELECT id, exit_time FROM qr_scans WHERE student_id=$1 AND scan_date=$2`, [sId, dateStr]);
       if (existing.length === 0) {
         await db.query(
           `INSERT INTO qr_scans (student_id, branch_id, scan_date, entry_time, exit_time, scanned_by)
            VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
           [sId, branch_id, dateStr, req.user.id]
+        );
+      } else {
+        await db.query(
+          `UPDATE qr_scans SET exit_time = COALESCE(exit_time, NOW()), scanned_by = $3
+           WHERE student_id=$1 AND scan_date=$2`,
+          [sId, dateStr, req.user.id]
         );
       }
     }
