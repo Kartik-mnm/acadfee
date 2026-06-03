@@ -406,7 +406,7 @@ router.post("/mark-day", auth, async (req, res) => {
     // Bug fix: scope student lookup to academy_id to prevent cross-academy data manipulation
     const whereClause = aid ? "WHERE id=$1 AND academy_id=$2" : "WHERE id=$1";
     const sParams = aid ? [sId, aid] : [sId];
-    const { rows: students } = await db.query(`SELECT id, branch_id FROM students ${whereClause}`, sParams);
+    const { rows: students } = await db.query(`SELECT id, branch_id, admission_date FROM students ${whereClause}`, sParams);
     if (!students[0]) return res.status(404).json({ error: "student not found" });
     const bId = students[0].branch_id;
 
@@ -439,6 +439,52 @@ router.post("/mark-day", auth, async (req, res) => {
     const m = d.getUTCMonth() + 1;
     const y = d.getUTCFullYear();
 
+    // Recalculate total working days for this student for the month up to today (or end of month if past month)
+    const nowUtcMs = Date.now();
+    const istNow = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
+    const istYear = istNow.getUTCFullYear();
+    const istMonth = istNow.getUTCMonth() + 1;
+    const istDay = istNow.getUTCDate();
+
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const isCurrentMonth = istYear === y && istMonth === m;
+    const globalCountUpTo = isCurrentMonth ? istDay : daysInMonth;
+
+    const { rows: holidays } = await db.query(
+      `SELECT DATE_PART('day', date)::int AS day FROM working_days
+       WHERE branch_id=$1 AND EXTRACT(YEAR FROM date)=$2 AND EXTRACT(MONTH FROM date)=$3 AND is_working=false`,
+      [bId, y, m]
+    );
+
+    const buildHolidayCount = (fromDay, toDay) => {
+      let count = 0;
+      for (const h of holidays) {
+        if (h.day >= fromDay && h.day <= toDay) count++;
+      }
+      return count;
+    };
+
+    let admissionStartDay = 1;
+    let isAdmittedAfterMonth = false;
+    const s = students[0];
+    if (s.admission_date) {
+      const adm = new Date(s.admission_date);
+      const admYear = adm.getFullYear();
+      const admMonth = adm.getMonth() + 1;
+      const admDay = adm.getDate();
+
+      if (admYear > y || (admYear === y && admMonth > m)) {
+        isAdmittedAfterMonth = true;
+      } else if (admYear === y && admMonth === m) {
+        admissionStartDay = admDay;
+      }
+    }
+
+    const countUpTo = Math.min(globalCountUpTo, daysInMonth);
+    const totalWorkingDays = isAdmittedAfterMonth || admissionStartDay > countUpTo
+      ? 0
+      : Math.max(0, (countUpTo - admissionStartDay + 1) - buildHolidayCount(admissionStartDay, countUpTo));
+
     // Targeted single-student update — count actual scans for this student this month
     // and write directly to the attendance row. No branch-wide recalc needed, no complex
     // logic, guaranteed to work. The heavy generateMonthForBranch is only for bulk sync.
@@ -453,14 +499,14 @@ router.post("/mark-day", auth, async (req, res) => {
     );
     const newPresent = scanRows[0]?.present_days || 0;
 
-    // Update attendance record: keep total_days as-is, just fix the present count.
+    // Update attendance record: update both total_days and present count.
     // UPSERT so this works even if no attendance row exists yet for the student+month.
     await db.query(
       `INSERT INTO attendance (student_id, branch_id, month, year, total_days, present)
-       VALUES ($1, $2, $3, $4, 1, $5)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (student_id, month, year)
-       DO UPDATE SET present = LEAST(attendance.total_days, $5)`,
-      [sId, bId, m, y, newPresent]
+       DO UPDATE SET total_days = $5, present = LEAST($5, $6)`,
+      [sId, bId, m, y, totalWorkingDays, newPresent]
     );
 
     res.json({ ok: true, present: newPresent });
