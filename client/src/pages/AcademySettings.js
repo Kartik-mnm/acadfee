@@ -76,7 +76,63 @@ function ImageUploader({ label, currentUrl, onUploaded, isMobile }) {
   );
 }
 
-function WhatsAppIntegration() {
+function ToggleSwitch({ label, checked, onChange, description }) {
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "12px 14px",
+      background: "rgba(255, 255, 255, 0.02)",
+      borderRadius: 12,
+      border: "1px solid var(--border)",
+      marginBottom: 10,
+      transition: "all 0.2s ease"
+    }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)" }}>{label}</span>
+        {description && <span style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.3 }}>{description}</span>}
+      </div>
+      <label style={{
+        position: "relative",
+        display: "inline-block",
+        width: 44,
+        height: 24,
+        cursor: "pointer",
+        flexShrink: 0
+      }}>
+        <input 
+          type="checkbox" 
+          checked={checked} 
+          onChange={onChange} 
+          style={{ opacity: 0, width: 0, height: 0 }} 
+        />
+        <span style={{
+          position: "absolute",
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: checked ? "#10b981" : "#475569",
+          borderRadius: 24,
+          transition: "0.3s",
+        }}>
+          <span style={{
+            position: "absolute",
+            content: '""',
+            height: 18,
+            width: 18,
+            left: checked ? 22 : 4,
+            bottom: 3,
+            backgroundColor: "white",
+            borderRadius: "50%",
+            transition: "0.3s",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+          }} />
+        </span>
+      </label>
+    </div>
+  );
+}
+
+function WhatsAppIntegration({ features = {}, onChange }) {
   const [status, setStatus] = useState({ connected: false, user: null });
   const [qr, setQr] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -111,6 +167,17 @@ function WhatsAppIntegration() {
     } finally { fetchStatus(); }
   };
 
+  const waAttendance = features.wa_attendance !== false;
+  const waAbsent = features.wa_absent !== false;
+  const waPayment = features.wa_payment !== false;
+
+  const toggleFeature = (key, currentVal) => {
+    onChange({
+      ...features,
+      [key]: !currentVal
+    });
+  };
+
   return (
     <div style={{ marginTop: 32, paddingTop: 32, borderTop: "1px solid var(--border)" }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text3)", marginBottom: 12 }}>WhatsApp Automation</div>
@@ -143,6 +210,29 @@ function WhatsAppIntegration() {
           </div>
         </div>
       )}
+
+      {/* Automated Messages Toggles */}
+      <div style={{ marginTop: 24 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text3)", marginBottom: 12 }}>Automated Messages</div>
+        <ToggleSwitch 
+          label="QR Attendance Notifications" 
+          description="Send arrival & departure alerts instantly upon QR scan"
+          checked={waAttendance} 
+          onChange={() => toggleFeature("wa_attendance", waAttendance)} 
+        />
+        <ToggleSwitch 
+          label="Daily Absent Alerts" 
+          description="Send absent alert at 10:00 PM IST for missed classes"
+          checked={waAbsent} 
+          onChange={() => toggleFeature("wa_absent", waAbsent)} 
+        />
+        <ToggleSwitch 
+          label="Fees Payment Receipts" 
+          description="Send payment receipts instantly when fees are paid"
+          checked={waPayment} 
+          onChange={() => toggleFeature("wa_payment", waPayment)} 
+        />
+      </div>
     </div>
   );
 }
@@ -164,6 +254,7 @@ export default function AcademySettings() {
     logo_url:      academy?.logo_url || "",
     favicon_url:   academy?.favicon_url || "",
     roll_prefix:   academy?.roll_prefix || "",
+    features:      academy?.features || {},
   });
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
@@ -300,7 +391,10 @@ export default function AcademySettings() {
             rows={2} placeholder="Full address" style={{ resize: "vertical" }} />
         </Field>
 
-        <WhatsAppIntegration />
+        <WhatsAppIntegration 
+          features={form.features}
+          onChange={(newFeatures) => set("features", newFeatures)}
+        />
 
         {/* ── Save ── */}
         {error && (

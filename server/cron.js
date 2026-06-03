@@ -118,7 +118,8 @@ async function sendAbsentNotifications(todayIST) {
   try {
     const { rows: absentStudents } = await db.query(
       `SELECT s.id, s.name, s.branch_id, s.fcm_token, s.parent_fcm_token, s.phone, s.parent_phone,
-              br.name AS branch_name, a.name AS academy_name, COALESCE(s.academy_id, br.academy_id) AS academy_id
+              br.name AS branch_name, a.name AS academy_name, COALESCE(s.academy_id, br.academy_id) AS academy_id,
+              a.features
        FROM students s
        JOIN branches br ON br.id = s.branch_id
        LEFT JOIN academies a ON a.id = COALESCE(s.academy_id, br.academy_id)
@@ -159,8 +160,9 @@ async function sendAbsentNotifications(todayIST) {
           { type: "absent_alert", student_id: String(student.id), date: todayIST }
         );
       }
+      const waAbsentEnabled = (student.features?.wa_absent !== false);
       const phone = student.parent_phone || student.phone;
-      if (phone && student.academy_id) {
+      if (phone && student.academy_id && waAbsentEnabled) {
         const text = `\u26a0\ufe0f *ABSENT ALERT*\n\nHi, ${student.name} did not attend ${academyName} on ${dateLabel}. Please contact the administration if you have questions.\n\n- ${academyName}`;
         await sendWhatsAppMessage(student.academy_id, phone, text);
       }

@@ -131,7 +131,7 @@ router.post("/", auth, async (req, res) => {
     const { rows: frRows } = await db.query(
       `SELECT fr.student_id, fr.period_label, fr.amount_due, fr.amount_paid,
               s.name AS student_name, s.fcm_token, s.parent_fcm_token, s.academy_id, s.branch_id,
-              s.phone, s.parent_phone, a.name AS academy_name
+              s.phone, s.parent_phone, a.name AS academy_name, a.features
        FROM fee_records fr
        JOIN students s ON s.id = fr.student_id
        LEFT JOIN academies a ON a.id = s.academy_id
@@ -217,8 +217,9 @@ router.post("/", auth, async (req, res) => {
     if (notifPromises.length > 0) Promise.allSettled(notifPromises).catch(() => {});
 
     // WhatsApp Notification
+    const waPaymentEnabled = (frRows[0].features?.wa_payment !== false);
     const waPhone = parent_phone || phone;
-    if (waPhone) {
+    if (waPhone && waPaymentEnabled) {
       const waText = `🧾 *PAYMENT RECEIPT*\n\nHi,\nWe have received a payment of *${amtStr}* for ${student_name}${period ? ' for ' + period_label : ''}.\n\n*Receipt No:* ${receipt_no}\n*Mode:* ${modeStr}\n*Date:* ${dateStr}\n\nThank you!\n- ${academy}`;
       sendWhatsAppMessage(academyId, waPhone, waText).catch(e => console.error("WA Send Error:", e.message));
     }

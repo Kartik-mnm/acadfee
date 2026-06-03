@@ -105,7 +105,8 @@ router.put("/settings", auth, async (req, res) => {
 
   const {
     name, tagline, email, phone, website, address, city, state,
-    primary_color, accent_color, logo_url, favicon_url, roll_prefix
+    primary_color, accent_color, logo_url, favicon_url, roll_prefix,
+    features
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: "Academy name is required." });
@@ -119,6 +120,7 @@ router.put("/settings", auth, async (req, res) => {
     "address=$6", "city=$7", "state=$8",
     "primary_color=$9", "accent_color=$10",
     "logo_url=$11", "favicon_url=$12",
+    "features=$13::jsonb",
     "updated_at=NOW()",
   ];
   const params = [
@@ -126,6 +128,7 @@ router.put("/settings", auth, async (req, res) => {
     website || null, address || null, city || null, state || null,
     primary_color || "2563EB", accent_color || "38BDF8",
     logo_url || null, favicon_url || null,
+    features ? (typeof features === 'string' ? features : JSON.stringify(features)) : '{}',
   ];
 
   // Only include roll_prefix if the column exists

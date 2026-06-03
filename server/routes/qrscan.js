@@ -202,7 +202,8 @@ router.post("/scan", auth, async (req, res) => {
               b.name AS batch_name, b.end_date AS batch_end_date,
               br.name AS branch_name,
               a.id   AS academy_id,
-              a.name AS academy_name
+              a.name AS academy_name,
+              a.features
        FROM students s
        LEFT JOIN batches b ON b.id = s.batch_id
        JOIN branches br ON br.id = s.branch_id
@@ -307,7 +308,8 @@ router.post("/scan", auth, async (req, res) => {
     }).catch(console.error);
 
     // 2. WhatsApp message to parent's phone
-    if (student.parent_phone && student.academy_id) {
+    const waAttendanceEnabled = (student.features?.wa_attendance !== false);
+    if (student.parent_phone && student.academy_id && waAttendanceEnabled) {
       const isEntry = scanType === "entry";
       const dateStr = new Date().toLocaleDateString("en-IN", {
         day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata"
