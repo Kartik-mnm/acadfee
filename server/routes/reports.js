@@ -2,6 +2,28 @@ const router = require("express").Router();
 const db = require("../db");
 const { auth, branchFilter } = require("../middleware");
 
+function ensureCurrentMonthInTrend(trendRows) {
+  const nowUtcMs = Date.now();
+  const istNow = new Date(nowUtcMs + 5.5 * 60 * 60 * 1000);
+  const currentMonthLabel = istNow.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }); // e.g. "Jun 2026"
+  
+  const hasCurrentMonth = trendRows.some(
+    (row) => row.month?.toLowerCase() === currentMonthLabel.toLowerCase()
+  );
+  
+  if (!hasCurrentMonth) {
+    trendRows.push({
+      month: currentMonthLabel,
+      month_sort: istNow.toISOString(),
+      collected: 0
+    });
+    if (trendRows.length > 12) {
+      trendRows.shift();
+    }
+  }
+  return trendRows;
+}
+
 // ── Dashboard summary ─────────────────────────────────────────────────────────
 // FIX: each table uses different columns for academy/tenant scoping:
 //   students      → academy_id  (direct)
@@ -51,15 +73,12 @@ router.get("/dashboard", auth, branchFilter, async (req, res) => {
       ovParts.push(`fr.due_date >= DATE_TRUNC('month', CURRENT_DATE) AND fr.due_date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')`);
     }
 
-    // ── recent payments ───────────────────────────────────────────────────────
+    // ── recent payments (always shows most recent transactions overall) ────────
     const recentParts = [];
     const recentParams = [];
     let ri = 1;
     if (aid) { recentParts.push(`p.merchant_id=$${ri++}`); recentParams.push(aid); }
     if (bid) { recentParts.push(`p.branch_id=$${ri++}`);  recentParams.push(bid); }
-    if (req.query.time_range === "this_month") {
-      recentParts.push(`p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)`);
-    }
     const recentWhere = recentParts.length ? "AND " + recentParts.join(" AND ") : "";
 
     const [students, collected, due, overdue, recentPayments, branchPerf] = await Promise.all([
@@ -234,7 +253,7 @@ router.get("/monthly-trend", auth, branchFilter, async (req, res) => {
        GROUP BY month, month_sort ORDER BY month_sort DESC LIMIT 12`,
       params
     );
-    res.json(rows.reverse());
+    res.json(ensureCurrentMonthInTrend(rows.reverse()));
   } catch (e) {
     console.error("Monthly trend error:", e.message);
     res.status(500).json({ error: "Failed to load monthly trend" });
@@ -304,11 +323,10 @@ router.get("/dashboard-full", auth, branchFilter, async (req, res) => {
     if (aid) { ovParts.push(`s.academy_id=$${ovIdx++}`); ovParams.push(aid); }
     if (bid) { ovParts.push(`fr.branch_id=$${ovIdx++}`); ovParams.push(bid); }
 
-    // ── recent payments ───────────────────────────────────────────────────────
+    // ── recent payments (always shows most recent transactions overall) ────────
     const rpParts = []; const rpParams = []; let ri = 1;
     if (aid) { rpParts.push(`p.merchant_id=$${ri++}`); rpParams.push(aid); }
     if (bid) { rpParts.push(`p.branch_id=$${ri++}`);  rpParams.push(bid); }
-    if (isMonth) rpParts.push(`p.paid_on >= DATE_TRUNC('month', CURRENT_DATE)`);
     const rpWhere = rpParts.length ? "AND " + rpParts.join(" AND ") : "";
 
     // ── trend ─────────────────────────────────────────────────────────────────
@@ -365,7 +383,7 @@ router.get("/dashboard-full", auth, branchFilter, async (req, res) => {
       total_due:          parseFloat(due.rows[0]?.total || 0),
       overdue_count:      parseInt(overdue.rows[0]?.count || 0),
       recent_payments:    recentPayments.rows,
-      monthly_trend:      trend.rows.reverse(),
+      monthly_trend:      ensureCurrentMonthInTrend(trend.rows.reverse()),
       branch_performance: branchPerf,
     });
   } catch (e) {
