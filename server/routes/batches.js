@@ -70,7 +70,17 @@ router.put("/:id", auth, async (req, res) => {
     const { rows } = await db.query(
       `UPDATE batches SET name=$1, subjects=$2, fee_monthly=$3, fee_quarterly=$4, fee_yearly=$5,
         fee_course=$6, start_date=$7, end_date=$8 WHERE id=$9 RETURNING *`,
-      [name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date||null, end_date||null, req.params.id]
+      [
+        name,
+        subjects || null,
+        fee_monthly || 0,
+        fee_quarterly || 0,
+        fee_yearly || 0,
+        fee_course || 0,
+        start_date || null,
+        end_date || null,
+        req.params.id
+      ]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: "Failed to update batch" }); }
