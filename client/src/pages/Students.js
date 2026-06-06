@@ -355,7 +355,7 @@ export default function Students({ pageState }) {
     : user.role==="branch_manager" ? batches.filter((b) => b.branch_id==user.branch_id) : batches;
 
   // Batches available for the filter dropdown (narrowed by selected branch filter)
-  const filterBatchOptions = isSuperAdmin && filterBranch
+  const filterBatchOptions = user.role === "super_admin" && filterBranch
     ? batches.filter((b) => b.branch_id == filterBranch)
     : user.role==="branch_manager" ? batches.filter((b) => b.branch_id==user.branch_id) : batches;
 
