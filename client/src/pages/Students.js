@@ -275,6 +275,7 @@ export default function Students({ pageState }) {
   const [branches,       setBranches]       = useState([]);
   const [search,         setSearch]         = useState("");
   const [filterBranch,   setFilterBranch]   = useState("");
+  const [filterBatch,    setFilterBatch]    = useState("");
   const [filterStatus,   setFilterStatus]   = useState("");
   const [showModal,      setShowModal]      = useState(false);
   const [editing,        setEditing]        = useState(null);
@@ -293,12 +294,13 @@ export default function Students({ pageState }) {
   const LIMIT = 20;
   const searchTimer = useRef(null);
 
-  const load = useCallback((p=1, q="", branch="", status="") => {
+  const load = useCallback((p=1, q="", branch="", status="", batch="") => {
     setLoading(true);
     const params = new URLSearchParams({ page:p, limit:LIMIT });
     if (q)      params.set("search",q);
     if (branch) params.set("branch_id",branch);
     if (status) params.set("status",status);
+    if (batch)  params.set("batch_id",batch);
     API.get(`/students?${params}`)
       .then((r) => {
         const res = r.data;
@@ -310,10 +312,10 @@ export default function Students({ pageState }) {
   }, []);
 
   useEffect(() => {
-    load(1,"",filterBranch,filterStatus);
+    load(1,"",filterBranch,filterStatus,filterBatch);
     API.get("/batches").then((r) => setBatches(r.data));
     if (user.role==="super_admin") API.get("/branches").then((r) => setBranches(r.data));
-  }, [filterBranch, filterStatus]);
+  }, [filterBranch, filterStatus, filterBatch]);
 
   useEffect(() => {
     if (pageState?.filterStatus) {
@@ -324,10 +326,10 @@ export default function Students({ pageState }) {
   const handleSearch = (val) => {
     setSearch(val);
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => { load(1,val,filterBranch,filterStatus); }, 400);
+    searchTimer.current = setTimeout(() => { load(1,val,filterBranch,filterStatus,filterBatch); }, 400);
   };
 
-  const handlePage = (p) => load(p,search,filterBranch,filterStatus);
+  const handlePage = (p) => load(p,search,filterBranch,filterStatus,filterBatch);
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
   const openEdit = (s) => { setEditing(s.id); setForm({ ...s, dob:s.dob?.split("T")[0]||"", admission_date:s.admission_date?.split("T")[0]||"", photo_url:s.photo_url||"" }); setError(""); setShowModal(true); };
 
@@ -337,7 +339,7 @@ export default function Students({ pageState }) {
       if (editing) await API.put(`/students/${editing}`,form);
       else         await API.post("/students",form);
       setShowModal(false);
-      load(page,search,filterBranch,filterStatus);
+      load(page,search,filterBranch,filterStatus,filterBatch);
     } catch (e) { setError(e.response?.data?.error||"Save failed"); }
     finally { setSaving(false); }
   };
@@ -345,11 +347,16 @@ export default function Students({ pageState }) {
   const del = async (id) => {
     if (!window.confirm("Delete this student?")) return;
     await API.delete(`/students/${id}`);
-    load(page,search,filterBranch,filterStatus);
+    load(page,search,filterBranch,filterStatus,filterBatch);
   };
 
   const filteredBatches = user.role==="super_admin" && form.branch_id
     ? batches.filter((b) => b.branch_id==form.branch_id)
+    : user.role==="branch_manager" ? batches.filter((b) => b.branch_id==user.branch_id) : batches;
+
+  // Batches available for the filter dropdown (narrowed by selected branch filter)
+  const filterBatchOptions = isSuperAdmin && filterBranch
+    ? batches.filter((b) => b.branch_id == filterBranch)
     : user.role==="branch_manager" ? batches.filter((b) => b.branch_id==user.branch_id) : batches;
 
   const f = (k,v) => setForm((p) => ({ ...p, [k]:v }));
@@ -409,11 +416,15 @@ export default function Students({ pageState }) {
         <input className="search-input" placeholder="Search by name / phone / roll no / email..."
           value={search} onChange={(e) => handleSearch(e.target.value)} />
         {isSuperAdmin && (
-          <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
+          <select value={filterBranch} onChange={(e) => { setFilterBranch(e.target.value); setFilterBatch(""); }}>
             <option value="">All Branches</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         )}
+        <select value={filterBatch} onChange={(e) => setFilterBatch(e.target.value)}>
+          <option value="">All Batches</option>
+          {filterBatchOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">All Status</option>
           <option value="active">Active</option>
