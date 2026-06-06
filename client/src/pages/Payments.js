@@ -1,9 +1,128 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAcademy } from "../context/AcademyContext";
 import API from "../api";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+
+// ── Searchable fee-record picker ──────────────────────────────────────────────
+function SearchableFeeSelect({ feeRecords, value, onChange }) {
+  const [query,  setQuery]  = useState("");
+  const [open,   setOpen]   = useState(false);
+  const [label,  setLabel]  = useState("");
+  const wrapRef = useRef();
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Sync label when value changes externally
+  useEffect(() => {
+    if (!value) { setLabel(""); setQuery(""); return; }
+    const rec = feeRecords.find((r) => r.id == value);
+    if (rec) {
+      const balance = rec.amount_due - rec.amount_paid;
+      setLabel(`${rec.student_name} – ${rec.period_label || "Manual"} (Bal: ₹${balance.toLocaleString("en-IN")})`);
+    }
+  }, [value, feeRecords]);
+
+  const filtered = query.trim()
+    ? feeRecords.filter((r) => r.student_name?.toLowerCase().includes(query.toLowerCase()) || (r.period_label || "").toLowerCase().includes(query.toLowerCase()))
+    : feeRecords;
+
+  const select = (rec) => {
+    const balance = rec.amount_due - rec.amount_paid;
+    const lbl = `${rec.student_name} – ${rec.period_label || "Manual"} (Bal: ₹${balance.toLocaleString("en-IN")})`;
+    setLabel(lbl);
+    setQuery("");
+    setOpen(false);
+    onChange(rec.id);
+  };
+
+  const clear = (e) => { e.stopPropagation(); setLabel(""); setQuery(""); setOpen(false); onChange(""); };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
+      {/* Input row */}
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "var(--bg3)", border: "1px solid var(--border2)",
+          borderRadius: 8, padding: "8px 12px", cursor: "text",
+          transition: "border-color 0.15s",
+          ...(open ? { borderColor: "var(--accent, #6366f1)" } : {})
+        }}
+        onClick={() => { setOpen(true); }}
+      >
+        <span style={{ fontSize: 15, flexShrink: 0 }}>🔍</span>
+        <input
+          style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 13, minWidth: 0 }}
+          placeholder={label || "Type student name to search…"}
+          value={open ? query : ""}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {label && !open && (
+          <span style={{ fontSize: 13, color: "var(--text)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        )}
+        {label && (
+          <button type="button" onClick={clear}
+            style={{ background: "none", border: "none", color: "var(--text2)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0, flexShrink: 0 }}
+            title="Clear"
+          >✕</button>
+        )}
+        <span style={{ color: "var(--text2)", fontSize: 11, flexShrink: 0 }}>▾</span>
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 9999,
+          background: "var(--bg2, #1a2035)", border: "1px solid var(--border2)",
+          borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+          maxHeight: 260, overflowY: "auto",
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "14px 16px", color: "var(--text2)", fontSize: 13, textAlign: "center" }}>No records found</div>
+          ) : filtered.map((r) => {
+            const balance = r.amount_due - r.amount_paid;
+            const isSelected = r.id == value;
+            return (
+              <div key={r.id}
+                onClick={() => select(r)}
+                style={{
+                  padding: "10px 14px", cursor: "pointer", fontSize: 13,
+                  borderBottom: "1px solid rgba(255,255,255,0.04)",
+                  background: isSelected ? "rgba(99,102,241,0.15)" : "transparent",
+                  transition: "background 0.1s",
+                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+                }}
+                onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {r.student_name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
+                    {r.period_label || "Manual"} · <span style={{ textTransform: "capitalize" }}>{r.status}</span>
+                  </div>
+                </div>
+                <div style={{ flexShrink: 0, fontWeight: 700, fontSize: 13,
+                  color: balance > 0 ? "var(--red, #ef4444)" : "var(--green, #22c55e)" }}>
+                  ₹{balance.toLocaleString("en-IN")}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function InfoBox({ why, steps }) {
   const [open, setOpen] = useState(false);
@@ -595,14 +714,11 @@ export default function Payments({ pageState }) {
                 <div className="form-grid">
                   <div className="form-group full">
                     <label>Fee Record (Student – Period) *</label>
-                    <select value={form.fee_record_id} onChange={(e) => selectRecord(e.target.value)}>
-                      <option value="">Select fee record…</option>
-                      {feeRecords.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.student_name} – {r.period_label || "Manual"} [{r.status}] (Balance: ₹{(r.amount_due - r.amount_paid).toLocaleString("en-IN")})
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableFeeSelect
+                      feeRecords={feeRecords}
+                      value={form.fee_record_id}
+                      onChange={(id) => selectRecord(id)}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Amount (₹) *</label>
@@ -766,14 +882,11 @@ export default function Payments({ pageState }) {
               <div className="form-grid">
                 <div className="form-group full">
                   <label>Fee Record (Student – Period) *</label>
-                  <select value={form.fee_record_id} onChange={(e) => selectRecord(e.target.value)}>
-                    <option value="">Select fee record…</option>
-                    {feeRecords.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.student_name} – {r.period_label || "Manual"} [{r.status}] (Balance: ₹{(r.amount_due - r.amount_paid).toLocaleString("en-IN")})
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableFeeSelect
+                    feeRecords={feeRecords}
+                    value={form.fee_record_id}
+                    onChange={(id) => selectRecord(id)}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Amount (₹) *</label>
