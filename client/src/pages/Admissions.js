@@ -285,8 +285,14 @@ export default function Admissions() {
 
   const reject = async (id) => {
     if (!window.confirm("Reject this enquiry?")) return;
-    await API.patch(`/admission/enquiries/${id}/reject`);
-    load();
+    try {
+      await API.patch(`/admission/enquiries/${id}/reject`);
+      setMsg("\u2705 Enquiry rejected.");
+      load();
+      setTimeout(() => setMsg(""), 4000);
+    } catch (e) {
+      setMsg("\u26a0\ufe0f " + (e.response?.data?.error || "Failed to reject enquiry"));
+    }
   };
 
   const buildFormHtml = (enq, { showPrintButton }) => {

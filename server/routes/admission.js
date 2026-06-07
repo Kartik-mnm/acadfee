@@ -368,7 +368,7 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
 });
 
 // ── Admin: reject enquiry ─────────────────────────────────────────────────────────
-router.post("/enquiries/:id/reject", auth, async (req, res) => {
+const rejectEnquiry = async (req, res) => {
   try {
     const academyId = req.academyId;
     const whereClause = academyId
@@ -383,6 +383,8 @@ router.post("/enquiries/:id/reject", auth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: "Failed to reject enquiry" });
   }
-});
+};
+router.post("/enquiries/:id/reject", auth, rejectEnquiry);
+router.patch("/enquiries/:id/reject", auth, rejectEnquiry);
 
 module.exports = router;
