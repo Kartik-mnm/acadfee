@@ -1,4 +1,5 @@
 import { Component } from "react";
+import * as Sentry from "@sentry/react";
 
 /**
  * ErrorBoundary — catches any render/lifecycle crash in a child component
@@ -22,6 +23,7 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     // Log to console so you can see it in Render logs
     console.error(`[ErrorBoundary] Crash in "${this.props.page || "page"}":`, error, info);
+    Sentry.captureException(error, { extra: info });
   }
 
   render() {

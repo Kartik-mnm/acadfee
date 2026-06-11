@@ -1,4 +1,17 @@
 require("dotenv").config();
+const Sentry = require("@sentry/node");
+
+const sentryDsn = process.env.SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    tracesSampleRate: 1.0,
+  });
+  console.log("✅ Sentry initialized on server");
+} else {
+  console.warn("⚠️ Sentry DSN not found. Backend Sentry monitoring disabled.");
+}
+
 const express      = require("express");
 const cors         = require("cors");
 const compression  = require("compression");
@@ -74,6 +87,7 @@ app.use("/platform/auth",    require("./routes/platform-auth"));
 app.use("/platform",         require("./routes/platform"));
 app.use("/api/academy",      require("./routes/academy-config"));
 app.use("/api/onboarding",   require("./routes/onboarding"));
+app.use("/platform/diagnostics", require("./routes/diagnostics"));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/health", async (_, res) => {
@@ -87,9 +101,32 @@ app.get("/health", async (_, res) => {
 });
 app.get("/", (_, res) => res.json({ status: "Exponent Platform API running" }));
 
+// Register Sentry's Express error handler before other error middlewares
+if (sentryDsn) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
 app.use((err, req, res, next) => {
   if (err.message?.startsWith("CORS blocked")) return res.status(403).json({ error: err.message });
+  
   console.error("Unhandled error:", err);
+
+  // Store in global capped array for diagnostics dashboard
+  global.recentErrors = global.recentErrors || [];
+  const errorLog = {
+    timestamp: new Date().toISOString(),
+    message: err.message || err.toString(),
+    stack: err.stack || "",
+    path: req.path,
+    method: req.method,
+    body: req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body).substring(0, 500) : null,
+    user: req.user ? { id: req.user.id, name: req.user.name, role: req.user.role } : null
+  };
+  global.recentErrors.unshift(errorLog);
+  if (global.recentErrors.length > 20) {
+    global.recentErrors.pop();
+  }
+
   res.status(500).json({ error: "Internal server error" });
 });
 

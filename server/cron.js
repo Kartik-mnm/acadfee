@@ -222,7 +222,15 @@ async function emailDailyReports(todayIST) {
 
 // ── Nightly database backup ───────────────────────────────────────────────────
 async function runNightlyBackup(dateStr) {
-  if (!process.env.RESEND_API_KEY) { console.warn("[backup] Skipped — RESEND_API_KEY not set"); return; }
+  global.cronStatus = global.cronStatus || {};
+  global.cronStatus.lastBackupRunStart = new Date().toISOString();
+  if (!process.env.RESEND_API_KEY) { 
+    console.warn("[backup] Skipped — RESEND_API_KEY not set"); 
+    global.cronStatus.lastBackupRunEnd = new Date().toISOString();
+    global.cronStatus.lastBackupRunSuccess = false;
+    global.cronStatus.lastBackupError = "RESEND_API_KEY not set";
+    return; 
+  }
   const backupEmail = process.env.BACKUP_EMAIL || "kartik@exponent.app";
   console.log(`[backup] Starting nightly backup for ${dateStr}...`);
   try {
@@ -251,8 +259,14 @@ async function runNightlyBackup(dateStr) {
       attachments: [{ filename: `backup-${dateStr}.json`, content: jsonBuffer.toString("base64") }],
     });
     console.log(`[backup] \u2705 Emailed to ${backupEmail} \u2014 ${totalRows} rows, ${sizeKB} KB`);
+    global.cronStatus.lastBackupRunEnd = new Date().toISOString();
+    global.cronStatus.lastBackupRunSuccess = true;
+    global.cronStatus.lastBackupError = null;
   } catch (e) {
     console.error("[backup] Failed:", e.message);
+    global.cronStatus.lastBackupRunEnd = new Date().toISOString();
+    global.cronStatus.lastBackupRunSuccess = false;
+    global.cronStatus.lastBackupError = e.message;
   }
 }
 
@@ -260,6 +274,8 @@ let lastBackupDate = "";
 
 // ── Main nightly job ───────────────────────────────────────────────────────────────────────────
 async function runNightlyJob() {
+  global.cronStatus = global.cronStatus || {};
+  global.cronStatus.lastJobRunStart = new Date().toISOString();
   const now      = new Date();
   const istMs    = now.getTime() + (5.5 * 60 * 60 * 1000);
   const istDate  = new Date(istMs);
@@ -269,8 +285,15 @@ async function runNightlyJob() {
   const [y, m] = todayIST.split("-").map(Number);
   console.log(`\n[Cron] \u23f0 Nightly job starting for ${todayIST}`);
   const runTask = async (name, fn) => {
-    try { console.log(`[Cron] [${name}] Starting...`); await fn(); console.log(`[Cron] [${name}] Done.`); }
-    catch (err) { console.error(`[Cron] [${name}] ERROR:`, err.message); }
+    try { 
+      console.log(`[Cron] [${name}] Starting...`); 
+      await fn(); 
+      console.log(`[Cron] [${name}] Done.`); 
+    }
+    catch (err) { 
+      console.error(`[Cron] [${name}] ERROR:`, err.message); 
+      global.cronStatus.lastError = { task: name, message: err.message, timestamp: new Date().toISOString() };
+    }
   };
   await runTask("PurgeStaleTokens",    () => purgeStaleTokens());
   await runTask("AbsentNotifications", () => sendAbsentNotifications(todayIST));
@@ -279,6 +302,8 @@ async function runNightlyJob() {
   await runTask("BackfillIDs",         () => backfillStudentAcademyIds());
   await runTask("DailyReports",        () => emailDailyReports(todayIST));
   console.log(`[Cron] \u2705 Nightly job complete for ${todayIST}`);
+  global.cronStatus.lastJobRunEnd = new Date().toISOString();
+  global.cronStatus.lastJobRunSuccess = true;
 }
 
 // ── Start schedulers ──────────────────────────────────────────────────────────

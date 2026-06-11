@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@sentry/react": "^10.57.0",
     "axios": "^1.6.2",
     "firebase": "^12.10.0",
     "jsqr": "^1.4.0",
