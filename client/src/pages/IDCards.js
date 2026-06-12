@@ -218,8 +218,8 @@ export default function IDCards() {
     .photo-circle img { width:100%; height:100%; object-fit:cover; }
     .printer-card:not(.hz-wrap) .photo-circle { width:18mm; height:18mm; font-size:16pt; }
     .card-body    { padding:0 4mm; text-align:center; flex-grow:1; display:flex; flex-direction:column; justify-content:center; }
-    .student-name { font-size:10pt; font-weight:900; color:#0a1628; line-height:1.2; text-transform:uppercase; }
-    .student-role { font-size:6pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-top: 1mm; }
+    .student-name { font-size:10pt; font-weight:900; color:#0a1628; line-height:1.2; text-transform:uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+    .student-role { font-size:6pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-top: 1mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
     .divider      { height:0.5mm; margin:1.5mm 4mm; }
     .info-row     { display:flex; justify-content:space-between; padding:0.5mm 0; font-size:5pt; }
     .info-label   { color:#888; font-weight:600; text-transform:uppercase; }
