@@ -119,6 +119,22 @@ export default function IDCards() {
   const generateDocument = async (targetStudents) => {
     const { data: tokens } = await API.post("/qrscan/tokens/bulk", { student_ids: targetStudents.map(s => s.id) });
       
+    const getNameFontSize = (name) => {
+      const len = (name || "").length;
+      if (len <= 15) return "10pt";
+      if (len <= 20) return "8.5pt";
+      if (len <= 25) return "7.5pt";
+      return "6.5pt";
+    };
+
+    const getNameFontSizeHz = (name) => {
+      const len = (name || "").length;
+      if (len <= 15) return "12pt";
+      if (len <= 20) return "10.5pt";
+      if (len <= 25) return "9.5pt";
+      return "8.5pt";
+    };
+
     let htmlCards = "";
     
     for (const s of targetStudents) {
@@ -144,7 +160,7 @@ export default function IDCards() {
               </div>
               <div class="photo-wrap"><div class="photo-circle">${s.photo_url ? `<img src="${s.photo_url}" />` : "👤"}</div></div>
               <div class="card-body">
-                <div class="student-name">${s.name}</div>
+                <div class="student-name" style="font-size: ${getNameFontSize(s.name)}">${s.name}</div>
                 <div class="student-role">${s.batch_name || "Student"}</div>
                 <div class="divider" style="background:linear-gradient(90deg,transparent,${primaryColor},transparent)"></div>
                 <div class="info-row"><span class="info-label">Roll No</span><span class="info-value">${getRollDisplay(s)}</span></div>
@@ -170,7 +186,7 @@ export default function IDCards() {
                  <div class="academy-name hz-acad" style="writing-mode: vertical-rl; transform: rotate(180deg); margin-top:2mm; font-size: 6pt;">${academyName.toUpperCase()}</div>
               </div>
               <div class="hz-center">
-                <div class="student-name" style="text-align:left; font-size:12pt;">${s.name}</div>
+                <div class="student-name" style="text-align:left; font-size: ${getNameFontSizeHz(s.name)};">${s.name}</div>
                 <div class="student-role" style="text-align:left; font-size:7pt; color:${accentColor}">${s.batch_name || "Student"}</div>
                 <div class="divider" style="background:linear-gradient(90deg,transparent,${primaryColor},transparent); margin: 3mm 0;"></div>
                 <div class="info-row"><span class="info-label">Roll No</span><span class="info-value">${getRollDisplay(s)}</span></div>
