@@ -3,13 +3,14 @@ const db = require("../db");
 const { auth, branchFilter, studentSelf } = require("../middleware");
 
 /**
- * Build roll number prefix from academy + branch prefixes.
- * e.g. academy="NA", branch="DW" → "NADW"
+ * Build roll number prefix from academy + branch + batch prefixes.
+ * e.g. academy="NA", branch="DW", batch="A" → "NADWA"
  */
-function buildRollPrefix(academyPrefix, branchPrefix, branchName) {
+function buildRollPrefix(academyPrefix, branchPrefix, batchCode, branchName) {
   const acad   = (academyPrefix || "").toUpperCase().trim();
   const branch = (branchPrefix  || "").toUpperCase().trim();
-  if (acad || branch) return acad + branch;
+  const batch  = (batchCode     || "").toUpperCase().trim();
+  if (acad || branch || batch) return acad + branch + batch;
   if (!branchName) return "NA";
   const lower = branchName.toLowerCase();
   const LEGACY = {
@@ -27,43 +28,89 @@ router.post("/backfill-roll-numbers", auth, async (req, res) => {
   if (req.user.role !== "super_admin") return res.status(403).json({ error: "Super admin only" });
   try {
     const aid = req.academyId;
-    const aidCond = aid ? "AND s.academy_id = " + parseInt(aid) : "AND s.academy_id IS NULL";
-    const { rows: students } = await db.query(
-      `SELECT s.id, s.branch_id, br.name AS branch_name, br.roll_prefix AS branch_prefix
-       FROM students s JOIN branches br ON br.id = s.branch_id
-       WHERE (s.roll_no IS NULL OR s.roll_no = '' OR s.roll_no ~ '^[0-9]+$') ${aidCond} 
-       ORDER BY s.branch_id, s.id ASC`
+    if (!aid) return res.status(400).json({ error: "Academy ID is required" });
+
+    // 1. Fetch academy details to get roll_prefix and roll_reset_done
+    const { rows: acadRows } = await db.query(
+      `SELECT roll_prefix, roll_reset_done FROM academies WHERE id = $1`,
+      [aid]
     );
-    let academyPrefix = "";
-    if (aid) {
-      const { rows: acadRows } = await db.query(`SELECT roll_prefix FROM academies WHERE id=$1`, [aid]);
-      academyPrefix = acadRows[0]?.roll_prefix || "";
-    }
-    const { rows: existing } = await db.query(
-      `SELECT branch_id, MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
-       FROM students WHERE roll_no IS NOT NULL GROUP BY branch_id`
-    );
+    const academyPrefix = acadRows[0]?.roll_prefix || "";
+    const rollResetDone = acadRows[0]?.roll_reset_done || false;
+
+    let students = [];
     const maxSerial = {};
-    existing.forEach((r) => { maxSerial[r.branch_id] = r.max_serial || 0; });
+
+    if (!rollResetDone) {
+      // ONE-TIME RESET: Select ALL students in the academy, regardless of whether they have a roll number
+      const { rows } = await db.query(
+        `SELECT s.id, s.branch_id, s.batch_id, br.name AS branch_name, br.roll_prefix AS branch_prefix, ba.batch_code
+         FROM students s
+         JOIN branches br ON br.id = s.branch_id
+         LEFT JOIN batches ba ON ba.id = s.batch_id
+         WHERE s.academy_id = $1
+         ORDER BY s.branch_id, s.batch_id, s.id ASC`,
+        [aid]
+      );
+      students = rows;
+      // Since it's a reset, all sequences start at 0
+    } else {
+      // INCREMENTAL SYNC: Select only students missing a roll number
+      const { rows } = await db.query(
+        `SELECT s.id, s.branch_id, s.batch_id, br.name AS branch_name, br.roll_prefix AS branch_prefix, ba.batch_code
+         FROM students s
+         JOIN branches br ON br.id = s.branch_id
+         LEFT JOIN batches ba ON ba.id = s.batch_id
+         WHERE (s.roll_no IS NULL OR s.roll_no = '') AND s.academy_id = $1
+         ORDER BY s.branch_id, s.batch_id, s.id ASC`,
+        [aid]
+      );
+      students = rows;
+
+      // Fetch existing max serials grouped by batch_id
+      const { rows: existing } = await db.query(
+        `SELECT batch_id, MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
+         FROM students 
+         WHERE roll_no IS NOT NULL AND academy_id = $1 AND batch_id IS NOT NULL
+         GROUP BY batch_id`,
+        [aid]
+      );
+      existing.forEach((r) => {
+        maxSerial[r.batch_id] = r.max_serial || 0;
+      });
+    }
+
     let updated = 0;
     const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
       for (const s of students) {
-        const prefix = buildRollPrefix(academyPrefix, s.branch_prefix, s.branch_name);
-        const serial = (maxSerial[s.branch_id] || 0) + 1;
-        maxSerial[s.branch_id] = serial;
+        // Fallback batch_id to 0 in maxSerial map if a student has no batch_id (should not happen, but safe)
+        const batchKey = s.batch_id || 0;
+        const prefix = buildRollPrefix(academyPrefix, s.branch_prefix, s.batch_code, s.branch_name);
+        const serial = (maxSerial[batchKey] || 0) + 1;
+        maxSerial[batchKey] = serial;
         const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;
         await client.query(`UPDATE students SET roll_no=$1 WHERE id=$2`, [rollNo, s.id]);
         updated++;
       }
+
+      // Mark the one-time reset as done
+      if (!rollResetDone) {
+        await client.query(`UPDATE academies SET roll_reset_done = true WHERE id = $1`, [aid]);
+      }
+
       await client.query("COMMIT");
-      res.json({ updated, message: `Roll numbers assigned to ${updated} students` });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
+      res.json({ updated, message: `Roll numbers synchronized for ${updated} students` });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     console.error("Backfill roll numbers error:", e.message);
-    res.status(500).json({ error: "Failed to backfill roll numbers: " + e.message });
+    res.status(500).json({ error: "Failed to sync roll numbers: " + e.message });
   }
 });
 
@@ -164,20 +211,23 @@ router.post("/", auth, async (req, res) => {
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
 
     const { rows: brRows } = await db.query(
-      `SELECT br.name, br.roll_prefix AS branch_prefix, a.roll_prefix AS academy_prefix
-       FROM branches br LEFT JOIN academies a ON a.id = br.academy_id
-       WHERE br.id=$1`, [bid]
+      `SELECT br.name, br.roll_prefix AS branch_prefix, a.roll_prefix AS academy_prefix, ba.batch_code
+       FROM branches br 
+       LEFT JOIN academies a ON a.id = br.academy_id
+       LEFT JOIN batches ba ON ba.id = $2
+       WHERE br.id=$1`, [bid, batch_id]
     );
     const branchInfo = brRows[0] || {};
     const prefix = buildRollPrefix(
       branchInfo.academy_prefix || "",
       branchInfo.branch_prefix  || "",
+      branchInfo.batch_code     || "",
       branchInfo.name           || ""
     );
 
     const { rows: maxRows } = await db.query(
       `SELECT MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
-       FROM students WHERE branch_id=$1 AND roll_no IS NOT NULL`, [bid]
+       FROM students WHERE batch_id=$1 AND roll_no IS NOT NULL`, [batch_id]
     );
     const serial = (maxRows[0]?.max_serial || 0) + 1;
     const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;

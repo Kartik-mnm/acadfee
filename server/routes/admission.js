@@ -4,13 +4,14 @@ const { auth }  = require("../middleware");
 const rateLimit = require("express-rate-limit");
 
 /**
- * Build roll number prefix from academy + branch prefixes.
- * e.g. academy="NA", branch="DW" → "NADW"
+ * Build roll number prefix from academy + branch + batch prefixes.
+ * e.g. academy="NA", branch="DW", batch="A" → "NADWA"
  */
-function buildRollPrefix(academyPrefix, branchPrefix, branchName) {
+function buildRollPrefix(academyPrefix, branchPrefix, batchCode, branchName) {
   const acad   = (academyPrefix || "").toUpperCase().trim();
   const branch = (branchPrefix  || "").toUpperCase().trim();
-  if (acad || branch) return acad + branch;
+  const batch  = (batchCode     || "").toUpperCase().trim();
+  if (acad || branch || batch) return acad + branch + batch;
   if (!branchName) return "NA";
   const lower = branchName.toLowerCase();
   const LEGACY = {
@@ -259,22 +260,25 @@ router.post("/enquiries/:id/approve", auth, async (req, res) => {
       } catch {}
     }
 
-    // Auto-generate roll_no: use prefix logic + max serial per branch
+    // Auto-generate roll_no: use prefix logic + max serial per batch
     const { rows: brRows } = await db.query(
-      `SELECT br.name, br.roll_prefix AS branch_prefix, a.roll_prefix AS academy_prefix
-       FROM branches br LEFT JOIN academies a ON a.id = br.academy_id
-       WHERE br.id=$1`, [resolvedBranchId]
+      `SELECT br.name, br.roll_prefix AS branch_prefix, a.roll_prefix AS academy_prefix, ba.batch_code
+       FROM branches br 
+       LEFT JOIN academies a ON a.id = br.academy_id
+       LEFT JOIN batches ba ON ba.id = $2
+       WHERE br.id=$1`, [resolvedBranchId, e.batch_id || null]
     );
     const branchInfo = brRows[0] || {};
     const prefix = buildRollPrefix(
       branchInfo.academy_prefix || "",
       branchInfo.branch_prefix  || "",
+      branchInfo.batch_code     || "",
       branchInfo.name           || ""
     );
 
     const { rows: maxRows } = await db.query(
       `SELECT MAX(CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER)) AS max_serial
-       FROM students WHERE branch_id=$1 AND roll_no IS NOT NULL`, [resolvedBranchId]
+       FROM students WHERE batch_id=$1 AND roll_no IS NOT NULL`, [e.batch_id]
     );
     const serial = (maxRows[0]?.max_serial || 0) + 1;
     const rollNo = `${prefix}${String(serial).padStart(4, "0")}`;

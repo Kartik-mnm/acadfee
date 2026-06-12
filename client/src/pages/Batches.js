@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 
-const EMPTY = { name: "", subjects: "", fee_monthly: "", fee_quarterly: "", fee_yearly: "", fee_course: "", branch_id: "", start_date: "", end_date: "" };
+const EMPTY = { name: "", subjects: "", fee_monthly: "", fee_quarterly: "", fee_yearly: "", fee_course: "", branch_id: "", start_date: "", end_date: "", batch_code: "" };
 const fmt     = (n) => n ? `₹${Number(n).toLocaleString("en-IN")}` : "₹0";
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "numeric", year: "numeric" }) : null;
 
@@ -160,7 +160,7 @@ export default function Batches() {
   }, []);
 
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
-  const openEdit = (b) => { setEditing(b.id); setForm({ ...b, start_date: b.start_date ? b.start_date.split("T")[0] : "", end_date: b.end_date ? b.end_date.split("T")[0] : "" }); setError(""); setShowModal(true); };
+  const openEdit = (b) => { setEditing(b.id); setForm({ ...b, start_date: b.start_date ? b.start_date.split("T")[0] : "", end_date: b.end_date ? b.end_date.split("T")[0] : "", batch_code: b.batch_code || "" }); setError(""); setShowModal(true); };
 
   const save = async () => {
     setSaving(true); setError("");
@@ -217,7 +217,7 @@ export default function Batches() {
             <table>
               <thead>
                 <tr>
-                  <th>Batch Name</th><th>Subjects</th>
+                  <th>Batch Name</th><th>Batch Code</th><th>Subjects</th>
                   {isSuperAdmin && <th>Branch</th>}
                   <th>Monthly</th><th>Yearly</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Actions</th>
                 </tr>
@@ -228,6 +228,7 @@ export default function Batches() {
                   return (
                     <tr key={b.id}>
                       <td style={{ fontWeight: 600 }}>{b.name}</td>
+                      <td className="mono" style={{ textTransform: "uppercase", fontWeight: 700 }}>{b.batch_code || "—"}</td>
                       <td className="text-muted">{b.subjects || "—"}</td>
                       {isSuperAdmin && <td>{b.branch_name}</td>}
                       <td className="mono">{fmt(b.fee_monthly)}</td>
@@ -263,6 +264,16 @@ export default function Batches() {
                 <div className="form-group full">
                   <label>Batch Name *</label>
                   <input value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="e.g. JEE Mains – Morning" />
+                </div>
+                <div className="form-group full">
+                  <label>Batch Code (for Roll Numbers)</label>
+                  <input 
+                    value={form.batch_code} 
+                    onChange={(e) => f("batch_code", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").substring(0, 4))} 
+                    placeholder="e.g. A" 
+                    maxLength={4}
+                    style={{ textTransform: "uppercase", fontFamily: "monospace" }}
+                  />
                 </div>
                 <div className="form-group full">
                   <label>Subjects</label>

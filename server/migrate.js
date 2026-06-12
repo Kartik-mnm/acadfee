@@ -341,6 +341,7 @@ async function runMigration() {
       "address TEXT", "phone2 TEXT", "website TEXT", "city TEXT", "state TEXT", "pincode TEXT",
       "max_students INT DEFAULT 100", "max_branches INT DEFAULT 2",
       "updated_at TIMESTAMPTZ DEFAULT NOW()", "roll_prefix TEXT DEFAULT ''",
+      "roll_reset_done BOOLEAN DEFAULT false",
     ]) {
       await safe(`ALTER TABLE academies ADD COLUMN IF NOT EXISTS ${col}`, `academies.${col.split(" ")[0]}`);
     }
@@ -364,7 +365,7 @@ async function runMigration() {
     }
     await safe(`CREATE INDEX IF NOT EXISTS idx_students_academy ON students(academy_id)`, "idx_students_academy");
 
-    for (const col of ["start_date DATE", "end_date DATE", "fee_quarterly NUMERIC", "fee_yearly NUMERIC", "fee_course NUMERIC"]) {
+    for (const col of ["start_date DATE", "end_date DATE", "fee_quarterly NUMERIC", "fee_yearly NUMERIC", "fee_course NUMERIC", "batch_code TEXT DEFAULT ''"]) {
       await safe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS ${col}`, `batches.${col.split(" ")[0]}`);
     }
 

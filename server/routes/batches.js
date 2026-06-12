@@ -29,7 +29,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date } = req.body;
+    const { branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date, batch_code } = req.body;
     if (!name) return res.status(400).json({ error: "Batch name is required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     if (!bid) return res.status(400).json({ error: "Please select a branch" });
@@ -41,9 +41,9 @@ router.post("/", auth, async (req, res) => {
     }
 
     const { rows } = await db.query(
-      `INSERT INTO batches (branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [bid, name, subjects, fee_monthly||0, fee_quarterly||0, fee_yearly||0, fee_course||0, start_date||null, end_date||null]
+      `INSERT INTO batches (branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date, batch_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [bid, name, subjects, fee_monthly||0, fee_quarterly||0, fee_yearly||0, fee_course||0, start_date||null, end_date||null, (batch_code || "").toUpperCase().trim()]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: "Failed to create batch" }); }
@@ -66,10 +66,10 @@ router.put("/:id", auth, async (req, res) => {
     if (req.user.role === "branch_manager" && existing[0].branch_id !== req.user.branch_id)
       return res.status(403).json({ error: "Access denied" });
 
-    const { name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date } = req.body;
+    const { name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date, batch_code } = req.body;
     const { rows } = await db.query(
       `UPDATE batches SET name=$1, subjects=$2, fee_monthly=$3, fee_quarterly=$4, fee_yearly=$5,
-        fee_course=$6, start_date=$7, end_date=$8 WHERE id=$9 RETURNING *`,
+        fee_course=$6, start_date=$7, end_date=$8, batch_code=$9 WHERE id=$10 RETURNING *`,
       [
         name,
         subjects || null,
@@ -79,6 +79,7 @@ router.put("/:id", auth, async (req, res) => {
         fee_course || 0,
         start_date || null,
         end_date || null,
+        (batch_code || "").toUpperCase().trim(),
         req.params.id
       ]
     );
