@@ -302,8 +302,11 @@ router.put("/:id", auth, async (req, res) => {
             fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url } = req.body;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
     
+    const bid = req.user.role === "super_admin" ? (req.body.branch_id || null) : req.user.branch_id;
+    
     // Explicitly handle empty strings for date/numeric fields to prevent PG 500 errors
     const params = [
+      bid,
       batch_id || null, 
       name, 
       phone || null, 
@@ -314,8 +317,8 @@ router.put("/:id", auth, async (req, res) => {
       gender || null, 
       admission_date || null,
       fee_type || 'monthly', 
-      admission_fee || 0, 
-      discount || 0, 
+      parseFloat(admission_fee || 0), 
+      parseFloat(discount || 0), 
       discount_reason || null, 
       status || 'active', 
       dueDaySafe, 
@@ -323,17 +326,17 @@ router.put("/:id", auth, async (req, res) => {
       req.params.id
     ];
 
-    let idx = 18;
-    let whereClause = "WHERE id=$17";
+    let idx = 19;
+    let whereClause = "WHERE id=$18";
     if (aid) {
       whereClause += ` AND academy_id=$${idx}`;
       params.push(aid);
     }
 
     const { rows } = await db.query(
-      `UPDATE students SET batch_id=$1, name=$2, phone=$3, parent_phone=$4, email=$5, address=$6,
-        dob=$7, gender=$8, admission_date=$9, fee_type=$10, admission_fee=$11, discount=$12, 
-        discount_reason=$13, status=$14, due_day=$15, photo_url=$16 
+      `UPDATE students SET branch_id=$1, batch_id=$2, name=$3, phone=$4, parent_phone=$5, email=$6, address=$7,
+        dob=$8, gender=$9, admission_date=$10, fee_type=$11, admission_fee=$12, discount=$13, 
+        discount_reason=$14, status=$15, due_day=$16, photo_url=$17 
         ${whereClause} RETURNING *`,
       params
     );
