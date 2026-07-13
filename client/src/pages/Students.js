@@ -12,6 +12,20 @@ const EMPTY = {
   subjects: []
 };
 
+const parseSubjects = (sub) => {
+  if (Array.isArray(sub)) return sub;
+  if (typeof sub === 'string') {
+    try { return JSON.parse(sub); } 
+    catch (e) {
+      if (sub.startsWith('{') && sub.endsWith('}')) {
+        return sub.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim());
+      }
+      return [sub];
+    }
+  }
+  return [];
+};
+
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth <= 768);
   useEffect(() => {
@@ -333,7 +347,7 @@ export default function Students({ pageState }) {
   const handlePage = (p) => load(p,search,filterBranch,filterStatus,filterBatch);
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
   const openEdit = (s) => { 
-    const sSubjects = Array.isArray(s.subjects) ? s.subjects : (typeof s.subjects === 'string' ? JSON.parse(s.subjects || "[]") : []);
+    const sSubjects = parseSubjects(s.subjects);
     setEditing(s.id); 
     setForm({ ...s, subjects: sSubjects, dob:s.dob?.split("T")[0]||"", admission_date:s.admission_date?.split("T")[0]||"", photo_url:s.photo_url||"" }); 
     setError(""); setShowModal(true); 
@@ -407,12 +421,7 @@ export default function Students({ pageState }) {
 
   const isSuperAdmin = user.role === "super_admin";
   const selectedBatch = form.batch_id ? batches.find(b => b.id == form.batch_id) : null;
-  let batchSubjects = [];
-  if (selectedBatch && selectedBatch.subjects) {
-    batchSubjects = Array.isArray(selectedBatch.subjects) 
-      ? selectedBatch.subjects 
-      : (typeof selectedBatch.subjects === 'string' ? JSON.parse(selectedBatch.subjects || "[]") : []);
-  }
+  const batchSubjects = selectedBatch && selectedBatch.subjects ? parseSubjects(selectedBatch.subjects) : [];
 
   return (
     <div>
@@ -585,30 +594,36 @@ export default function Students({ pageState }) {
                     {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
-                {form.batch_id && batchSubjects.length > 0 && (
+                {form.batch_id && (
                   <div className="form-group full">
                     <label>Subjects</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginTop: '6px' }}>
-                      {batchSubjects.map(sub => (
-                        <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', color: 'var(--text1)' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={Array.isArray(form.subjects) && form.subjects.includes(sub)}
-                            onChange={(e) => {
-                              const arr = Array.isArray(form.subjects) ? [...form.subjects] : [];
-                              if (e.target.checked) arr.push(sub);
-                              else {
-                                const idx = arr.indexOf(sub);
-                                if (idx > -1) arr.splice(idx, 1);
-                              }
-                              f("subjects", arr);
-                            }}
-                            style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
-                          />
-                          {sub}
-                        </label>
-                      ))}
-                    </div>
+                    {batchSubjects.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginTop: '6px' }}>
+                        {batchSubjects.map(sub => (
+                          <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', color: 'var(--text1)' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={Array.isArray(form.subjects) && form.subjects.includes(sub)}
+                              onChange={(e) => {
+                                const arr = Array.isArray(form.subjects) ? [...form.subjects] : [];
+                                if (e.target.checked) arr.push(sub);
+                                else {
+                                  const idx = arr.indexOf(sub);
+                                  if (idx > -1) arr.splice(idx, 1);
+                                }
+                                f("subjects", arr);
+                              }}
+                              style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                            />
+                            {sub}
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '13px', color: 'var(--text3)', marginTop: '4px' }}>
+                        No subjects found for this batch. Add subjects in the Batches section.
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="form-group"><label>Fee Type</label>
