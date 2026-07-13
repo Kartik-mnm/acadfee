@@ -502,7 +502,7 @@ export default function StudentDashboard() {
                     <div style={{ display:"flex", justifyContent:"space-between" }}>
                       <div>
                         <div style={{ fontWeight:700, fontSize:14 }}>{t.test_name || t.name}</div>
-                        <div style={{ fontSize:12, color:"var(--text3)", marginTop:2 }}>{t.subject || "—"} · {t.test_date ? new Date(t.test_date).toLocaleDateString("en-IN") : ""}</div>
+                        <div style={{ fontSize:12, color:"var(--text3)", marginTop:2 }}>{Array.isArray(t.subjects) ? t.subjects.join(", ") : (t.subjects || "—")} · {t.test_date ? new Date(t.test_date).toLocaleDateString("en-IN") : ""}</div>
                       </div>
                       <div style={{ textAlign:"right" }}>
                         {t.marks != null

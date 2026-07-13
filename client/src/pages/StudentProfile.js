@@ -193,6 +193,7 @@ export default function StudentProfile({ studentId, onBack }) {
                 ["Email",         student.email||"—"],
                 ["Branch",        student.branch_name],
                 ["Batch",         student.batch_name||"—"],
+                ["Subjects",      Array.isArray(student.subjects) ? student.subjects.join(", ") : (student.subjects || "—")],
                 ["Fee Type",      student.fee_type],
                 ["Due Day",       `${student.due_day||10}th of every month`],
                 ["Discount",      student.discount>0?`${student.discount}% — ${student.discount_reason||""}`:`None`],
@@ -220,7 +221,7 @@ export default function StudentProfile({ studentId, onBack }) {
             <div className="card"><div className="card-title">📊 Recent Test Scores</div>
               {tests.length===0?<div className="text-muted" style={{fontSize:13}}>No tests yet</div>:tests.slice(0,4).map((t,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid var(--border)",fontSize:13}}>
-                  <div><div style={{fontWeight:600}}>{t.test_name}</div><div className="text-muted text-sm">{t.subject||"—"} · {new Date(t.test_date).toLocaleDateString("en-IN")}</div></div>
+                  <div><div style={{fontWeight:600}}>{t.test_name}</div><div className="text-muted text-sm">{Array.isArray(t.subjects) ? t.subjects.join(", ") : (t.subjects || "—")} · {new Date(t.test_date).toLocaleDateString("en-IN")}</div></div>
                   <div style={{textAlign:"right"}}><div style={{fontWeight:700,color:gradeColor(t.percentage)}}>{t.percentage}%</div><div style={{fontSize:11,color:gradeColor(t.percentage)}}>{grade(t.percentage)}</div></div>
                 </div>
               ))}
@@ -368,7 +369,7 @@ export default function StudentProfile({ studentId, onBack }) {
           </div>
         </div>
       )}
-      {tab==="performance" && (<div className="card"><div className="card-title">📊 Test Performance</div>{tests.length===0?<div className="empty-state"><div className="empty-text">No test records</div></div>:<div className="table-wrap"><table><thead><tr><th>Test Name</th><th>Subject</th><th>Marks</th><th>Out of</th><th>Percentage</th><th>Grade</th><th>Date</th></tr></thead><tbody>{tests.map((t,i)=>(<tr key={i}><td style={{fontWeight:600}}>{t.test_name}</td><td className="text-muted">{t.subject||"—"}</td><td className="mono" style={{fontWeight:700}}>{t.marks}</td><td className="mono text-muted">{t.total_marks}</td><td style={{color:gradeColor(t.percentage),fontWeight:700}}>{t.percentage}%</td><td><span style={{background:gradeColor(t.percentage),color:"#fff",padding:"2px 10px",borderRadius:6,fontSize:12,fontWeight:800}}>{grade(t.percentage)}</span></td><td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td></tr>))}</tbody></table></div>}</div>)}
+      {tab==="performance" && (<div className="card"><div className="card-title">📊 Test Performance</div>{tests.length===0?<div className="empty-state"><div className="empty-text">No test records</div></div>:<div className="table-wrap"><table><thead><tr><th>Test Name</th><th>Subjects</th><th>Marks</th><th>Out of</th><th>Percentage</th><th>Grade</th><th>Date</th></tr></thead><tbody>{tests.map((t,i)=>(<tr key={i}><td style={{fontWeight:600}}>{t.test_name}</td><td className="text-muted">{Array.isArray(t.subjects) ? t.subjects.join(", ") : (t.subjects || "—")}</td><td className="mono" style={{fontWeight:700}}>{t.marks}</td><td className="mono text-muted">{t.total_marks}</td><td style={{color:gradeColor(t.percentage),fontWeight:700}}>{t.percentage}%</td><td><span style={{background:gradeColor(t.percentage),color:"#fff",padding:"2px 10px",borderRadius:6,fontSize:12,fontWeight:800}}>{grade(t.percentage)}</span></td><td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td></tr>))}</tbody></table></div>}</div>)}
     </div>
   );
 }

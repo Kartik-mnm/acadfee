@@ -8,7 +8,8 @@ const EMPTY = {
   name: "", phone: "", parent_phone: "", email: "", address: "",
   dob: "", gender: "", admission_date: new Date().toISOString().split("T")[0],
   fee_type: "monthly", admission_fee: "", discount: "0", discount_reason: "",
-  due_day: "10", batch_id: "", branch_id: "", status: "active", photo_url: ""
+  due_day: "10", batch_id: "", branch_id: "", status: "active", photo_url: "",
+  subjects: []
 };
 
 function useIsMobile() {
@@ -331,7 +332,7 @@ export default function Students({ pageState }) {
 
   const handlePage = (p) => load(p,search,filterBranch,filterStatus,filterBatch);
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
-  const openEdit = (s) => { setEditing(s.id); setForm({ ...s, dob:s.dob?.split("T")[0]||"", admission_date:s.admission_date?.split("T")[0]||"", photo_url:s.photo_url||"" }); setError(""); setShowModal(true); };
+  const openEdit = (s) => { setEditing(s.id); setForm({ ...s, subjects: Array.isArray(s.subjects) ? s.subjects : [], dob:s.dob?.split("T")[0]||"", admission_date:s.admission_date?.split("T")[0]||"", photo_url:s.photo_url||"" }); setError(""); setShowModal(true); };
 
   const save = async () => {
     setSaving(true); setError("");
@@ -400,6 +401,8 @@ export default function Students({ pageState }) {
   if (profileId) return <StudentProfile studentId={profileId} onBack={() => setProfileId(null)} />;
 
   const isSuperAdmin = user.role === "super_admin";
+  const selectedBatch = form.batch_id ? batches.find(b => b.id == form.batch_id) : null;
+  const batchSubjects = selectedBatch && Array.isArray(selectedBatch.subjects) ? selectedBatch.subjects : [];
 
   return (
     <div>
@@ -572,6 +575,32 @@ export default function Students({ pageState }) {
                     {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
+                {form.batch_id && batchSubjects.length > 0 && (
+                  <div className="form-group full">
+                    <label>Subjects</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginTop: '6px' }}>
+                      {batchSubjects.map(sub => (
+                        <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', color: 'var(--text1)' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={Array.isArray(form.subjects) && form.subjects.includes(sub)}
+                            onChange={(e) => {
+                              const arr = Array.isArray(form.subjects) ? [...form.subjects] : [];
+                              if (e.target.checked) arr.push(sub);
+                              else {
+                                const idx = arr.indexOf(sub);
+                                if (idx > -1) arr.splice(idx, 1);
+                              }
+                              f("subjects", arr);
+                            }}
+                            style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                          />
+                          {sub}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="form-group"><label>Fee Type</label>
                   <select value={form.fee_type} onChange={(e) => f("fee_type",e.target.value)}>
                     <option value="monthly">Monthly</option>

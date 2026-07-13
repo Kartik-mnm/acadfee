@@ -203,7 +203,7 @@ router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
     const { branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
-            admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url } = req.body;
+            admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, subjects } = req.body;
     if (!name || !batch_id) return res.status(400).json({ error: "name and batch_id are required" });
     const bid = req.user.role === "super_admin" ? branch_id : req.user.branch_id;
     if (!bid) return res.status(400).json({ error: "Please select a branch" });
@@ -246,8 +246,8 @@ router.post("/", auth, async (req, res) => {
 
     const { rows } = await db.query(
       `INSERT INTO students (branch_id, batch_id, name, phone, parent_phone, email, address, dob, gender,
-        admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, roll_no, academy_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+        admission_date, fee_type, admission_fee, discount, discount_reason, due_day, photo_url, roll_no, academy_id, subjects)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [
         bid,
         batch_id,
@@ -266,7 +266,8 @@ router.post("/", auth, async (req, res) => {
         dueDaySafe,
         photo_url       || null,
         rollNo,
-        aid
+        aid,
+        JSON.stringify(subjects || [])
       ]
     );
     if (email) { const { addContactToResend } = require("../email"); addContactToResend(name, email).catch(console.error); }
@@ -299,7 +300,7 @@ router.put("/:id", auth, async (req, res) => {
   try {
     const aid = req.academyId;
     const { batch_id, name, phone, parent_phone, email, address, dob, gender, admission_date,
-            fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url } = req.body;
+            fee_type, admission_fee, discount, discount_reason, status, due_day, photo_url, subjects } = req.body;
     const dueDaySafe = Math.min(Math.max(parseInt(due_day) || 10, 1), 28);
     
     const bid = req.user.role === "super_admin" ? (req.body.branch_id || null) : req.user.branch_id;
@@ -323,11 +324,12 @@ router.put("/:id", auth, async (req, res) => {
       status || 'active', 
       dueDaySafe, 
       photo_url || null,
+      JSON.stringify(subjects || []),
       req.params.id
     ];
 
-    let idx = 19;
-    let whereClause = "WHERE id=$18";
+    let idx = 20;
+    let whereClause = "WHERE id=$19";
     if (aid) {
       whereClause += ` AND academy_id=$${idx}`;
       params.push(aid);
@@ -336,7 +338,7 @@ router.put("/:id", auth, async (req, res) => {
     const { rows } = await db.query(
       `UPDATE students SET branch_id=$1, batch_id=$2, name=$3, phone=$4, parent_phone=$5, email=$6, address=$7,
         dob=$8, gender=$9, admission_date=$10, fee_type=$11, admission_fee=$12, discount=$13, 
-        discount_reason=$14, status=$15, due_day=$16, photo_url=$17 
+        discount_reason=$14, status=$15, due_day=$16, photo_url=$17, subjects=$18 
         ${whereClause} RETURNING *`,
       params
     );

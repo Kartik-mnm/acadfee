@@ -144,7 +144,7 @@ router.get("/", auth, branchFilter, async (req, res) => {
 router.post("/", auth, async (req, res) => {
   if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
   try {
-    const { branch_id, batch_id, name, subject, total_marks, test_date } = req.body;
+    const { branch_id, batch_id, name, subjects, total_marks, test_date } = req.body;
     if (!name || !total_marks)
       return res.status(400).json({ error: "name and total_marks are required" });
 
@@ -162,9 +162,9 @@ router.post("/", auth, async (req, res) => {
     const safeDate = normalizeDate(test_date);
 
     const { rows } = await db.query(
-      `INSERT INTO tests (branch_id, batch_id, name, subject, total_marks, test_date)
+      `INSERT INTO tests (branch_id, batch_id, name, subjects, total_marks, test_date)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [bid, batch_id || null, name, subject || null, total_marks, safeDate]
+      [bid, batch_id || null, name, JSON.stringify(subjects || []), total_marks, safeDate]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -191,6 +191,56 @@ router.delete("/:id", auth, async (req, res) => {
   } catch (e) {
     console.error("Delete test error:", e.message);
     res.status(500).json({ error: "Failed to delete test: " + e.message });
+  }
+});
+
+// GET /api/tests/:id/eligible-students
+router.get("/:id/eligible-students", auth, async (req, res) => {
+  if (req.user.role === "student") return res.status(403).json({ error: "Access denied" });
+  try {
+    const aid = req.academyId;
+    const { rows: testRows } = await db.query(
+      `SELECT t.*, br.academy_id FROM tests t JOIN branches br ON br.id=t.branch_id WHERE t.id=$1`,
+      [req.params.id]
+    );
+    if (!testRows[0]) return res.status(404).json({ error: "Test not found" });
+    if (aid && testRows[0].academy_id !== aid) return res.status(403).json({ error: "Access denied" });
+    const test = testRows[0];
+    
+    // Fetch all active students in the batch
+    const { rows: allStudents } = await db.query(
+      `SELECT s.*, b.name AS batch_name, br.name AS branch_name
+       FROM students s 
+       LEFT JOIN batches b ON b.id=s.batch_id 
+       LEFT JOIN branches br ON br.id=s.branch_id
+       WHERE s.batch_id=$1 AND s.status='active'
+       ORDER BY s.name ASC`,
+      [test.batch_id]
+    );
+
+    // If test has no subjects, all students are eligible
+    if (!test.subjects || test.subjects.length === 0) {
+      return res.json(allStudents);
+    }
+    
+    const testSubs = test.subjects;
+    let studentsWithSubjects = 0;
+    const eligibleStudents = allStudents.filter(s => {
+      const studentSubs = s.subjects || [];
+      const overlaps = testSubs.some(ts => studentSubs.includes(ts));
+      if (overlaps) studentsWithSubjects++;
+      return overlaps;
+    });
+
+    if (studentsWithSubjects === 0) {
+      // Feature 8: "If a Test is created using a custom subject that NO student currently has, then all students of the batch should appear in that test."
+      return res.json(allStudents);
+    }
+    
+    res.json(eligibleStudents);
+  } catch(e) {
+    console.error("Eligible students error:", e.message);
+    res.status(500).json({ error: "Failed to fetch eligible students" });
   }
 });
 
@@ -274,15 +324,20 @@ router.get("/student/:studentId", auth, async (req, res) => {
     return res.status(403).json({ error: "Access denied" });
   try {
     const aid = req.academyId;
-    if (req.user.role !== "student" && aid) {
-      const { rows: sRows } = await db.query(
-        `SELECT id FROM students WHERE id=$1 AND academy_id=$2`,
-        [req.params.studentId, aid]
-      );
-      if (!sRows[0]) return res.status(403).json({ error: "Student does not belong to your academy" });
+    let studentSubs = [];
+    
+    const { rows: sRows } = await db.query(
+      `SELECT id, academy_id, subjects FROM students WHERE id=$1`,
+      [req.params.studentId]
+    );
+    if (!sRows[0]) return res.status(404).json({ error: "Student not found" });
+    if (req.user.role !== "student" && aid && sRows[0].academy_id !== aid) {
+      return res.status(403).json({ error: "Student does not belong to your academy" });
     }
+    studentSubs = sRows[0].subjects || [];
+
     const { rows } = await db.query(
-      `SELECT t.name AS test_name, t.subject, t.total_marks, t.test_date,
+      `SELECT t.name AS test_name, t.subjects, t.total_marks, t.test_date, t.batch_id,
               tr.marks, ROUND((tr.marks / t.total_marks::numeric) * 100, 1) AS percentage
        FROM test_results tr
        JOIN tests t ON t.id = tr.test_id
@@ -290,7 +345,47 @@ router.get("/student/:studentId", auth, async (req, res) => {
        ORDER BY t.test_date DESC`,
       [req.params.studentId]
     );
-    res.json(rows);
+
+    // If test subjects don't overlap with current student subjects, and SOME student has the test subject, 
+    // filter it out. (We need to check if ANY student in the batch has it to properly satisfy Feature 8, 
+    // but a simplified approach for dashboard is to just check if it overlaps, OR if we don't have batch data, assume they aren't eligible).
+    // Let's implement full Feature 8 check:
+    
+    const batchSubjectsCheck = {};
+    const filteredRows = [];
+
+    for (const t of rows) {
+      const testSubs = t.subjects || [];
+      if (testSubs.length === 0) {
+        filteredRows.push(t);
+        continue;
+      }
+      
+      const overlaps = testSubs.some(ts => studentSubs.includes(ts));
+      if (overlaps) {
+        filteredRows.push(t);
+        continue;
+      }
+      
+      // Feature 8: if it doesn't overlap, check if ANY student in the batch has this subject
+      if (t.batch_id) {
+        if (batchSubjectsCheck[t.batch_id] === undefined) {
+          const { rows: bStudents } = await db.query(`SELECT subjects FROM students WHERE batch_id=$1 AND status='active'`, [t.batch_id]);
+          const allBatchSubs = new Set();
+          bStudents.forEach(bs => (bs.subjects || []).forEach(s => allBatchSubs.add(s)));
+          batchSubjectsCheck[t.batch_id] = allBatchSubs;
+        }
+        
+        const someoneHasIt = testSubs.some(ts => batchSubjectsCheck[t.batch_id].has(ts));
+        if (!someoneHasIt) {
+          filteredRows.push(t); // Feature 8 fallback
+        }
+      } else {
+        // No batch info, strictly enforce overlap
+      }
+    }
+
+    res.json(filteredRows);
   } catch (e) {
     console.error("Student performance error:", e.message);
     res.status(500).json({ error: "Failed to fetch performance" });

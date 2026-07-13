@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api";
 
-const EMPTY = { name: "", subjects: "", fee_monthly: "", fee_quarterly: "", fee_yearly: "", fee_course: "", branch_id: "", start_date: "", end_date: "", batch_code: "" };
+const EMPTY = { name: "", subjects: [], fee_monthly: "", fee_quarterly: "", fee_yearly: "", fee_course: "", branch_id: "", start_date: "", end_date: "", batch_code: "" };
 const fmt     = (n) => n ? `₹${Number(n).toLocaleString("en-IN")}` : "₹0";
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "numeric", year: "numeric" }) : null;
 
@@ -36,7 +36,8 @@ function MobileBatchCard({ b, isSuperAdmin, onEdit, onDel }) {
   const st        = batchStatus(b);
   const startDate = fmtDate(b.start_date);
   const endDate   = fmtDate(b.end_date);
-  const subjColor = subjectColor(b.subjects || b.name);
+  const subjectText = Array.isArray(b.subjects) ? b.subjects.join(", ") : (b.subjects || "");
+  const subjColor = subjectColor(subjectText || b.name);
   const fee       = b.fee_monthly || b.fee_course || b.fee_yearly || 0;
   const initPay   = b.fee_quarterly || 0;
 
@@ -83,9 +84,9 @@ function MobileBatchCard({ b, isSuperAdmin, onEdit, onDel }) {
         <div style={{ fontWeight: 800, fontSize: 17, color: "#e6ebfc", letterSpacing: "0.01em", marginBottom: 3, textTransform: "uppercase" }}>
           {b.name}
         </div>
-        {b.subjects && (
+        {subjectText && (
           <div style={{ fontSize: 13, fontWeight: 600, color: subjColor, marginBottom: 14 }}>
-            {b.subjects}
+            {subjectText}
           </div>
         )}
 
@@ -146,21 +147,57 @@ export default function Batches() {
   const isMobile  = useIsMobile();
   const [batches,   setBatches]   = useState([]);
   const [branches,  setBranches]  = useState([]);
+  const [customSubjects, setCustomSubjects] = useState([]);
+  const [newSubject, setNewSubject] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editing,   setEditing]   = useState(null);
   const [form,      setForm]      = useState(EMPTY);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState("");
 
-  const load = () => API.get("/batches").then((r) => setBatches(r.data));
+  const predefinedSubjects = [
+    "Physics", "Chemistry", "Biology", "Maths 1", "Maths 2", 
+    "Computer Science", "Information Technology", "English", "Hindi", "Electronics"
+  ];
+
+  const load = () => {
+    API.get("/batches").then((r) => setBatches(r.data));
+    API.get("/subjects").then((r) => setCustomSubjects(r.data)).catch(() => {});
+  };
 
   useEffect(() => {
     load();
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data));
   }, []);
 
-  const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
-  const openEdit = (b) => { setEditing(b.id); setForm({ ...b, start_date: b.start_date ? b.start_date.split("T")[0] : "", end_date: b.end_date ? b.end_date.split("T")[0] : "", batch_code: b.batch_code || "" }); setError(""); setShowModal(true); };
+  const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setNewSubject(""); setShowModal(true); };
+  const openEdit = (b) => { 
+    setEditing(b.id); 
+    setForm({ 
+      ...b, 
+      subjects: Array.isArray(b.subjects) ? b.subjects : [], 
+      start_date: b.start_date ? b.start_date.split("T")[0] : "", 
+      end_date: b.end_date ? b.end_date.split("T")[0] : "", 
+      batch_code: b.batch_code || "" 
+    }); 
+    setError(""); 
+    setNewSubject("");
+    setShowModal(true); 
+  };
+
+  const handleAddCustomSubject = async (e) => {
+    e.preventDefault();
+    if (!newSubject.trim()) return;
+    try {
+      const { data } = await API.post("/subjects", { name: newSubject.trim() });
+      setCustomSubjects(prev => [...prev.filter(s => s.id !== data.id), data]);
+      setNewSubject("");
+      // Automatically check it
+      setForm(p => ({ ...p, subjects: [...(Array.isArray(p.subjects) ? p.subjects : []), data.name] }));
+    } catch (e) {
+      setError("Failed to add custom subject");
+    }
+  };
 
   const save = async () => {
     setSaving(true); setError("");
@@ -229,7 +266,7 @@ export default function Batches() {
                     <tr key={b.id}>
                       <td style={{ fontWeight: 600 }}>{b.name}</td>
                       <td className="mono" style={{ textTransform: "uppercase", fontWeight: 700 }}>{b.batch_code || "—"}</td>
-                      <td className="text-muted">{b.subjects || "—"}</td>
+                      <td className="text-muted">{Array.isArray(b.subjects) ? b.subjects.join(", ") : (b.subjects || "—")}</td>
                       {isSuperAdmin && <td>{b.branch_name}</td>}
                       <td className="mono">{fmt(b.fee_monthly)}</td>
                       <td className="mono">{fmt(b.fee_yearly)}</td>
@@ -277,7 +314,37 @@ export default function Batches() {
                 </div>
                 <div className="form-group full">
                   <label>Subjects</label>
-                  <input value={form.subjects} onChange={(e) => f("subjects", e.target.value)} placeholder="Physics, Chemistry, Maths" />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginTop: '6px', marginBottom: '10px' }}>
+                    {[...predefinedSubjects, ...customSubjects.map(s => s.name)].map(sub => (
+                      <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', color: 'var(--text1)' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={Array.isArray(form.subjects) && form.subjects.includes(sub)}
+                          onChange={(e) => {
+                            const arr = Array.isArray(form.subjects) ? [...form.subjects] : [];
+                            if (e.target.checked) arr.push(sub);
+                            else {
+                              const idx = arr.indexOf(sub);
+                              if (idx > -1) arr.splice(idx, 1);
+                            }
+                            f("subjects", arr);
+                          }}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                        />
+                        {sub}
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input 
+                      type="text" 
+                      placeholder="New custom subject..." 
+                      value={newSubject}
+                      onChange={e => setNewSubject(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAddCustomSubject(e); }}
+                    />
+                    <button type="button" className="btn btn-secondary" onClick={handleAddCustomSubject} disabled={!newSubject.trim()}>Add Subject</button>
+                  </div>
                 </div>
                 {isSuperAdmin && (
                   <div className="form-group full">

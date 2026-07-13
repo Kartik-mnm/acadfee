@@ -73,6 +73,7 @@ app.use("/api/payments",     require("./routes/payments"));
 app.use("/api/reports",      require("./routes/reports"));
 app.use("/api/attendance",   require("./routes/attendance"));
 app.use("/api/tests",        require("./routes/tests"));
+app.use("/api/subjects",     require("./routes/subjects"));
 app.use("/api/expenses",     require("./routes/expenses"));
 app.use("/api/qrscan",       require("./routes/qrscan"));
 app.use("/api/admission",    require("./routes/admission"));

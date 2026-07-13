@@ -43,7 +43,7 @@ router.post("/", auth, async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO batches (branch_id, name, subjects, fee_monthly, fee_quarterly, fee_yearly, fee_course, start_date, end_date, batch_code)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [bid, name, subjects, fee_monthly||0, fee_quarterly||0, fee_yearly||0, fee_course||0, start_date||null, end_date||null, (batch_code || "").toUpperCase().trim()]
+      [bid, name, JSON.stringify(subjects || []), fee_monthly||0, fee_quarterly||0, fee_yearly||0, fee_course||0, start_date||null, end_date||null, (batch_code || "").toUpperCase().trim()]
     );
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: "Failed to create batch" }); }
@@ -72,7 +72,7 @@ router.put("/:id", auth, async (req, res) => {
         fee_course=$6, start_date=$7, end_date=$8, batch_code=$9 WHERE id=$10 RETURNING *`,
       [
         name,
-        subjects || null,
+        JSON.stringify(subjects || []),
         fee_monthly || 0,
         fee_quarterly || 0,
         fee_yearly || 0,

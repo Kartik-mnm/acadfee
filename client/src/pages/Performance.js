@@ -58,12 +58,12 @@ function TestCard({ t, user, onResults, onDelete }) {
 
       {/* Subject chips */}
       <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-        {t.subject && (
+        {t.subjects && (
           <span style={{
             background:"rgba(155,168,255,0.15)", color:"#9ba8ff",
             borderRadius:100, padding:"3px 10px", fontSize:11, fontWeight:700,
             textTransform:"uppercase", letterSpacing:"0.04em",
-          }}>{t.subject}</span>
+          }}>{Array.isArray(t.subjects) ? t.subjects.join(", ") : t.subjects}</span>
         )}
         {t.batch_name && (
           <span style={{
@@ -147,8 +147,13 @@ export default function Performance() {
   const [loadingResults,  setLoadingResults]  = useState(false);
   const [createError,     setCreateError]     = useState("");
   const [form, setForm] = useState({
-    name:"", subject:"", total_marks:"", test_date:todayISO(), batch_id:"", branch_id:"",
+    name:"", subjects:[], total_marks:"", test_date:todayISO(), batch_id:"", branch_id:"",
   });
+  const [customSubjects, setCustomSubjects] = useState([]);
+  const predefinedSubjects = [
+    "Physics", "Chemistry", "Biology", "Maths 1", "Maths 2", 
+    "Computer Science", "Information Technology", "English", "Hindi", "Electronics"
+  ];
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -171,6 +176,7 @@ export default function Performance() {
     load();
     API.get("/batches").then((r) => setBatches(r.data)).catch(() => {});
     if (user.role === "super_admin") API.get("/branches").then((r) => setBranches(r.data)).catch(() => {});
+    API.get("/subjects").then((r) => setCustomSubjects(r.data)).catch(() => {});
   }, []);
 
   const createTest = async () => {
@@ -194,20 +200,15 @@ export default function Performance() {
     setShowResultModal(true);
     setResults([]);
     try {
-      const batchQuery  = test.batch_id  ? `&batch_id=${test.batch_id}`   : "";
-      const branchQuery = test.branch_id ? `&branch_id=${test.branch_id}` : "";
-      const [resData, allStudents] = await Promise.all([
+      const [resData, eligibleRes] = await Promise.all([
         API.get(`/tests/${test.id}/results`),
-        // BUG FIX: pass batch_id to server so filtering is done server-side.
-        // Previously fetched limit=1000 then filtered client-side, silently missing
-        // students in large academies. Now the server returns only relevant students.
-        fetchAllStudents(`${branchQuery}${batchQuery}`),
+        API.get(`/tests/${test.id}/eligible-students`),
       ]);
       const existingRows = Array.isArray(resData.data?.data) ? resData.data.data
         : Array.isArray(resData.data) ? resData.data : [];
       const existingMap = {};
       existingRows.forEach((r) => { existingMap[r.student_id] = r.marks; });
-      // No client-side batch filter needed — server already scoped by batch_id
+      const allStudents = eligibleRes.data || [];
       setResults(allStudents.map((s) => ({
         student_id: s.id, student_name: s.name, photo_url: s.photo_url || "",
         roll_no: s.roll_no || "", marks: existingMap[s.id] ?? "",
@@ -291,7 +292,7 @@ export default function Performance() {
           ))}
           {/* Schedule new test CTA card */}
           <div
-            onClick={() => { setForm({ name:"", subject:"", total_marks:"", test_date:todayISO(), batch_id:"", branch_id:"" }); setCreateError(""); setShowTestModal(true); }}
+            onClick={() => { setForm({ name:"", subjects:[], total_marks:"", test_date:todayISO(), batch_id:"", branch_id:"" }); setCreateError(""); setShowTestModal(true); }}
             style={{
               border:"2px dashed rgba(155,168,255,0.2)",
               borderRadius:16, padding:"24px 16px",
@@ -335,9 +336,29 @@ export default function Performance() {
                   <label>Test Name *</label>
                   <input value={form.name} onChange={(e) => f("name", e.target.value)} placeholder="e.g. Monthly Test – March" />
                 </div>
-                <div className="form-group">
-                  <label>Subject</label>
-                  <input value={form.subject} onChange={(e) => f("subject", e.target.value)} placeholder="Physics, Maths..." />
+                <div className="form-group full">
+                  <label>Subjects</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginTop: '6px' }}>
+                    {[...predefinedSubjects, ...customSubjects.map(s => s.name)].map(sub => (
+                      <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', color: 'var(--text1)' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={Array.isArray(form.subjects) && form.subjects.includes(sub)}
+                          onChange={(e) => {
+                            const arr = Array.isArray(form.subjects) ? [...form.subjects] : [];
+                            if (e.target.checked) arr.push(sub);
+                            else {
+                              const idx = arr.indexOf(sub);
+                              if (idx > -1) arr.splice(idx, 1);
+                            }
+                            f("subjects", arr);
+                          }}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                        />
+                        {sub}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="form-group">
                   <label>Total Marks *</label>
