@@ -332,7 +332,12 @@ export default function Students({ pageState }) {
 
   const handlePage = (p) => load(p,search,filterBranch,filterStatus,filterBatch);
   const openAdd  = () => { setEditing(null); setForm(EMPTY); setError(""); setShowModal(true); };
-  const openEdit = (s) => { setEditing(s.id); setForm({ ...s, subjects: Array.isArray(s.subjects) ? s.subjects : [], dob:s.dob?.split("T")[0]||"", admission_date:s.admission_date?.split("T")[0]||"", photo_url:s.photo_url||"" }); setError(""); setShowModal(true); };
+  const openEdit = (s) => { 
+    const sSubjects = Array.isArray(s.subjects) ? s.subjects : (typeof s.subjects === 'string' ? JSON.parse(s.subjects || "[]") : []);
+    setEditing(s.id); 
+    setForm({ ...s, subjects: sSubjects, dob:s.dob?.split("T")[0]||"", admission_date:s.admission_date?.split("T")[0]||"", photo_url:s.photo_url||"" }); 
+    setError(""); setShowModal(true); 
+  };
 
   const save = async () => {
     setSaving(true); setError("");
@@ -402,7 +407,12 @@ export default function Students({ pageState }) {
 
   const isSuperAdmin = user.role === "super_admin";
   const selectedBatch = form.batch_id ? batches.find(b => b.id == form.batch_id) : null;
-  const batchSubjects = selectedBatch && Array.isArray(selectedBatch.subjects) ? selectedBatch.subjects : [];
+  let batchSubjects = [];
+  if (selectedBatch && selectedBatch.subjects) {
+    batchSubjects = Array.isArray(selectedBatch.subjects) 
+      ? selectedBatch.subjects 
+      : (typeof selectedBatch.subjects === 'string' ? JSON.parse(selectedBatch.subjects || "[]") : []);
+  }
 
   return (
     <div>

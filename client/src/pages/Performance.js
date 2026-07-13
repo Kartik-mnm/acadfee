@@ -4,6 +4,14 @@ import API from "../api";
 
 const todayISO = () => new Date().toISOString().split("T")[0];
 
+const parseSubjects = (sub) => {
+  if (Array.isArray(sub)) return sub;
+  if (typeof sub === 'string') {
+    try { return JSON.parse(sub); } catch (e) { return [sub]; }
+  }
+  return [];
+};
+
 const fetchAllStudents = (query = "") =>
   API.get(`/students?limit=1000${query}`).then((r) => {
     const res = r.data;
@@ -63,7 +71,7 @@ function TestCard({ t, user, onResults, onDelete }) {
             background:"rgba(155,168,255,0.15)", color:"#9ba8ff",
             borderRadius:100, padding:"3px 10px", fontSize:11, fontWeight:700,
             textTransform:"uppercase", letterSpacing:"0.04em",
-          }}>{Array.isArray(t.subjects) ? t.subjects.join(", ") : t.subjects}</span>
+          }}>{parseSubjects(t.subjects).join(", ")}</span>
         )}
         {t.batch_name && (
           <span style={{
