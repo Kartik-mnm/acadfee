@@ -132,7 +132,7 @@ export default function StudentProfile({ studentId, onBack }) {
     { id: "fees",        label: `Fee Records (${fees.length})` },
     { id: "payments",    label: `Payments (${payments.length})` },
     { id: "attendance",  label: `Attendance (${attendance.length})` },
-    { id: "performance", label: `Tests (${tests.length})` },
+    { id: "performance", label: `Performance (${tests.length})` },
   ];
 
   return (

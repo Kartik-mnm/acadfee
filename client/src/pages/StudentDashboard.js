@@ -308,7 +308,7 @@ export default function StudentDashboard() {
             { id:"fees",       label:"💳 Fees"       },
             { id:"payments",   label:"💸 Payments"   },
             { id:"attendance", label:"✅ Attendance" },
-            { id:"tests",      label:"📊 Tests"      },
+            { id:"tests",      label:"📊 Performance" },
           ].map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ padding:"7px 14px", borderRadius:20, fontSize:12, fontWeight:600, border:"1px solid var(--border)", cursor:"pointer", whiteSpace:"nowrap", background:tab===t.id?"var(--accent)":"var(--bg2)", color:tab===t.id?"#fff":"var(--text2)" }}>{t.label}</button>
           ))}
