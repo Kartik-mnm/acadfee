@@ -227,12 +227,14 @@ export default function StudentProfile({ studentId, onBack }) {
               ))}
             </div>
             <div className="card"><div className="card-title">📊 Recent Test Scores</div>
-              {tests.length===0?<div className="text-muted" style={{fontSize:13}}>No tests yet</div>:tests.slice(0,4).map((t,i)=>(
+              {tests.length===0?<div className="text-muted" style={{fontSize:13}}>No tests yet</div>:tests.slice(0,4).map((t,i)=>{
+                const isAbsent = Number(t.marks) === -1;
+                return (
                 <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid var(--border)",fontSize:13}}>
                   <div><div style={{fontWeight:600}}>{t.test_name}</div><div className="text-muted text-sm">{parseSubjects(t.subjects).length > 0 ? parseSubjects(t.subjects).join(", ") : "—"} · {new Date(t.test_date).toLocaleDateString("en-IN")}</div></div>
-                  <div style={{textAlign:"right"}}><div style={{fontWeight:700,color:gradeColor(t.percentage)}}>{t.percentage}%</div><div style={{fontSize:11,color:gradeColor(t.percentage)}}>{grade(t.percentage)}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontWeight:700,color:isAbsent?"var(--red)":gradeColor(t.percentage)}}>{isAbsent?"Absent":`${t.percentage}%`}</div><div style={{fontSize:11,color:isAbsent?"var(--text3)":gradeColor(t.percentage)}}>{isAbsent?"—":grade(t.percentage)}</div></div>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         </div>
@@ -377,7 +379,9 @@ export default function StudentProfile({ studentId, onBack }) {
           </div>
         </div>
       )}
-      {tab==="performance" && (<div className="card"><div className="card-title">📊 Test Performance</div>{tests.length===0?<div className="empty-state"><div className="empty-text">No test records</div></div>:<div className="table-wrap"><table><thead><tr><th>Test Name</th><th>Subjects</th><th>Marks</th><th>Out of</th><th>Percentage</th><th>Grade</th><th>Date</th></tr></thead><tbody>{tests.map((t,i)=>(<tr key={i}><td style={{fontWeight:600}}>{t.test_name}</td><td className="text-muted">{parseSubjects(t.subjects).length > 0 ? parseSubjects(t.subjects).join(", ") : "—"}</td><td className="mono" style={{fontWeight:700}}>{t.marks}</td><td className="mono text-muted">{t.total_marks}</td><td style={{color:gradeColor(t.percentage),fontWeight:700}}>{t.percentage}%</td><td><span style={{background:gradeColor(t.percentage),color:"#fff",padding:"2px 10px",borderRadius:6,fontSize:12,fontWeight:800}}>{grade(t.percentage)}</span></td><td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td></tr>))}</tbody></table></div>}</div>)}
+      {tab==="performance" && (<div className="card"><div className="card-title">📊 Test Performance</div>{tests.length===0?<div className="empty-state"><div className="empty-text">No test records</div></div>:<div className="table-wrap"><table><thead><tr><th>Test Name</th><th>Subjects</th><th>Marks</th><th>Out of</th><th>Percentage</th><th>Grade</th><th>Date</th></tr></thead><tbody>{tests.map((t,i)=>{
+        const isAbsent = Number(t.marks) === -1;
+        return (<tr key={i}><td style={{fontWeight:600}}>{t.test_name}</td><td className="text-muted">{parseSubjects(t.subjects).length > 0 ? parseSubjects(t.subjects).join(", ") : "—"}</td><td className="mono" style={{fontWeight:700,color:isAbsent?"var(--red)":undefined}}>{isAbsent?"Absent":t.marks}</td><td className="mono text-muted">{isAbsent?"—":t.total_marks}</td><td style={{color:isAbsent?"var(--text3)":gradeColor(t.percentage),fontWeight:700}}>{isAbsent?"—":`${t.percentage}%`}</td><td>{isAbsent ? <span className="badge badge-gray">Absent</span> : <span style={{background:gradeColor(t.percentage),color:"#fff",padding:"2px 10px",borderRadius:6,fontSize:12,fontWeight:800}}>{grade(t.percentage)}</span>}</td><td className="text-muted">{new Date(t.test_date).toLocaleDateString("en-IN")}</td></tr>)})}</tbody></table></div>}</div>)}
     </div>
   );
 }

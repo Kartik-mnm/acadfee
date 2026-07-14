@@ -257,6 +257,8 @@ export default function StudentDashboard() {
   };
 
   const pctColor = (p) => p >= 75 ? "var(--green)" : p >= 50 ? "var(--yellow)" : "var(--red)";
+  const grade = (pct) => pct>=90?"A+":pct>=80?"A":pct>=70?"B":pct>=60?"C":pct>=50?"D":"F";
+  const gradeColor = (pct) => pct>=70?"var(--green)":pct>=50?"var(--yellow)":"var(--red)";
 
   if (loading) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
@@ -514,11 +516,19 @@ export default function StudentDashboard() {
                       </div>
                       <div style={{ textAlign:"right" }}>
                         {t.marks != null
-                          ? <div style={{ fontWeight:800, fontSize:18, color:"var(--accent)" }}>{t.marks}<span style={{ fontSize:12, color:"var(--text3)" }}>/{t.total_marks}</span></div>
-                          : <div style={{ fontSize:12, color:"var(--text3)" }}>Not graded</div>
-                        }
-                        {t.percentage != null && <div style={{ fontSize:11, color:"var(--text3)" }}>{t.percentage}%</div>}
-                      </div>
+                          ? (Number(t.marks) === -1 ? (
+                              <div style={{ fontWeight:700, fontSize:15, color:"var(--red)" }}>Absent</div>
+                            ) : (
+                              <>
+                                <div style={{ fontWeight:700, fontSize:15, color: gradeColor(t.percentage) }}>{t.marks} / {t.total_marks}</div>
+                                <div style={{ fontSize:11, color: gradeColor(t.percentage), marginTop:2 }}>
+                                  {t.percentage}% • <span style={{ fontWeight:800 }}>{grade(t.percentage)}</span>
+                                </div>
+                              </>
+                            ))
+                          : (
+                            <div style={{ fontSize:12, color:"var(--text3)", fontStyle:"italic" }}>Pending</div>
+                          )}</div>
                     </div>
                   </div>
                 ))

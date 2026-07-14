@@ -232,7 +232,7 @@ export default function Performance() {
       const valid = results.filter((r) => r.marks !== "" && r.marks !== null && r.marks !== undefined);
       if (valid.length === 0) {
         setSaving(false);
-        alert("Enter at least one mark before saving.");
+        alert("Enter at least one mark or mark someone absent before saving.");
         return;
       }
       // BUG FIX #16: confirm before overwriting existing results to prevent accidental data loss
@@ -261,8 +261,10 @@ export default function Performance() {
   const grade = (pct) => pct>=90?"A+":pct>=80?"A":pct>=70?"B":pct>=60?"C":pct>=50?"D":"F";
   const gradeColor = (pct) => pct>=70?"badge-green":pct>=50?"badge-yellow":"badge-red";
   const rankedResults = [...results]
-    .filter((r) => r.marks !== "" && r.marks !== null && r.marks !== undefined)
+    .filter((r) => r.marks !== "" && r.marks !== null && r.marks !== undefined && Number(r.marks) >= 0)
     .sort((a, b) => parseFloat(b.marks) - parseFloat(a.marks));
+  
+  const absentResults = [...results].filter((r) => Number(r.marks) === -1);
 
   return (
     <div>
@@ -452,7 +454,18 @@ export default function Performance() {
                               <td data-label="Grade"><span className={`badge ${gradeColor(pct)}`}>{grade(pct)}</span></td>
                             </tr>
                           );
-                        })}</tbody>
+                        })}
+                        {absentResults.map((r, i) => (
+                            <tr key={r.student_id} style={{ background: "rgba(255,255,255,0.02)" }}>
+                              <td data-label="#" style={{ fontWeight:800, fontSize:14, color:"var(--text3)" }}>—</td>
+                              <td data-label="Photo"><MiniAvatar student={r} /></td>
+                              <td data-label="Student" style={{ fontWeight:600, color:"var(--text2)" }}>{r.student_name}</td>
+                              <td data-label="Marks" className="mono" style={{ fontWeight:700, color:"var(--red)" }}>Absent</td>
+                              <td data-label="%" style={{ fontWeight:700, color: "var(--text3)" }}>—</td>
+                              <td data-label="Grade"><span className="badge badge-gray">Absent</span></td>
+                            </tr>
+                        ))}
+                        </tbody>
                       </table></div>
                     </div>
                   )}
@@ -464,7 +477,8 @@ export default function Performance() {
                       <th>%</th><th>Grade</th>
                     </tr></thead>
                     <tbody>{results.map((r, i) => {
-                      const pct = r.marks !== "" && r.marks !== null
+                      const isAbsent = Number(r.marks) === -1;
+                      const pct = (r.marks !== "" && r.marks !== null && !isAbsent)
                         ? Math.round((parseFloat(r.marks) / parseFloat(selectedTest.total_marks)) * 100)
                         : null;
                       return (
@@ -475,18 +489,30 @@ export default function Performance() {
                             {r.roll_no && <div style={{ fontSize:11, color:"var(--text3)", fontFamily:"monospace" }}>{r.roll_no}</div>}
                           </td>
                           <td data-label="Marks">
-                            <input type="number" value={r.marks} min="0" max={selectedTest.total_marks}
-                              placeholder="—"
-                              onChange={(e) => setResults((prev) =>
-                                prev.map((x, j) => j===i ? { ...x, marks: e.target.value } : x)
-                              )}
-                              style={{ width:90 }}
-                            />
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                              <input type="number" value={isAbsent ? "" : r.marks} min="0" max={selectedTest.total_marks}
+                                placeholder="—"
+                                onChange={(e) => setResults((prev) =>
+                                  prev.map((x, j) => j===i ? { ...x, marks: e.target.value } : x)
+                                )}
+                                style={{ width:70 }}
+                                disabled={isAbsent}
+                              />
+                              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: isAbsent ? "var(--red)" : "var(--text2)" }}>
+                                <input type="checkbox" checked={isAbsent} 
+                                  onChange={(e) => setResults(prev => prev.map((x, j) => j===i ? { ...x, marks: e.target.checked ? -1 : "" } : x))}
+                                  style={{ accentColor: "var(--red)" }}
+                                />
+                                Absent
+                              </label>
+                            </div>
                           </td>
                           <td data-label="%" style={{ fontWeight:700, color: pct!==null?(pct>=70?"var(--green)":pct>=50?"var(--yellow)":"var(--red)"):"var(--text2)" }}>
-                            {pct !== null ? `${pct}%` : "—"}
+                            {isAbsent ? "—" : (pct !== null ? `${pct}%` : "—")}
                           </td>
-                          <td data-label="Grade">{pct!==null ? <span className={`badge ${gradeColor(pct)}`}>{grade(pct)}</span> : "—"}</td>
+                          <td data-label="Grade">
+                            {isAbsent ? <span className="badge badge-gray">Absent</span> : (pct!==null ? <span className={`badge ${gradeColor(pct)}`}>{grade(pct)}</span> : "—")}
+                          </td>
                         </tr>
                       );
                     })}</tbody>
