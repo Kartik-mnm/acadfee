@@ -43,100 +43,67 @@ function TestCard({ t, user, onResults, onDelete }) {
   const hasResults = entered > 0;
   return (
     <div style={{
-      background:"var(--bg3, #1e293b)",
-      borderRadius:16,
-      padding:"18px 16px 14px",
-      marginBottom:12,
+      background: "transparent",
+      border: "1px solid rgba(79, 142, 247, 0.3)",
+      borderRadius: 12,
+      padding: "14px 16px",
+      marginBottom: 12,
     }}>
       {/* Top row: test name + result badge */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
-        <div style={{ fontFamily:"'Manrope',sans-serif", fontSize:22, fontWeight:800, color:"var(--text)", letterSpacing:"-0.5px", lineHeight:1.1 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Manrope',sans-serif", fontSize: 20, fontWeight: 800, color: "var(--text)", letterSpacing: "-0.5px", lineHeight: 1.1 }}>
           {t.name}
         </div>
         <span style={{
           background: hasResults ? "#006d35" : "rgba(155,168,255,0.15)",
           color: hasResults ? "#3fff8b" : "#9ba8ff",
-          borderRadius:100, padding:"4px 12px",
-          fontSize:11, fontWeight:700, whiteSpace:"nowrap", marginLeft:8,
-          display:"flex", alignItems:"center", gap:4,
+          borderRadius: 100, padding: "4px 10px",
+          fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
+          display: "flex", alignItems: "center", gap: 4,
         }}>
           {hasResults && <span>&#10003;</span>} {entered} Entered
         </span>
       </div>
 
-      {/* Subject chips */}
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-        {t.subjects && (
-          <span style={{
-            background:"rgba(155,168,255,0.15)", color:"#9ba8ff",
-            borderRadius:100, padding:"3px 10px", fontSize:11, fontWeight:700,
-            textTransform:"uppercase", letterSpacing:"0.04em",
-          }}>{parseSubjects(t.subjects).join(", ")}</span>
-        )}
-        {t.batch_name && (
-          <span style={{
-            background:"rgba(255,255,255,0.06)", color:"var(--text3)",
-            borderRadius:100, padding:"3px 10px", fontSize:11, fontWeight:600,
-          }}>{t.batch_name}</span>
-        )}
-      </div>
-
-      {/* Branch + Course grid */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 12px", marginBottom:12 }}>
+      {/* Details row */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", fontSize: 13, marginBottom: 14 }}>
         {user.role === "super_admin" && t.branch_name && (
-          <div>
-            <div style={{ fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:2 }}>BRANCH</div>
-            <div style={{ fontSize:13, fontWeight:600, color:"var(--text)" }}>{t.branch_name}</div>
-          </div>
+          <div><span style={{ color: "var(--text3)" }}>Branch: </span><span style={{ fontWeight: 600, color: "var(--text)" }}>{t.branch_name}</span></div>
         )}
         {t.batch_name && (
-          <div>
-            <div style={{ fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:2 }}>COURSE</div>
-            <div style={{ fontSize:13, fontWeight:600, color:"var(--text)" }}>{t.batch_name}</div>
-          </div>
+          <div><span style={{ color: "var(--text3)" }}>Course: </span><span style={{ fontWeight: 600, color: "var(--text)" }}>{t.batch_name}</span></div>
         )}
-        <div>
-          <div style={{ fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:2 }}>TOTAL MARKS</div>
-          <div style={{ fontSize:13, fontWeight:600, color:"var(--text)" }}>{t.total_marks}</div>
-        </div>
-      </div>
-
-      {/* Date */}
-      <div style={{ marginBottom:14 }}>
-        <div style={{ fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:2 }}>DATE</div>
-        <div style={{ fontSize:13, fontWeight:600, color:"var(--text)", display:"flex", alignItems:"center", gap:6 }}>
-          <span style={{ fontSize:14 }}>&#128197;</span>
-          {new Date(t.test_date).toLocaleDateString("en-IN")}
+        <div><span style={{ color: "var(--text3)" }}>Total Marks: </span><span style={{ fontWeight: 600, color: "var(--text)" }}>{Number(t.total_marks).toFixed(2)}</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 14 }}>&#128197;</span>
+          <span style={{ color: "var(--text3)" }}>Date: </span>
+          <span style={{ fontWeight: 600, color: "var(--text)" }}>{new Date(t.test_date).toLocaleDateString("en-IN")}</span>
         </div>
       </div>
 
       {/* Actions row */}
-      <div style={{
-        display:"flex", gap:10,
-        borderTop:"1px solid rgba(255,255,255,0.05)",
-        paddingTop:12,
-      }}>
+      <div style={{ display: "flex", gap: 10 }}>
         <button
           onClick={() => onResults(t)}
           style={{
-            flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-            background:"rgba(155,168,255,0.1)", border:"none",
-            borderRadius:10, padding:"10px 0",
-            color:"#9ba8ff", fontWeight:700, fontSize:13, cursor:"pointer",
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            background: "rgba(155,168,255,0.1)", border: "none",
+            borderRadius: 8, padding: "8px 0",
+            color: "#9ba8ff", fontWeight: 700, fontSize: 13, cursor: "pointer",
           }}
         >
-          <span style={{ fontSize:15 }}>&#128202;</span> Results
+          <span style={{ fontSize: 15 }}>&#128202;</span> Results
         </button>
         <button
           onClick={() => onDelete(t.id)}
           style={{
-            flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-            background:"rgba(255,110,132,0.1)", border:"none",
-            borderRadius:10, padding:"10px 0",
-            color:"#ff6e84", fontWeight:700, fontSize:13, cursor:"pointer",
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            background: "rgba(255,110,132,0.1)", border: "none",
+            borderRadius: 8, padding: "8px 0",
+            color: "#ff6e84", fontWeight: 700, fontSize: 13, cursor: "pointer",
           }}
         >
-          <span style={{ fontSize:15 }}>&#128465;</span> Delete
+          <span style={{ fontSize: 15 }}>&#128465;</span> Delete
         </button>
       </div>
     </div>
